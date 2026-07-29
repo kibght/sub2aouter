@@ -28,6 +28,9 @@ function applyPatch(text, patch, patchText) {
   if (text.includes(patch.sentinel)) return text
   const index = text.indexOf(patch.marker)
   if (index < 0) throw new Error(`Patch marker not found in ${patch.target}: ${patch.marker}`)
+  if (patch.operation === 'replace') {
+    return `${text.slice(0, index)}${patchText}${text.slice(index + patch.marker.length)}`
+  }
   const insertionIndex = patch.position === 'after' ? index + patch.marker.length : index
   return `${text.slice(0, insertionIndex)}${patchText}${text.slice(insertionIndex)}`
 }

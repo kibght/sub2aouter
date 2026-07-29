@@ -57,6 +57,27 @@
       "position": "after",
       "source": "patches/tailwind-font.txt",
       "sentinel": "          'Inter',"
+    },
+    {
+      "target": "deploy/docker-compose.yml",
+      "operation": "replace",
+      "marker": "    image: weishaw/sub2api:latest",
+      "source": "patches/docker-compose-image.txt",
+      "sentinel": "    image: ${SUB2API_IMAGE:-ghcr.io/kibght/sub2aouter:latest}"
+    },
+    {
+      "target": "deploy/docker-compose.local.yml",
+      "operation": "replace",
+      "marker": "    image: weishaw/sub2api:latest",
+      "source": "patches/docker-compose-image.txt",
+      "sentinel": "    image: ${SUB2API_IMAGE:-ghcr.io/kibght/sub2aouter:latest}"
+    },
+    {
+      "target": "deploy/docker-compose.standalone.yml",
+      "operation": "replace",
+      "marker": "    image: weishaw/sub2api:latest",
+      "source": "patches/docker-compose-image.txt",
+      "sentinel": "    image: ${SUB2API_IMAGE:-ghcr.io/kibght/sub2aouter:latest}"
     }
   ]
 }

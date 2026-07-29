@@ -27,6 +27,29 @@ corepack pnpm run typecheck
 corepack pnpm run build
 ```
 
+## Docker 部署
+
+三个 Compose 部署文件现在默认使用：
+
+```text
+ghcr.io/kibght/sub2aouter:latest
+```
+
+也可以通过环境变量临时指定其他镜像：
+
+```dotenv
+SUB2API_IMAGE=ghcr.io/kibght/sub2aouter:latest
+```
+
+服务器更新命令：
+
+```bash
+cd deploy
+docker compose pull sub2api
+docker compose up -d --no-deps sub2api
+```
+
+不再需要额外的 `docker-compose.theme.yml` 覆盖文件。
 ## 自动更新
 
 `.github/workflows/upstream-theme-sync.yml` 每天检查一次 `Wei-Shaw/sub2api`：

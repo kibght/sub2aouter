@@ -58,3 +58,29 @@ test('check mode reports drift without mutating files', async () => {
   ])
   assert.equal(await readFile(path.join(root, 'frontend/src/views/HomeView.vue'), 'utf8'), 'upstream-home\n')
 })
+test('supports exact replacement patches', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-replace-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-replace-overlay-'))
+  await mkdir(path.join(root, 'deploy'), { recursive: true })
+  await mkdir(path.join(overlay, 'patches'), { recursive: true })
+  await writeFile(path.join(root, 'deploy/docker-compose.yml'), 'services:\n  app:\n    image: old/image:latest\n')
+  await writeFile(path.join(overlay, 'patches/image.txt'), '    image: new/image:latest')
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    patches: [
+      {
+        target: 'deploy/docker-compose.yml',
+        operation: 'replace',
+        marker: '    image: old/image:latest',
+        source: 'patches/image.txt',
+        sentinel: '    image: new/image:latest',
+      },
+    ],
+  }))
+
+  const first = await applyTheme({ root, overlay })
+  const second = await applyTheme({ root, overlay })
+
+  assert.equal(await readFile(path.join(root, 'deploy/docker-compose.yml'), 'utf8'), 'services:\n  app:\n    image: new/image:latest\n')
+  assert.equal(first.changed, true)
+  assert.equal(second.changed, false)
+})
