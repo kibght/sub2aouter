@@ -1,6 +1,9 @@
 name: Sync Upstream With Apophis Theme
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       upstream_ref:
