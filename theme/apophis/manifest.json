@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "upstream": "Wei-Shaw/sub2api",
+  "files": [
+    {
+      "source": "files/frontend/src/views/HomeView.vue",
+      "target": "frontend/src/views/HomeView.vue"
+    },
+    {
+      "source": "files/frontend/src/views/__tests__/HomeView.spec.ts",
+      "target": "frontend/src/views/__tests__/HomeView.spec.ts"
+    },
+    {
+      "source": "files/frontend/src/styles/apophis-theme.css",
+      "target": "frontend/src/styles/apophis-theme.css"
+    }
+  ],
+  "patches": [
+    {
+      "target": ".gitignore",
+      "marker": "scripts",
+      "position": "after",
+      "source": "patches/gitignore-scripts.txt",
+      "sentinel": "!scripts/**"
+    },
+    {
+      "target": "frontend/src/style.css",
+      "marker": "@tailwind base;",
+      "position": "before",
+      "source": "patches/style-import.txt",
+      "sentinel": "@import './styles/apophis-theme.css';"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "marker": "      colors: {",
+      "position": "after",
+      "source": "patches/tailwind-semantic-colors.txt",
+      "sentinel": "background: 'hsl(var(--background) / <alpha-value>)'"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "marker": "        primary: {",
+      "position": "after",
+      "source": "patches/tailwind-primary-defaults.txt",
+      "sentinel": "DEFAULT: 'hsl(var(--primary) / <alpha-value>)'"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "marker": "        accent: {",
+      "position": "after",
+      "source": "patches/tailwind-accent-defaults.txt",
+      "sentinel": "DEFAULT: 'hsl(var(--accent) / <alpha-value>)'"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "marker": "        sans: [",
+      "position": "after",
+      "source": "patches/tailwind-font.txt",
+      "sentinel": "          'Inter',"
+    }
+  ]
+}
