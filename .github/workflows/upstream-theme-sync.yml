@@ -28,7 +28,7 @@ jobs:
     env:
       UPSTREAM_REPOSITORY: https://github.com/Wei-Shaw/sub2api.git
       UPSTREAM_REF: ${{ inputs.upstream_ref || 'main' }}
-      GENERATED_DIR: ${{ runner.temp }}/sub2api-themed-release
+      GENERATED_DIR: ${{ github.workspace }}/../sub2api-themed-release
 
     steps:
       - name: Checkout theme source
