@@ -61,3 +61,10 @@ test('Windows environment preparation generates and repairs required secrets', {
     await rm(temp, { recursive: true, force: true })
   }
 })
+
+test('upstream theme sync carries the Windows runtime into generated releases', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  const manifest = JSON.parse(await readFile('theme/apophis/manifest.json', 'utf8'))
+  assert.match(workflow, /cp -a tools\/windows-local/)
+  assert.ok(manifest.patches.some((entry) => entry.target === '.gitignore' && entry.sentinel === 'tools/windows-local/.env'))
+})

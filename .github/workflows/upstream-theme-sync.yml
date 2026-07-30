@@ -51,9 +51,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$GENERATED_DIR/theme" "$GENERATED_DIR/scripts" "$GENERATED_DIR/.github/workflows"
+          mkdir -p "$GENERATED_DIR/theme" "$GENERATED_DIR/scripts" "$GENERATED_DIR/tools" "$GENERATED_DIR/.github/workflows"
           cp -a theme/. "$GENERATED_DIR/theme/"
           cp -a scripts/. "$GENERATED_DIR/scripts/"
+          cp -a tools/windows-local "$GENERATED_DIR/tools/windows-local"
           cp THEME.md "$GENERATED_DIR/THEME.md"
           cp .github/workflows/upstream-theme-sync.yml "$GENERATED_DIR/.github/workflows/upstream-theme-sync.yml"
 

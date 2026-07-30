@@ -99,6 +99,34 @@
       "marker": "RUN corepack enable && corepack prepare pnpm@9 --activate",
       "source": "patches/dockerfile-pnpm-version.txt",
       "sentinel": "RUN corepack enable && corepack prepare pnpm@9.15.9 --activate"
+    },
+    {
+      "target": ".github/workflows/backend-ci.yml",
+      "operation": "replace",
+      "marker": "          version: 9",
+      "source": "patches/workflow-pnpm-version.txt",
+      "sentinel": "          version: 9.15.9"
+    },
+    {
+      "target": ".github/workflows/release.yml",
+      "operation": "replace",
+      "marker": "          version: 9",
+      "source": "patches/workflow-pnpm-version.txt",
+      "sentinel": "          version: 9.15.9"
+    },
+    {
+      "target": ".github/workflows/security-scan.yml",
+      "operation": "replace",
+      "marker": "          version: 9",
+      "source": "patches/workflow-pnpm-version.txt",
+      "sentinel": "          version: 9.15.9"
+    },
+    {
+      "target": ".gitignore",
+      "marker": "output/",
+      "position": "after",
+      "source": "patches/gitignore-windows-local-env.txt",
+      "sentinel": "tools/windows-local/.env"
     }
   ]
 }
