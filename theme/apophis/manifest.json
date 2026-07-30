@@ -85,6 +85,20 @@
       "marker": "RUN --mount=type=cache,id=sub2api-pnpm-store,target=/root/.local/share/pnpm/store \\",
       "source": "patches/dockerfile-pnpm-cache.txt",
       "sentinel": "id=sub2api-pnpm-store-v2,target=/root/.local/share/pnpm/store,sharing=locked,uid=0,gid=0,mode=0755"
+    },
+    {
+      "target": "frontend/package.json",
+      "marker": "  \"type\": \"module\",",
+      "position": "after",
+      "source": "patches/frontend-package-manager.txt",
+      "sentinel": "  \"packageManager\": \"pnpm@9.15.9\","
+    },
+    {
+      "target": "Dockerfile",
+      "operation": "replace",
+      "marker": "RUN corepack enable && corepack prepare pnpm@9 --activate",
+      "source": "patches/dockerfile-pnpm-version.txt",
+      "sentinel": "RUN corepack enable && corepack prepare pnpm@9.15.9 --activate"
     }
   ]
 }

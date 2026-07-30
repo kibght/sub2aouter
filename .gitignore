@@ -145,3 +145,4 @@ docs/*
 frontend/coverage/
 aicodex
 output/
+tools/windows-local/.env
