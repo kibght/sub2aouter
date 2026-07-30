@@ -94,18 +94,8 @@ jobs:
           pnpm run typecheck
 
       - name: Frontend regression tests
-        shell: bash
+        run: pnpm run test:run
         working-directory: ${{ env.GENERATED_DIR }}/frontend
-        run: |
-          set -euo pipefail
-          pnpm exec vitest run \
-            src/views/__tests__/HomeView.spec.ts \
-            src/views/auth/__tests__/LinuxDoCallbackView.spec.ts \
-            src/views/auth/__tests__/WechatCallbackView.spec.ts \
-            src/views/user/__tests__/PaymentView.spec.ts \
-            src/views/user/__tests__/PaymentResultView.spec.ts \
-            src/components/user/profile/__tests__/ProfileInfoCard.spec.ts \
-            src/views/admin/__tests__/SettingsView.spec.ts
 
       - name: Build frontend
         run: pnpm run build

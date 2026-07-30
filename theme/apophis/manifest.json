@@ -13,6 +13,26 @@
     {
       "source": "files/frontend/src/styles/apophis-theme.css",
       "target": "frontend/src/styles/apophis-theme.css"
+    },
+    {
+      "source": "files/README.md",
+      "target": "README.md"
+    },
+    {
+      "source": "files/docs/images/theme-overview.png",
+      "target": "docs/images/theme-overview.png"
+    },
+    {
+      "source": "files/frontend/src/api/__tests__/admin.system.rollback.spec.ts",
+      "target": "frontend/src/api/__tests__/admin.system.rollback.spec.ts"
+    },
+    {
+      "source": "files/frontend/src/views/admin/__tests__/GroupsView.columnSettings.spec.ts",
+      "target": "frontend/src/views/admin/__tests__/GroupsView.columnSettings.spec.ts"
+    },
+    {
+      "source": "files/frontend/src/views/admin/__tests__/GroupsView.duplicate.spec.ts",
+      "target": "frontend/src/views/admin/__tests__/GroupsView.duplicate.spec.ts"
     }
   ],
   "patches": [
@@ -127,6 +147,244 @@
       "position": "after",
       "source": "patches/gitignore-windows-local-env.txt",
       "sentinel": "tools/windows-local/.env"
+    },
+    {
+      "target": "frontend/src/components/layout/AppLayout.vue",
+      "operation": "replace",
+      "marker": "  <div class=\"min-h-screen bg-gray-50 dark:bg-dark-950\">",
+      "source": "patches/app-layout-shell.txt",
+      "sentinel": "class=\"app-shell "
+    },
+    {
+      "target": "frontend/src/components/layout/AppLayout.vue",
+      "operation": "replace",
+      "marker": "      class=\"relative min-h-screen transition-all duration-300\"",
+      "source": "patches/app-layout-main.txt",
+      "sentinel": "class=\"app-main "
+    },
+    {
+      "target": "frontend/src/components/layout/AppLayout.vue",
+      "operation": "replace",
+      "marker": "      <main class=\"p-4 md:p-6 lg:p-8\">",
+      "source": "patches/app-layout-content.txt",
+      "sentinel": "class=\"app-content "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "  <header class=\"glass sticky top-0 z-30 border-b border-gray-200/50 dark:border-dark-700/50\">",
+      "source": "patches/app-header-root.txt",
+      "sentinel": "class=\"app-header "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "    <div class=\"flex h-16 items-center justify-between gap-2 px-2 sm:px-4 md:px-6\">",
+      "source": "patches/app-header-inner.txt",
+      "sentinel": "class=\"app-header-inner "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "      <div class=\"flex shrink-0 items-center gap-2 sm:gap-4\">",
+      "source": "patches/app-header-title-wrap.txt",
+      "sentinel": "class=\"app-header-title-wrap "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "          <h1 class=\"text-lg font-semibold text-gray-900 dark:text-white\">",
+      "source": "patches/app-header-title.txt",
+      "sentinel": "class=\"app-header-title "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "          <p v-if=\"pageDescription\" class=\"text-xs text-gray-500 dark:text-dark-400\">",
+      "source": "patches/app-header-description.txt",
+      "sentinel": "class=\"app-header-description "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "      <div class=\"flex min-w-0 items-center gap-1 sm:gap-3\">",
+      "source": "patches/app-header-actions.txt",
+      "sentinel": "class=\"app-header-actions "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "          class=\"group relative hidden items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 dark:bg-primary-900/20 sm:flex\"",
+      "source": "patches/app-header-balance.txt",
+      "sentinel": "class=\"app-header-balance "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "            class=\"h-4 w-4 text-primary-600 dark:text-primary-400\"",
+      "source": "patches/app-header-balance-icon.txt",
+      "sentinel": "class=\"app-header-balance-icon "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "          <span class=\"text-sm font-semibold text-primary-700 dark:text-primary-300\">",
+      "source": "patches/app-header-balance-value.txt",
+      "sentinel": "class=\"app-header-balance-value "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "            class=\"flex items-center gap-2 rounded-xl p-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-dark-800\"",
+      "source": "patches/app-header-user.txt",
+      "sentinel": "class=\"app-header-user "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "            <div class=\"flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 text-sm font-medium text-white shadow-sm\">",
+      "source": "patches/app-header-avatar.txt",
+      "sentinel": "class=\"app-header-avatar "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "              <span v-else>{{ userInitials }}</span>",
+      "source": "patches/app-header-user-id.txt",
+      "sentinel": "<span v-else>{{ user.id }}</span>"
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "            <div class=\"hidden text-left md:block\">\n              <div class=\"text-sm font-medium text-gray-900 dark:text-white\">\n                {{ displayName }}",
+      "source": "patches/app-header-user-copy.txt",
+      "sentinel": "class=\"app-header-user-copy "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "              <div class=\"text-xs capitalize text-gray-500 dark:text-dark-400\">\n                {{ user.role }}",
+      "source": "patches/app-header-user-role.txt",
+      "sentinel": "class=\"app-header-user-role "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "const userInitials = computed(() => {\n  if (!user.value) return ''\n  // Prefer username, fallback to email\n  if (user.value.username) {\n    return user.value.username.substring(0, 2).toUpperCase()\n  }\n  if (user.value.email) {\n    // Get the part before @ and take first 2 chars\n    const localPart = user.value.email.split('@')[0]\n    return localPart.substring(0, 2).toUpperCase()\n  }\n  return ''\n})",
+      "source": "patches/app-header-remove-user-initials.txt",
+      "sentinel": "// Console avatar uses the stable numeric user ID."
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "  <div class=\"relative flex min-h-screen items-center justify-center overflow-hidden p-4\">",
+      "source": "patches/auth-layout-shell.txt",
+      "sentinel": "class=\"auth-shell "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "      class=\"absolute inset-0 bg-gradient-to-br from-gray-50 via-primary-50/30 to-gray-100 dark:from-dark-950 dark:via-dark-900 dark:to-dark-950\"",
+      "source": "patches/auth-layout-background.txt",
+      "sentinel": "class=\"auth-background "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "    <div class=\"pointer-events-none absolute inset-0 overflow-hidden\">",
+      "source": "patches/auth-layout-decorations.txt",
+      "sentinel": "class=\"auth-decorations "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "        class=\"absolute -right-40 -top-40 h-80 w-80 rounded-full bg-primary-400/20 blur-3xl\"",
+      "source": "patches/auth-layout-orb-top.txt",
+      "sentinel": "class=\"auth-orb auth-orb-top "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "        class=\"absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-primary-500/15 blur-3xl\"",
+      "source": "patches/auth-layout-orb-bottom.txt",
+      "sentinel": "class=\"auth-orb auth-orb-bottom "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "        class=\"absolute left-1/2 top-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary-300/10 blur-3xl\"",
+      "source": "patches/auth-layout-orb-center.txt",
+      "sentinel": "class=\"auth-orb auth-orb-center "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "        class=\"absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.03)_1px,transparent_1px)] bg-[size:64px_64px]\"",
+      "source": "patches/auth-layout-grid.txt",
+      "sentinel": "class=\"auth-grid "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "    <div class=\"relative z-10 w-full max-w-md\">",
+      "source": "patches/auth-layout-container.txt",
+      "sentinel": "class=\"auth-container "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "      <div class=\"mb-8 text-center\">",
+      "source": "patches/auth-layout-brand.txt",
+      "sentinel": "class=\"auth-brand "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "            class=\"mb-4 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl shadow-lg shadow-primary-500/30\"",
+      "source": "patches/auth-layout-logo.txt",
+      "sentinel": "class=\"auth-logo "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "          <h1 class=\"text-gradient mb-2 text-3xl font-bold\">",
+      "source": "patches/auth-layout-site-name.txt",
+      "sentinel": "class=\"auth-site-name "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "          <p class=\"text-sm text-gray-500 dark:text-dark-400\">",
+      "source": "patches/auth-layout-subtitle.txt",
+      "sentinel": "class=\"auth-site-subtitle "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "      <div class=\"card-glass rounded-2xl p-8 shadow-glass\">",
+      "source": "patches/auth-layout-card.txt",
+      "sentinel": "class=\"auth-card "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "      <div class=\"mt-6 text-center text-sm\">",
+      "source": "patches/auth-layout-footer.txt",
+      "sentinel": "class=\"auth-footer "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "      <div class=\"mt-8 text-center text-xs text-gray-400 dark:text-dark-500\">",
+      "source": "patches/auth-layout-copyright.txt",
+      "sentinel": "class=\"auth-copyright "
+    },
+    {
+      "target": ".gitignore",
+      "marker": "docs/*",
+      "position": "after",
+      "source": "patches/gitignore-theme-docs.txt",
+      "sentinel": "!docs/images/theme-overview.png"
     }
   ]
 }
