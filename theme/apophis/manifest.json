@@ -78,6 +78,13 @@
       "marker": "    image: weishaw/sub2api:latest",
       "source": "patches/docker-compose-image.txt",
       "sentinel": "    image: ${SUB2API_IMAGE:-ghcr.io/kibght/sub2aouter:latest}"
+    },
+    {
+      "target": "Dockerfile",
+      "operation": "replace",
+      "marker": "RUN --mount=type=cache,id=sub2api-pnpm-store,target=/root/.local/share/pnpm/store \\",
+      "source": "patches/dockerfile-pnpm-cache.txt",
+      "sentinel": "id=sub2api-pnpm-store-v2,target=/root/.local/share/pnpm/store,sharing=locked,uid=0,gid=0,mode=0755"
     }
   ]
 }
