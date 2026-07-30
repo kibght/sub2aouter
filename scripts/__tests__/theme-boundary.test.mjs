@@ -11,7 +11,7 @@ test('theme overlay never targets backend implementation files', async () => {
     ...(manifest.files || []).map((entry) => entry.target),
     ...(manifest.patches || []).map((entry) => entry.target),
   ]
-  assert.equal(targets.some((target) => target === 'backend' || target.startsWith('backend/')), false)
+  assert.deepEqual(targets.filter((target) => target === 'backend' || target.startsWith('backend/')), ['backend/internal/service/update_service.go'])
 })
 
 test('shipped theme contains no target-site brand, domain, or account credentials', async () => {
@@ -51,4 +51,19 @@ test('generated releases carry upstream test compatibility fixes required by the
   ]) {
     assert.ok(targets.has(target), `${target} must survive upstream generation`)
   }
+})
+
+test('panel updater and binary release workflow use the custom repository', async () => {
+  const [service, workflow, manifestText] = await Promise.all([
+    read('backend/internal/service/update_service.go'),
+    read('.github/workflows/theme-binary-release.yml'),
+    read('theme/apophis/manifest.json'),
+  ])
+  assert.match(service, /githubRepo\s+= "kibght\/sub2aouter"/)
+  assert.match(workflow, /workflow_run:/)
+  assert.match(workflow, /gh release create/)
+  assert.match(workflow, /checksums\.txt/)
+  const manifest = JSON.parse(manifestText)
+  assert.ok((manifest.patches || []).some((entry) => entry.target === 'backend/internal/service/update_service.go'))
+  assert.ok((manifest.files || []).some((entry) => entry.target === '.github/workflows/theme-binary-release.yml'))
 })

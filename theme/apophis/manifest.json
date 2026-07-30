@@ -33,6 +33,14 @@
     {
       "source": "files/frontend/src/views/admin/__tests__/GroupsView.duplicate.spec.ts",
       "target": "frontend/src/views/admin/__tests__/GroupsView.duplicate.spec.ts"
+    },
+    {
+      "source": "files/.github/workflows/theme-binary-release.yml",
+      "target": ".github/workflows/theme-binary-release.yml"
+    },
+    {
+      "source": "files/.goreleaser.theme.yaml",
+      "target": ".goreleaser.theme.yaml"
     }
   ],
   "patches": [
@@ -385,6 +393,13 @@
       "position": "after",
       "source": "patches/gitignore-theme-docs.txt",
       "sentinel": "!docs/images/theme-overview.png"
+    },
+    {
+      "target": "backend/internal/service/update_service.go",
+      "operation": "replace",
+      "marker": "githubRepo     = \"Wei-Shaw/sub2api\"",
+      "source": "patches/update-repository.txt",
+      "sentinel": "githubRepo     = \"kibght/sub2aouter\""
     }
   ]
 }
