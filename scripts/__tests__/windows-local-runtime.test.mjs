@@ -11,6 +11,7 @@ const execFileAsync = promisify(execFile)
 
 test('Windows local runtime defines the complete Sub2API stack', async () => {
   const compose = await readFile(`${root}/docker-compose.yml`, 'utf8')
+  assert.match(compose, /sub2api:\s*[\s\S]*image: \${SUB2API_IMAGE:-ghcr\.io\/kibght\/sub2aouter:latest}/)
   assert.match(compose, /sub2api:\s*[\s\S]*build:\s*[\s\S]*context: \.\.\/\.\./)
   assert.match(compose, /postgres:\s*[\s\S]*image: postgres:18-alpine/)
   assert.match(compose, /redis:\s*[\s\S]*image: redis:8-alpine/)
@@ -24,10 +25,13 @@ test('Windows launchers use Docker Compose and never start a mock API', async ()
   const start = await readFile(`${root}/start-local.ps1`, 'utf8')
   const stop = await readFile(`${root}/stop-local.ps1`, 'utf8')
   assert.match(start, /docker compose/)
+  assert.match(start, /compose[\s\S]*pull[\s\S]*sub2api/)
+  assert.doesNotMatch(start, /up -d --build/)
   assert.match(start, /http:\/\/127\.0\.0\.1:\$serverPort/)
   assert.doesNotMatch(start, /mock-server|Mock API/i)
   assert.match(stop, /docker compose/)
 })
+
 test('Windows startup repairs incomplete env files and validates Compose before launch', async () => {
   const start = await readFile(`${root}/start-local.ps1`, 'utf8')
   assert.match(start, /Ensure-LocalEnvironment/)
@@ -42,6 +46,7 @@ test('Windows startup can bootstrap missing prerequisites and elevated installer
   assert.match(installer, /Start-Process[\s\S]*-PassThru/)
   assert.match(installer, /\.ExitCode/)
 })
+
 test('Windows environment preparation generates and repairs required secrets', { skip: process.platform !== 'win32' }, async () => {
   const temp = await mkdtemp(path.join(os.tmpdir(), 'sub2api-windows-env-'))
   const envFile = path.join(temp, '.env')
@@ -50,6 +55,7 @@ test('Windows environment preparation generates and repairs required secrets', {
     await execFileAsync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-PrepareOnly', '-EnvironmentFile', envFile])
     let env = await readFile(envFile, 'utf8')
     assert.doesNotMatch(env, /__[A-Z_]+__/)
+    assert.match(env, /^SUB2API_IMAGE=ghcr\.io\/kibght\/sub2aouter:latest$/m)
 
     env = env.replace(/^POSTGRES_PASSWORD=.*$/m, 'POSTGRES_PASSWORD=')
     await writeFile(envFile, env, 'utf8')

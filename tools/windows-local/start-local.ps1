@@ -70,6 +70,7 @@ function Ensure-LocalEnvironment {
     BIND_HOST = '127.0.0.1'
     SERVER_PORT = '18080'
     TZ = 'Asia/Shanghai'
+    SUB2API_IMAGE = 'ghcr.io/kibght/sub2aouter:latest'
     POSTGRES_USER = 'sub2api'
     POSTGRES_DB = 'sub2api'
     ADMIN_EMAIL = 'admin@local.test'
@@ -189,7 +190,12 @@ try {
   & $docker compose --project-name $projectName --env-file $envFile -f $composeFile config --quiet
   if ($LASTEXITCODE -ne 0) { throw 'Docker Compose configuration validation failed.' }
 
-  & $docker compose --project-name $projectName --env-file $envFile -f $composeFile up -d --build
+  & $docker compose --project-name $projectName --env-file $envFile -f $composeFile pull sub2api postgres redis
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warning 'Image pull failed. Docker Compose will use cached images or the local source build fallback.'
+  }
+
+  & $docker compose --project-name $projectName --env-file $envFile -f $composeFile up -d
   if ($LASTEXITCODE -ne 0) { throw 'Docker Compose startup failed.' }
 } finally {
   Pop-Location
