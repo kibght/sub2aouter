@@ -67,3 +67,61 @@ test('panel updater and binary release workflow use the custom repository', asyn
   assert.ok((manifest.patches || []).some((entry) => entry.target === 'backend/internal/service/update_service.go'))
   assert.ok((manifest.files || []).some((entry) => entry.target === '.github/workflows/theme-binary-release.yml'))
 })
+
+test('scheduled upstream sync runs every 30 minutes and skips unchanged revisions', async () => {
+  const workflow = await read('.github/workflows/upstream-theme-sync.yml')
+  assert.match(workflow, /cron:\s*'\*\/30 \* \* \* \*'/)
+  assert.match(workflow, /\.apophis-upstream-sha/)
+  assert.match(workflow, /github\.event_name[^\n]+schedule/)
+  assert.match(workflow, /SHOULD_PUBLISH/)
+})
+
+test('Docker images and binary releases share one generated release version', async () => {
+  const [syncWorkflow, binaryWorkflow] = await Promise.all([
+    read('.github/workflows/upstream-theme-sync.yml'),
+    read('.github/workflows/theme-binary-release.yml'),
+  ])
+  assert.match(syncWorkflow, /GITHUB_RUN_NUMBER/)
+  assert.match(syncWorkflow, /backend\/cmd\/server\/VERSION/)
+  assert.match(syncWorkflow, /\$\{IMAGE\}:\$\{RELEASE_VERSION\}/)
+  assert.match(binaryWorkflow, /cat backend\/cmd\/server\/VERSION/)
+  assert.match(binaryWorkflow, /gh release view/)
+  assert.doesNotMatch(binaryWorkflow, /date -u/)
+})
+
+test('version badge checks the custom repository every 30 minutes', async () => {
+  const [badge, manifestText] = await Promise.all([
+    read('frontend/src/components/common/VersionBadge.vue'),
+    read('theme/apophis/manifest.json'),
+  ])
+  assert.match(badge, /const GITHUB_REPO = 'kibght\/sub2aouter'/)
+  assert.match(badge, /const DOCKER_IMAGE = 'ghcr\.io\/kibght\/sub2aouter'/)
+  assert.match(badge, /VERSION_REFRESH_INTERVAL_MS = 30 \* 60 \* 1000/)
+  assert.match(badge, /setInterval\([\s\S]*fetchVersion\(true\)/)
+  assert.match(badge, /clearInterval\(versionRefreshInterval\)/)
+
+  const manifest = JSON.parse(manifestText)
+  const versionBadgePatches = (manifest.patches || []).filter(
+    (entry) => entry.target === 'frontend/src/components/common/VersionBadge.vue',
+  )
+  assert.ok(versionBadgePatches.length >= 3, 'version reminder patches must survive upstream generation')
+})
+
+
+test('Docker deployments expose reminder-only updates with the themed image', async () => {
+  const [dockerfile, badge, manifestText] = await Promise.all([
+    read('Dockerfile'),
+    read('frontend/src/components/common/VersionBadge.vue'),
+    read('theme/apophis/manifest.json'),
+  ])
+  assert.match(dockerfile, /-X main\.BuildType=docker/)
+  assert.match(badge, /const isDockerBuild = computed/)
+  assert.match(badge, /docker compose pull sub2api/)
+  assert.match(badge, /hasUpdate && isDockerBuild/)
+  assert.match(badge, /v-if="!isDockerBuild"/)
+
+  const manifest = JSON.parse(manifestText)
+  assert.ok((manifest.patches || []).some(
+    (entry) => entry.target === 'Dockerfile' && entry.sentinel === '-X main.BuildType=docker',
+  ))
+})

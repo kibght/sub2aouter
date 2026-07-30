@@ -12,7 +12,7 @@ on:
         default: main
         type: string
   schedule:
-    - cron: '30 19 * * *'
+    - cron: '*/30 * * * *'
 
 concurrency:
   group: upstream-theme-sync
@@ -41,13 +41,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git fetch origin +refs/heads/themed-release:refs/remotes/origin/themed-release 2>/dev/null || true
           git remote remove upstream 2>/dev/null || true
           git remote add upstream "$UPSTREAM_REPOSITORY"
           git fetch --depth=1 upstream "$UPSTREAM_REF"
           git worktree add --detach "$GENERATED_DIR" FETCH_HEAD
           echo "UPSTREAM_SHA=$(git -C "$GENERATED_DIR" rev-parse HEAD)" >> "$GITHUB_ENV"
 
+      - name: Decide whether a release is needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          PREVIOUS_UPSTREAM_SHA=""
+          if git show origin/themed-release:.apophis-upstream-sha > /tmp/apophis-upstream-sha 2>/dev/null; then
+            PREVIOUS_UPSTREAM_SHA="$(tr -d '[:space:]' < /tmp/apophis-upstream-sha)"
+          fi
+
+          if [[ "${{ github.event_name }}" == "schedule" && "$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA" ]]; then
+            echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
+            echo "Upstream is unchanged at $UPSTREAM_SHA; skipping scheduled build and release."
+            exit 0
+          fi
+
+          RELEASE_VERSION="$(date -u +%Y).$(date -u +%-m).${GITHUB_RUN_NUMBER}"
+          echo "SHOULD_PUBLISH=true" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
+          echo "Publishing upstream $UPSTREAM_SHA as $RELEASE_VERSION."
+
       - name: Copy permanent theme source
+        if: env.SHOULD_PUBLISH == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -59,10 +81,21 @@ jobs:
           cp .github/workflows/upstream-theme-sync.yml "$GENERATED_DIR/.github/workflows/upstream-theme-sync.yml"
 
       - name: Apply theme overlay
+        if: env.SHOULD_PUBLISH == 'true'
         run: node scripts/apply-theme.mjs --root .
         working-directory: ${{ env.GENERATED_DIR }}
 
+      - name: Write unified release metadata
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        working-directory: ${{ env.GENERATED_DIR }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$RELEASE_VERSION" > backend/cmd/server/VERSION
+          printf '%s\n' "$UPSTREAM_SHA" > .apophis-upstream-sha
+
       - name: Verify theme overlay and UTF-8
+        if: env.SHOULD_PUBLISH == 'true'
         shell: bash
         working-directory: ${{ env.GENERATED_DIR }}
         run: |
@@ -72,20 +105,24 @@ jobs:
           node --test scripts/__tests__/*.test.mjs
 
       - name: Setup pnpm
+        if: env.SHOULD_PUBLISH == 'true'
         uses: pnpm/action-setup@v6
         with:
           version: 9.15.9
 
       - name: Setup Node.js
+        if: env.SHOULD_PUBLISH == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: '20'
 
       - name: Install frontend dependencies
+        if: env.SHOULD_PUBLISH == 'true'
         run: pnpm install --frozen-lockfile
         working-directory: ${{ env.GENERATED_DIR }}/frontend
 
       - name: Frontend lint and typecheck
+        if: env.SHOULD_PUBLISH == 'true'
         shell: bash
         working-directory: ${{ env.GENERATED_DIR }}/frontend
         run: |
@@ -94,24 +131,29 @@ jobs:
           pnpm run typecheck
 
       - name: Frontend regression tests
+        if: env.SHOULD_PUBLISH == 'true'
         run: pnpm run test:run
         working-directory: ${{ env.GENERATED_DIR }}/frontend
 
       - name: Build frontend
+        if: env.SHOULD_PUBLISH == 'true'
         run: pnpm run build
         working-directory: ${{ env.GENERATED_DIR }}/frontend
 
       - name: Setup Go
+        if: env.SHOULD_PUBLISH == 'true'
         uses: actions/setup-go@v6
         with:
           go-version-file: ${{ env.GENERATED_DIR }}/backend/go.mod
           cache: false
 
       - name: Backend unit tests
+        if: env.SHOULD_PUBLISH == 'true'
         run: make test-unit
         working-directory: ${{ env.GENERATED_DIR }}/backend
 
       - name: Build immutable themed image
+        if: env.SHOULD_PUBLISH == 'true'
         shell: bash
         working-directory: ${{ env.GENERATED_DIR }}
         run: |
@@ -119,25 +161,32 @@ jobs:
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
           SHORT_SHA="${UPSTREAM_SHA:0:12}"
           docker build \
+            --build-arg "VERSION=${RELEASE_VERSION}" \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.revision=${UPSTREAM_SHA}" \
+            --label "org.opencontainers.image.version=${RELEASE_VERSION}" \
             -t "${IMAGE}:upstream-${SHORT_SHA}" \
+            -t "${IMAGE}:${RELEASE_VERSION}" \
             .
 
       - name: Login to GitHub Container Registry
+        if: env.SHOULD_PUBLISH == 'true'
         shell: bash
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Push immutable themed image
+        if: env.SHOULD_PUBLISH == 'true'
         shell: bash
         run: |
           set -euo pipefail
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
           SHORT_SHA="${UPSTREAM_SHA:0:12}"
           docker push "${IMAGE}:upstream-${SHORT_SHA}"
+          docker push "${IMAGE}:${RELEASE_VERSION}"
 
       - name: Update generated release branch
+        if: env.SHOULD_PUBLISH == 'true'
         shell: bash
         working-directory: ${{ env.GENERATED_DIR }}
         run: |
@@ -146,14 +195,14 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add --all
-          git commit -m "chore: sync upstream ${UPSTREAM_SHA} with apophis theme" || true
+          git commit -m "chore: sync upstream ${UPSTREAM_SHA} with apophis theme as ${RELEASE_VERSION}"
           git push origin HEAD:themed-release --force
 
       - name: Publish latest image after release branch succeeds
+        if: env.SHOULD_PUBLISH == 'true'
         shell: bash
         run: |
           set -euo pipefail
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
-          SHORT_SHA="${UPSTREAM_SHA:0:12}"
-          docker tag "${IMAGE}:upstream-${SHORT_SHA}" "${IMAGE}:latest"
+          docker tag "${IMAGE}:${RELEASE_VERSION}" "${IMAGE}:latest"
           docker push "${IMAGE}:latest"

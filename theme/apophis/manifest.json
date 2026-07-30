@@ -400,6 +400,62 @@
       "marker": "githubRepo     = \"Wei-Shaw/sub2api\"",
       "source": "patches/update-repository.txt",
       "sentinel": "githubRepo     = \"kibght/sub2aouter\""
+    },
+    {
+      "target": "frontend/src/components/common/VersionBadge.vue",
+      "operation": "replace",
+      "marker": "const GITHUB_REPO = 'Wei-Shaw/sub2api'\n// Docker Hub image published by CI (tags carry no \"v\" prefix, e.g. weishaw/sub2api:0.1.146)\nconst DOCKER_IMAGE = 'weishaw/sub2api'",
+      "source": "patches/version-badge-repository.txt",
+      "sentinel": "const GITHUB_REPO = 'kibght/sub2aouter'"
+    },
+    {
+      "target": "frontend/src/components/common/VersionBadge.vue",
+      "operation": "replace",
+      "marker": "const rollingBack = ref(false)\nconst rollbackError = ref('')",
+      "source": "patches/version-badge-refresh-state.txt",
+      "sentinel": "const VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000"
+    },
+    {
+      "target": "frontend/src/components/common/VersionBadge.vue",
+      "operation": "replace",
+      "marker": "onMounted(() => {\n  if (isAdmin.value) {\n    // Use cached version if available, otherwise fetch\n    appStore.fetchVersion(false)\n  }\n  document.addEventListener('click', handleClickOutside)\n})\n\nonBeforeUnmount(() => {\n  document.removeEventListener('click', handleClickOutside)\n})",
+      "source": "patches/version-badge-lifecycle.txt",
+      "sentinel": "versionRefreshInterval = window.setInterval"
+    },
+    {
+      "target": "Dockerfile",
+      "operation": "replace",
+      "marker": "-X main.BuildType=release",
+      "source": "patches/dockerfile-build-type.txt",
+      "sentinel": "-X main.BuildType=docker"
+    },
+    {
+      "target": "frontend/src/components/common/VersionBadge.vue",
+      "operation": "replace",
+      "marker": "// Only show update check for release builds (binary/docker deployment)\nconst isReleaseBuild = computed(() => buildType.value === 'release')",
+      "source": "patches/version-badge-docker-state.txt",
+      "sentinel": "const isDockerBuild = computed(() => buildType.value === 'docker')"
+    },
+    {
+      "target": "frontend/src/components/common/VersionBadge.vue",
+      "position": "before",
+      "marker": "              <!-- Priority 3: Update available for source build - show git pull hint -->",
+      "source": "patches/version-badge-docker-panel.txt",
+      "sentinel": "v-else-if=\"hasUpdate && isDockerBuild\""
+    },
+    {
+      "target": "frontend/src/components/common/VersionBadge.vue",
+      "operation": "replace",
+      "marker": "v-else-if=\"hasUpdate && !isReleaseBuild\"",
+      "source": "patches/version-badge-source-condition.txt",
+      "sentinel": "v-else-if=\"hasUpdate && !isReleaseBuild && !isDockerBuild\""
+    },
+    {
+      "target": "frontend/src/components/common/VersionBadge.vue",
+      "operation": "replace",
+      "marker": "                <!-- Version rollback entry -->\n                <div class=\"border-t border-gray-100 pt-2 dark:border-dark-700\">",
+      "source": "patches/version-badge-rollback-visibility.txt",
+      "sentinel": "<div v-if=\"!isDockerBuild\" class=\"border-t border-gray-100 pt-2 dark:border-dark-700\">"
     }
   ]
 }

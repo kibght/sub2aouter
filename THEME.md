@@ -61,14 +61,17 @@ docker compose up -d --no-deps sub2api
 不再需要额外的 `docker-compose.theme.yml` 覆盖文件。
 ## 自动更新
 
-`.github/workflows/upstream-theme-sync.yml` 每天检查一次 `Wei-Shaw/sub2api`：
+`.github/workflows/upstream-theme-sync.yml` 每 30 分钟检查一次 `Wei-Shaw/sub2api`；上游 SHA 未变化时跳过构建和发布：
 
 1. 获取最新上游源码。
 2. 覆盖 `theme/apophis` 中的首页主题。
 3. 检查 UTF-8 编码和主题漂移。
 4. 运行前端测试、构建和后端单元测试。
 5. 更新 `themed-release` 分支。
-6. 发布 `ghcr.io/kibght/sub2aouter:latest`。
+6. 使用统一版本号发布 `ghcr.io/kibght/sub2aouter:<version>`、`latest` 和二进制 Release。
+7. 管理后台每 30 分钟检查自有仓库 Release，发现新版本后显示提醒。
+8. Docker 构建只展示 Compose 更新命令，裸机 Release 构建保留二进制更新。
+
 
 上游更新不会直接修改 `theme/apophis`，因此不会覆盖自定义模板。同步失败时不会更新 `themed-release` 和 `latest` 镜像。
 

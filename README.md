@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # Sub2Aouter Apophis Theme
 
@@ -91,7 +91,7 @@ themed-release   GHCR 镜像
 
 `.github/workflows/upstream-theme-sync.yml` 会：
 
-1. 在 `main` 推送、手动触发或每天北京时间 **03:30** 运行。
+1. 在 `main` 推送、手动触发或每 30 分钟定时触发；定时触发且上游 SHA 未变化时直接结束。
 2. 拉取 `Wei-Shaw/sub2api` 最新上游源码。
 3. 复制永久主题和工具文件。
 4. 应用 `theme/apophis/manifest.json`。
@@ -101,6 +101,10 @@ themed-release   GHCR 镜像
 8. 构建并推送不可变 GHCR 镜像。
 9. 更新 `themed-release`。
 10. 最后更新 `latest` 镜像。
+11. Docker 镜像和二进制 Release 使用同一个 `2026.<月>.<运行编号>` 版本号。
+12. 管理后台版本卡片每 30 分钟检查 `kibght/sub2aouter`，发现新版本后显示黄色提醒。
+13. Docker 构建只显示 Compose 更新命令，不在容器内部替换二进制。
+
 
 任何检查失败时，不更新 `themed-release` 和 `latest`，现有部署继续使用上一个通过验证的版本。
 
