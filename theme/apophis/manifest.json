@@ -11,6 +11,10 @@
       "target": "frontend/src/views/__tests__/HomeView.spec.ts"
     },
     {
+      "source": "files/frontend/src/views/__tests__/HomeView.compact.spec.ts",
+      "target": "frontend/src/views/__tests__/HomeView.compact.spec.ts"
+    },
+    {
       "source": "files/frontend/src/styles/apophis-theme.css",
       "target": "frontend/src/styles/apophis-theme.css"
     },
