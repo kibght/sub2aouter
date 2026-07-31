@@ -151,3 +151,11 @@ test('themed binary releases publish inherited upstream notes from a notes file'
   assert.doesNotMatch(workflow, /--notes\s+"/)
   assert.equal(workflow, overlayWorkflow)
 })
+
+test('generated release branch is pushed as a self-contained root snapshot', async () => {
+  const workflow = await read('.github/workflows/upstream-theme-sync.yml')
+  assert.match(workflow, /git commit-tree/)
+  assert.match(workflow, /refs\/heads\/themed-release/)
+  assert.match(workflow, /git push --no-thin/)
+  assert.doesNotMatch(workflow, /git switch -C themed-release/)
+})

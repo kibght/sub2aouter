@@ -271,12 +271,12 @@ jobs:
         working-directory: ${{ env.GENERATED_DIR }}
         run: |
           set -euo pipefail
-          git switch -C themed-release
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add --all
-          git commit -m "chore: sync upstream ${UPSTREAM_SHA} with apophis theme as ${RELEASE_VERSION}"
-          git push origin HEAD:themed-release --force
+          RELEASE_TREE="$(git write-tree)"
+          RELEASE_COMMIT="$(printf 'chore: sync upstream %s with apophis theme as %s\n' "$UPSTREAM_SHA" "$RELEASE_VERSION" | git commit-tree "$RELEASE_TREE")"
+          git push --no-thin origin "${RELEASE_COMMIT}:refs/heads/themed-release" --force
 
       - name: Publish latest image after release branch succeeds
         if: env.SHOULD_PUBLISH == 'true'

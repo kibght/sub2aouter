@@ -73,6 +73,7 @@ docker compose up -d --no-deps sub2api
 8. Docker 构建只展示 Compose 更新命令，裸机 Release 构建保留二进制更新。
 9. 自有 Release 自动继承当前源码已包含的上游 Release 完整更新日志。
 10. 上游未发布对应 Release 或 API 不可用时，回退为提交摘要。
+11. `themed-release` 使用无父快照和自包含 pack 推送，降低远端 `index-pack` 失败风险。
 
 
 上游更新不会直接修改 `theme/apophis`，因此不会覆盖自定义模板。同步失败时不会更新 `themed-release` 和 `latest` 镜像。
