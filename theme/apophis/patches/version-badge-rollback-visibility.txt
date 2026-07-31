@@ -1,0 +1,2 @@
+                <!-- Version rollback entry -->
+                <div v-if="!isDockerBuild" class="border-t border-gray-100 pt-2 dark:border-dark-700">
