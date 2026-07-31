@@ -231,8 +231,45 @@
                 </button>
               </div>
 
-              <!-- Priority 3: Update available for source build - show git pull hint -->
-              <div v-else-if="hasUpdate && !isReleaseBuild" class="space-y-2">
+              <!-- Priority 3: Docker deployment - show a safe Compose update command -->
+              <div v-else-if="hasUpdate && isDockerBuild" class="space-y-2">
+                <a
+                  v-if="releaseInfo?.html_url && releaseInfo.html_url !== '#'"
+                  :href="releaseInfo.html_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="group flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 transition-colors hover:bg-amber-100 dark:border-amber-800/50 dark:bg-amber-900/20 dark:hover:bg-amber-900/30"
+                >
+                  <Icon name="download" size="sm" :stroke-width="2" class="text-amber-600 dark:text-amber-400" />
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-medium text-amber-700 dark:text-amber-300">
+                      {{ t('version.updateAvailable') }}
+                    </p>
+                    <p class="text-xs text-amber-600/70 dark:text-amber-400/70">
+                      v{{ latestVersion }}
+                    </p>
+                  </div>
+                </a>
+
+                <div class="overflow-hidden rounded-lg border border-gray-200 dark:border-dark-600">
+                  <div class="flex items-center justify-between border-b border-gray-200 bg-gray-100 px-2 py-1.5 dark:border-dark-600 dark:bg-dark-700">
+                    <span class="text-[11px] font-medium text-gray-500 dark:text-dark-300">
+                      {{ t('version.deployDocker') }}
+                    </span>
+                    <button
+                      @click="copyToClipboard(dockerUpdateCommand)"
+                      class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600 dark:text-dark-400 dark:hover:bg-dark-600 dark:hover:text-dark-200"
+                    >
+                      <Icon :name="copied ? 'check' : 'copy'" size="xs" :stroke-width="2" />
+                      {{ copied ? t('version.copied') : t('version.copyCommand') }}
+                    </button>
+                  </div>
+                  <code class="block select-all whitespace-pre-wrap break-all bg-gray-50 p-2.5 font-mono text-[10px] leading-relaxed text-gray-600 dark:bg-dark-900 dark:text-dark-300">{{ dockerUpdateCommand }}</code>
+                </div>
+              </div>
+
+              <!-- Priority 4: Update available for source build - show git pull hint -->              <!-- Priority 3: Update available for source build - show git pull hint -->
+              <div v-else-if="hasUpdate && !isReleaseBuild && !isDockerBuild" class="space-y-2">
                 <a
                   v-if="releaseInfo?.html_url && releaseInfo.html_url !== '#'"
                   :href="releaseInfo.html_url"
@@ -375,7 +412,7 @@
                 </a>
 
                 <!-- Version rollback entry -->
-                <div class="border-t border-gray-100 pt-2 dark:border-dark-700">
+                <div v-if="!isDockerBuild" class="border-t border-gray-100 pt-2 dark:border-dark-700">
                   <button
                     @click="toggleRollbackPanel"
                     class="group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-600 dark:text-dark-500 dark:hover:bg-dark-700/50 dark:hover:text-dark-300"
@@ -651,9 +688,8 @@ import {
 import { useClipboard } from '@/composables/useClipboard'
 import Icon from '@/components/icons/Icon.vue'
 
-const GITHUB_REPO = 'Wei-Shaw/sub2api'
-// Docker Hub image published by CI (tags carry no "v" prefix, e.g. weishaw/sub2api:0.1.146)
-const DOCKER_IMAGE = 'weishaw/sub2api'
+const GITHUB_REPO = 'kibght/sub2aouter'
+const DOCKER_IMAGE = 'ghcr.io/kibght/sub2aouter'
 
 const { t } = useI18n()
 
@@ -696,6 +732,9 @@ const selectedRollbackVersion = ref('')
 const rollingBack = ref(false)
 const rollbackError = ref('')
 
+const VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000
+let versionRefreshInterval: number | undefined
+
 const { copied, copyToClipboard } = useClipboard()
 
 // Manual rollback methods differ by deployment: script installs use install.sh,
@@ -728,8 +767,12 @@ const activeManualCommand = computed(() =>
   manualTab.value === 'docker' ? dockerRollbackCommand.value : scriptRollbackCommand.value
 )
 
-// Only show update check for release builds (binary/docker deployment)
+// Binary releases can update in place; Docker deployments only show Compose commands.
 const isReleaseBuild = computed(() => buildType.value === 'release')
+const isDockerBuild = computed(() => buildType.value === 'docker')
+const dockerUpdateCommand = computed(() =>
+  ['docker compose pull sub2api', 'docker compose up -d --no-deps sub2api'].join('\n')
+)
 
 function toggleDropdown() {
   dropdownOpen.value = !dropdownOpen.value
@@ -912,12 +955,20 @@ function handleClickOutside(event: MouseEvent) {
 onMounted(() => {
   if (isAdmin.value) {
     // Use cached version if available, otherwise fetch
-    appStore.fetchVersion(false)
+    void appStore.fetchVersion(false)
+    versionRefreshInterval = window.setInterval(() => {
+      if (isAdmin.value) {
+        void appStore.fetchVersion(true)
+      }
+    }, VERSION_REFRESH_INTERVAL_MS)
   }
   document.addEventListener('click', handleClickOutside)
 })
 
 onBeforeUnmount(() => {
+  if (versionRefreshInterval !== undefined) {
+    window.clearInterval(versionRefreshInterval)
+  }
   document.removeEventListener('click', handleClickOutside)
 })
 </script>
