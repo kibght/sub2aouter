@@ -9,6 +9,8 @@ export const RELEASE_PIPELINE_FILES = Object.freeze([
   'frontend/src/components/common/VersionBadge.vue',
   'frontend/src/views/HomeView.vue',
   'README.md',
+  'scripts/lib/release-version.mjs',
+  'scripts/next-release-version.mjs',
   'theme/apophis/files/frontend/src/views/HomeView.vue',
   'theme/apophis/files/README.md',
   'theme/apophis/files/.github/workflows/theme-binary-release.yml',
@@ -73,6 +75,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.skip_unchanged', syncPath, hasPattern(sync, /github\.event_name[^\n]+schedule[^\n]+PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Scheduled runs must skip unchanged upstream revisions.')
   check('sync.theme_overlay', syncPath, sync.includes('node scripts/apply-theme.mjs --root .'), 'Sync must apply the Apophis overlay to fetched upstream source.')
   check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-upstream-release-notes.md'), 'Sync must persist upstream revision and release notes metadata.')
+  check('sync.release_version', syncPath, sync.includes('PREVIOUS_RELEASE_VERSION') && sync.includes('node scripts/next-release-version.mjs \"$PREVIOUS_RELEASE_VERSION\"'), 'Sync must migrate the next release to v0.1.200 and increment the persisted version.')
   check('sync.publish_order', syncPath, hasOrderedMarkers(sync, [
     'name: Push immutable themed image',
     'name: Update generated release branch',
@@ -91,6 +94,10 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
 
   const overlayBinaryPath = 'theme/apophis/files/.github/workflows/theme-binary-release.yml'
   check('binary.overlay_copy', overlayBinaryPath, files.get(overlayBinaryPath) === binary, 'The permanent theme copy of the binary workflow must match the active workflow.')
+
+  const releaseVersionPath = 'scripts/lib/release-version.mjs'
+  const releaseVersion = files.get(releaseVersionPath) || ''
+  check('release_version.bootstrap', releaseVersionPath, releaseVersion.includes('FIRST_RELEASE_PATCH = 200'), 'Release version generation must bootstrap at v0.1.200.')
 
   const servicePath = 'backend/internal/service/update_service.go'
   const service = files.get(servicePath) || ''

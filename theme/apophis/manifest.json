@@ -406,6 +406,13 @@
       "sentinel": "githubRepo     = \"kibght/sub2aouter\""
     },
     {
+      "target": "backend/internal/service/update_service.go",
+      "operation": "replace",
+      "marker": "func compareVersions(current, latest string) int {\n\tcurrentParts := parseVersion(current)\n\tlatestParts := parseVersion(latest)\n\n\tfor i := 0; i < 3; i++ {\n\t\tif currentParts[i] < latestParts[i] {\n\t\t\treturn -1\n\t\t}\n\t\tif currentParts[i] > latestParts[i] {\n\t\t\treturn 1\n\t\t}\n\t}\n\treturn 0\n}",
+      "source": "patches/update-version-migration.txt",
+      "sentinel": "func isThemedReleaseVersion"
+    },
+    {
       "target": "frontend/src/components/common/VersionBadge.vue",
       "operation": "replace",
       "marker": "const GITHUB_REPO = 'Wei-Shaw/sub2api'\n// Docker Hub image published by CI (tags carry no \"v\" prefix, e.g. weishaw/sub2api:0.1.146)\nconst DOCKER_IMAGE = 'weishaw/sub2api'",

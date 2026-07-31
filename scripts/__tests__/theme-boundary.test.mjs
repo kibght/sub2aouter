@@ -11,7 +11,7 @@ test('theme overlay never targets backend implementation files', async () => {
     ...(manifest.files || []).map((entry) => entry.target),
     ...(manifest.patches || []).map((entry) => entry.target),
   ]
-  assert.deepEqual(targets.filter((target) => target === 'backend' || target.startsWith('backend/')), ['backend/internal/service/update_service.go'])
+  assert.deepEqual([...new Set(targets.filter((target) => target === 'backend' || target.startsWith('backend/')))], ['backend/internal/service/update_service.go'])
 })
 
 test('shipped theme contains no target-site brand, domain, or account credentials', async () => {
@@ -65,6 +65,7 @@ test('panel updater and binary release workflow use the custom repository', asyn
   assert.match(workflow, /checksums\.txt/)
   const manifest = JSON.parse(manifestText)
   assert.ok((manifest.patches || []).some((entry) => entry.target === 'backend/internal/service/update_service.go'))
+  assert.ok((manifest.patches || []).some((entry) => entry.sentinel === 'func isThemedReleaseVersion'))
   assert.ok((manifest.files || []).some((entry) => entry.target === '.github/workflows/theme-binary-release.yml'))
 })
 
@@ -81,7 +82,9 @@ test('Docker images and binary releases share one generated release version', as
     read('.github/workflows/upstream-theme-sync.yml'),
     read('.github/workflows/theme-binary-release.yml'),
   ])
-  assert.match(syncWorkflow, /GITHUB_RUN_NUMBER/)
+  assert.match(syncWorkflow, /PREVIOUS_RELEASE_VERSION/)
+  assert.match(syncWorkflow, /node scripts\/next-release-version\.mjs/)
+  assert.doesNotMatch(syncWorkflow, /GITHUB_RUN_NUMBER/)
   assert.match(syncWorkflow, /backend\/cmd\/server\/VERSION/)
   assert.match(syncWorkflow, /\$\{IMAGE\}:\$\{RELEASE_VERSION\}/)
   assert.match(binaryWorkflow, /cat backend\/cmd\/server\/VERSION/)

@@ -66,3 +66,17 @@ test('contract rejects an explicit contributor card in the shipped frontend temp
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
   assert.ok(violations.some((violation) => violation.code === 'template.contributors'))
 })
+test('contract rejects a return to calendar release versions', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(
+    path,
+    files.get(path).replace(
+      'node scripts/next-release-version.mjs "$PREVIOUS_RELEASE_VERSION"',
+      'date -u +%Y.%m.%d',
+    ),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.release_version'))
+})
