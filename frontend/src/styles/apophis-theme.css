@@ -120,7 +120,7 @@
 }
 
 .app-shell .sidebar-brand > .relative {
-  display: none;
+  display: block;
 }
 
 .app-shell .sidebar-nav {

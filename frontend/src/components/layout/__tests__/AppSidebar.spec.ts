@@ -8,6 +8,8 @@ const componentPath = resolve(dirname(fileURLToPath(import.meta.url)), '../AppSi
 const componentSource = readFileSync(componentPath, 'utf8')
 const stylePath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../style.css')
 const styleSource = readFileSync(stylePath, 'utf8')
+const themeStylePath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../styles/apophis-theme.css')
+const themeStyleSource = readFileSync(themeStylePath, 'utf8')
 
 describe('AppSidebar custom SVG styles', () => {
   it('does not override uploaded SVG fill or stroke colors', () => {
@@ -51,5 +53,17 @@ describe('AppSidebar header styles', () => {
     expect(sidebarBrandBlockMatch).not.toBeNull()
     expect(sidebarHeaderBlockMatch?.[0]).not.toContain('@apply overflow-hidden;')
     expect(sidebarBrandBlockMatch?.[0]).not.toContain('overflow: hidden;')
+  })
+})
+
+describe('AppSidebar version badge visibility', () => {
+  it('keeps the left sidebar version badge visible in the Apophis theme', () => {
+    const selector = '.app-shell .sidebar-brand > .relative {'
+    const blockStart = themeStyleSource.indexOf(selector)
+    const blockEnd = themeStyleSource.indexOf('}', blockStart)
+    const versionBadgeBlock = themeStyleSource.slice(blockStart, blockEnd + 1)
+
+    expect(blockStart).toBeGreaterThanOrEqual(0)
+    expect(versionBadgeBlock).not.toContain('display: none;')
   })
 })
