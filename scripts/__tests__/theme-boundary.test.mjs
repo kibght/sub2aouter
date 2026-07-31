@@ -159,3 +159,11 @@ test('generated release branch is pushed as a self-contained root snapshot', asy
   assert.match(workflow, /git push --no-thin/)
   assert.doesNotMatch(workflow, /git switch -C themed-release/)
 })
+test('generated snapshot preserves the existing remote workflow directory', async () => {
+  const workflow = await read('.github/workflows/upstream-theme-sync.yml')
+  const restoreIndex = workflow.indexOf('git checkout origin/themed-release -- .github/workflows')
+  const snapshotIndex = workflow.indexOf('RELEASE_TREE="$(git write-tree)"')
+  assert.match(workflow, /rm -rf "\$GENERATED_DIR\/\.github\/workflows"/)
+  assert.ok(restoreIndex >= 0, 'remote workflow directory must be restored')
+  assert.ok(snapshotIndex > restoreIndex, 'workflow restoration must happen before snapshot creation')
+})
