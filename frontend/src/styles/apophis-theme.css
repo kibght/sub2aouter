@@ -1,0 +1,580 @@
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+  }
+}
+
+/* Authenticated console shell */
+.app-shell {
+  --console-accent: #ff3d71;
+  --console-background: #fafafa;
+  --console-surface: #ffffff;
+  --console-surface-muted: #f4f4f5;
+  --console-border: #e4e4e7;
+  --console-text: #18181b;
+  --console-muted: #71717a;
+  --console-hover: #f4f4f5;
+  min-height: 100vh;
+  background: var(--console-background) !important;
+  color: var(--console-text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+.dark .app-shell {
+  --console-background: #09090b;
+  --console-surface: #111113;
+  --console-surface-muted: #18181b;
+  --console-border: #27272a;
+  --console-text: #fafafa;
+  --console-muted: #a1a1aa;
+  --console-hover: #1f1f22;
+}
+
+.app-shell .bg-mesh-gradient {
+  display: none !important;
+}
+
+.app-main {
+  background: var(--console-background);
+}
+
+.app-content {
+  min-height: calc(100vh - 4rem);
+  background: var(--console-background);
+}
+
+.app-shell .sidebar {
+  background: var(--console-surface) !important;
+  border-right: 1px solid var(--console-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.app-shell .sidebar-header {
+  height: 4rem;
+  padding: 0 1.5rem;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--console-border);
+  background: var(--console-surface);
+}
+
+.app-shell .sidebar-header.sidebar-header-collapsed {
+  padding-left: 1.125rem;
+  padding-right: 1.125rem;
+}
+
+.app-shell .sidebar-logo {
+  flex-basis: 2.25rem;
+  min-width: 2.25rem;
+  width: 2.25rem !important;
+  height: 2.25rem !important;
+  border: 1px solid var(--console-border);
+  border-radius: 0.5rem !important;
+  background: var(--console-surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04) !important;
+}
+
+.app-shell .sidebar-brand-title {
+  color: var(--console-text) !important;
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+}
+
+.app-shell .sidebar-brand > .relative {
+  display: block;
+}
+
+.app-shell .sidebar-nav {
+  padding: 1rem 0.75rem;
+}
+
+.app-shell .sidebar-section {
+  margin-bottom: 0.5rem;
+}
+
+.app-shell .sidebar-section-title {
+  display: none;
+}
+
+.app-shell .sidebar-link {
+  min-height: 2.75rem;
+  margin-bottom: 0.25rem;
+  gap: 0.75rem;
+  padding: 0.625rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  color: #62646f !important;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.dark .app-shell .sidebar-link {
+  color: #b4b4bd !important;
+}
+
+.app-shell .sidebar-link:hover {
+  background: var(--console-hover) !important;
+  color: var(--console-text) !important;
+}
+
+.app-shell .sidebar-link-active,
+.app-shell .sidebar-link-active:hover {
+  background: var(--console-surface-muted) !important;
+  border-color: transparent !important;
+  color: var(--console-text) !important;
+  box-shadow: none !important;
+}
+
+.app-shell .sidebar-link svg,
+.app-shell .sidebar-link .sidebar-svg-icon {
+  color: currentColor;
+  stroke-width: 1.6;
+}
+
+.app-shell .sidebar-link.sidebar-link-collapsed {
+  justify-content: center;
+  gap: 0;
+  padding-left: 0.625rem;
+  padding-right: 0.625rem;
+}
+
+.app-shell .sidebar > .mt-auto {
+  padding: 0.75rem;
+  border-color: var(--console-border) !important;
+  background: var(--console-surface);
+}
+
+.app-header {
+  background: color-mix(in srgb, var(--console-surface) 96%, transparent) !important;
+  border-bottom: 1px solid var(--console-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.app-header-inner {
+  height: 4rem !important;
+  padding-left: 1.5rem !important;
+  padding-right: 1.5rem !important;
+}
+
+.app-header-title {
+  color: var(--console-text) !important;
+  font-size: 1.125rem !important;
+  font-weight: 700 !important;
+  line-height: 1.4 !important;
+  letter-spacing: -0.02em;
+}
+
+.app-header-description {
+  margin-top: 0.05rem;
+  color: var(--console-muted) !important;
+  line-height: 1.25rem;
+}
+
+.app-header-actions {
+  gap: 0.75rem !important;
+}
+
+.app-header-actions > a,
+.app-header-actions > button {
+  border-radius: 0.5rem !important;
+}
+
+.app-header-balance {
+  border: 1px solid var(--console-border);
+  border-radius: 0.5rem !important;
+  background: var(--console-surface-muted) !important;
+  box-shadow: none !important;
+}
+
+.app-header-balance-icon,
+.app-header-balance-value {
+  color: var(--console-text) !important;
+}
+
+.app-header-user {
+  border-radius: 0.5rem !important;
+}
+
+.app-header-user:hover {
+  background: var(--console-hover) !important;
+}
+
+.app-header-avatar {
+  border-radius: 0.5rem !important;
+  background: var(--console-text) !important;
+  background-image: none !important;
+  color: var(--console-surface) !important;
+  box-shadow: none !important;
+  font-size: 0.75rem !important;
+}
+
+.app-header-user-name {
+  color: var(--console-text) !important;
+  font-weight: 500;
+}
+
+.app-header-user-role {
+  color: var(--console-muted) !important;
+}
+
+.app-shell .page-header {
+  margin-bottom: 1.25rem;
+}
+
+.app-shell .page-title {
+  color: var(--console-text) !important;
+  font-size: 1.25rem;
+  line-height: 1.6rem;
+  letter-spacing: -0.02em;
+}
+
+.app-shell .page-description {
+  color: var(--console-muted) !important;
+}
+
+.app-shell .card,
+.app-shell .card-glass,
+.app-shell .table-container,
+.app-shell .table-wrapper,
+.app-shell .modal-content,
+.app-shell .dropdown {
+  border-color: var(--console-border) !important;
+  border-radius: 0.625rem !important;
+  background: var(--console-surface) !important;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.025) !important;
+  backdrop-filter: none !important;
+}
+
+.app-shell .card-hover:hover {
+  border-color: #d4d4d8 !important;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.04) !important;
+  transform: none !important;
+}
+
+.dark .app-shell .card-hover:hover {
+  border-color: #3f3f46 !important;
+}
+
+.app-shell .rounded-2xl {
+  border-radius: 0.75rem !important;
+}
+
+.app-shell .rounded-xl {
+  border-radius: 0.5rem !important;
+}
+
+.app-shell .shadow-sm,
+.app-shell .shadow-md,
+.app-shell .shadow-lg,
+.app-shell .shadow-xl,
+.app-shell .shadow-2xl {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.035) !important;
+}
+
+.app-shell .btn {
+  border-radius: 0.5rem;
+  box-shadow: none;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.app-shell .btn:active {
+  transform: none;
+}
+
+.app-shell .btn-primary,
+.app-shell button[class*="bg-primary-"]:not(.sidebar-link),
+.app-shell a[class*="bg-primary-"]:not(.sidebar-link) {
+  border-color: #18181b !important;
+  background: #18181b !important;
+  background-image: none !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.app-shell .btn-primary:hover,
+.app-shell button[class*="bg-primary-"]:not(.sidebar-link):hover,
+.app-shell a[class*="bg-primary-"]:not(.sidebar-link):hover {
+  background: #27272a !important;
+}
+
+.dark .app-shell .btn-primary,
+.dark .app-shell button[class*="bg-primary-"]:not(.sidebar-link),
+.dark .app-shell a[class*="bg-primary-"]:not(.sidebar-link) {
+  border-color: #fafafa !important;
+  background: #fafafa !important;
+  color: #09090b !important;
+}
+
+.app-shell .btn-secondary,
+.app-shell .input,
+.app-shell select,
+.app-shell textarea {
+  border-color: var(--console-border) !important;
+  border-radius: 0.5rem !important;
+  background: var(--console-surface) !important;
+  color: var(--console-text) !important;
+  box-shadow: none !important;
+}
+
+.app-shell .input:focus,
+.app-shell select:focus,
+.app-shell textarea:focus {
+  border-color: var(--console-text) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--console-text) 12%, transparent) !important;
+}
+
+.app-shell .table th {
+  border-color: var(--console-border) !important;
+  background: var(--console-background) !important;
+  color: var(--console-muted) !important;
+  font-weight: 500;
+}
+
+.app-shell .table td {
+  border-color: var(--console-border) !important;
+  color: var(--console-text) !important;
+}
+
+.app-shell .table tbody tr:hover {
+  background: var(--console-hover) !important;
+}
+
+.app-shell .dropdown-item {
+  color: var(--console-text) !important;
+}
+
+.app-shell .dropdown-item:hover {
+  background: var(--console-hover) !important;
+}
+
+@media (max-width: 1023px) {
+  .app-content {
+    padding: 1rem !important;
+  }
+
+  .app-header-inner {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+}
+
+/* Public authentication shell */
+.auth-shell {
+  --auth-background: #ffffff;
+  --auth-surface: #ffffff;
+  --auth-border: #e4e4e7;
+  --auth-text: #18181b;
+  --auth-muted: #71717a;
+  align-items: flex-start !important;
+  padding: 3rem 1rem 2rem !important;
+  background: var(--auth-background) !important;
+  color: var(--auth-text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+.dark .auth-shell {
+  --auth-background: #09090b;
+  --auth-surface: #111113;
+  --auth-border: #27272a;
+  --auth-text: #fafafa;
+  --auth-muted: #a1a1aa;
+}
+
+.auth-background {
+  background: var(--auth-background) !important;
+  background-image: none !important;
+}
+
+.auth-decorations {
+  opacity: 1;
+}
+
+.auth-orb {
+  display: none !important;
+}
+
+.auth-grid {
+  background-image:
+    linear-gradient(rgb(24 24 27 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(24 24 27 / 0.035) 1px, transparent 1px) !important;
+  background-size: 64px 64px !important;
+  mask-image: linear-gradient(to bottom, black 0%, black 76%, transparent 100%);
+}
+
+.dark .auth-grid {
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.04) 1px, transparent 1px) !important;
+}
+
+.auth-container {
+  max-width: 28rem !important;
+}
+
+.auth-brand {
+  margin-bottom: 2rem !important;
+}
+
+.auth-logo {
+  width: 3rem !important;
+  height: 3rem !important;
+  margin-bottom: 0.875rem !important;
+  border: 1px solid var(--auth-border);
+  border-radius: 0.625rem !important;
+  background: var(--auth-surface);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.08) !important;
+}
+
+.auth-site-name {
+  margin-bottom: 0.25rem !important;
+  background: none !important;
+  color: var(--auth-text) !important;
+  -webkit-background-clip: initial !important;
+  background-clip: initial !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: 1.875rem !important;
+  font-weight: 750 !important;
+  letter-spacing: -0.035em;
+}
+
+.auth-site-subtitle {
+  color: var(--auth-muted) !important;
+}
+
+.auth-card {
+  padding: 2rem !important;
+  border: 1px solid var(--auth-border) !important;
+  border-radius: 0.625rem !important;
+  background: var(--auth-surface) !important;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.055) !important;
+  backdrop-filter: none !important;
+}
+
+.auth-card h1,
+.auth-card h2,
+.auth-card h3 {
+  color: var(--auth-text) !important;
+  letter-spacing: -0.025em;
+}
+
+.auth-shell .input-label,
+.auth-shell .input-hint,
+.auth-shell p {
+  color: var(--auth-muted);
+}
+
+.auth-shell .input,
+.auth-shell select,
+.auth-shell textarea {
+  border: 1px solid var(--auth-border) !important;
+  border-radius: 0.5rem !important;
+  background: var(--auth-surface) !important;
+  color: var(--auth-text) !important;
+  box-shadow: none !important;
+}
+
+.auth-shell .input:focus,
+.auth-shell select:focus,
+.auth-shell textarea:focus {
+  border-color: var(--auth-text) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--auth-text) 10%, transparent) !important;
+}
+
+.auth-shell .btn-primary,
+.auth-shell button[class*="bg-primary-"] {
+  border-color: #18181b !important;
+  border-radius: 0.5rem !important;
+  background: #18181b !important;
+  background-image: none !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.auth-shell .btn-primary:hover,
+.auth-shell button[class*="bg-primary-"]:hover {
+  background: #27272a !important;
+}
+
+.dark .auth-shell .btn-primary,
+.dark .auth-shell button[class*="bg-primary-"] {
+  border-color: #fafafa !important;
+  background: #fafafa !important;
+  color: #09090b !important;
+}
+
+.auth-shell a[class*="text-primary-"],
+.auth-footer a {
+  color: var(--auth-text) !important;
+  font-weight: 500;
+}
+
+.auth-shell a[class*="text-primary-"]:hover,
+.auth-footer a:hover {
+  color: var(--auth-muted) !important;
+}
+
+.auth-footer,
+.auth-copyright {
+  color: var(--auth-muted) !important;
+}
+
+.auth-shell .card,
+.auth-shell .card-glass,
+.auth-shell .dropdown,
+.auth-shell .modal-content {
+  border-color: var(--auth-border) !important;
+  background: var(--auth-surface) !important;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.055) !important;
+}
+
+@media (max-width: 640px) {
+  .auth-shell {
+    padding-top: 2rem !important;
+  }
+
+  .auth-card {
+    padding: 1.5rem !important;
+  }
+}
