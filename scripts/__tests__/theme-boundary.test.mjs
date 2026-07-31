@@ -125,3 +125,29 @@ test('Docker deployments expose reminder-only updates with the themed image', as
     (entry) => entry.target === 'Dockerfile' && entry.sentinel === '-X main.BuildType=docker',
   ))
 })
+
+test('upstream sync captures release notes only for a release contained in the fetched source', async () => {
+  const workflow = await read('.github/workflows/upstream-theme-sync.yml')
+  assert.match(workflow, /repos\/Wei-Shaw\/sub2api\/releases\/latest/)
+  assert.match(workflow, /gh api[\s\S]*--jq/)
+  assert.doesNotMatch(workflow, /\n\s+jq -r/)
+  assert.match(workflow, /merge-base --is-ancestor/)
+  assert.match(workflow, /\.apophis-upstream-release-tag/)
+  assert.match(workflow, /\.apophis-upstream-release-name/)
+  assert.match(workflow, /\.apophis-upstream-release-url/)
+  assert.match(workflow, /\.apophis-upstream-release-notes\.md/)
+  assert.match(workflow, /git -C "\$GENERATED_DIR" log/)
+})
+
+test('themed binary releases publish inherited upstream notes from a notes file', async () => {
+  const [workflow, overlayWorkflow] = await Promise.all([
+    read('.github/workflows/theme-binary-release.yml'),
+    read('theme/apophis/files/.github/workflows/theme-binary-release.yml'),
+  ])
+  assert.match(workflow, /\.apophis-upstream-release-tag/)
+  assert.match(workflow, /\.apophis-upstream-release-notes\.md/)
+  assert.match(workflow, /--notes-file/)
+  assert.match(workflow, /UPSTREAM_RELEASE_TAG/)
+  assert.doesNotMatch(workflow, /--notes\s+"/)
+  assert.equal(workflow, overlayWorkflow)
+})

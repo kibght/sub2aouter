@@ -56,6 +56,7 @@ jobs:
           if git show origin/themed-release:.apophis-upstream-sha > /tmp/apophis-upstream-sha 2>/dev/null; then
             PREVIOUS_UPSTREAM_SHA="$(tr -d '[:space:]' < /tmp/apophis-upstream-sha)"
           fi
+          echo "PREVIOUS_UPSTREAM_SHA=$PREVIOUS_UPSTREAM_SHA" >> "$GITHUB_ENV"
 
           if [[ "${{ github.event_name }}" == "schedule" && "$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA" ]]; then
             echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
@@ -93,6 +94,85 @@ jobs:
           set -euo pipefail
           printf '%s\n' "$RELEASE_VERSION" > backend/cmd/server/VERSION
           printf '%s\n' "$UPSTREAM_SHA" > .apophis-upstream-sha
+
+      - name: Capture upstream release notes
+        if: env.SHOULD_PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          NOTES_FILE="$GENERATED_DIR/.apophis-upstream-release-notes.md"
+          TAG_FILE="$GENERATED_DIR/.apophis-upstream-release-tag"
+          NAME_FILE="$GENERATED_DIR/.apophis-upstream-release-name"
+          URL_FILE="$GENERATED_DIR/.apophis-upstream-release-url"
+
+          write_fallback_notes() {
+            local short_sha="${UPSTREAM_SHA:0:12}"
+            printf '%s\n' "unreleased-${short_sha}" > "$TAG_FILE"
+            printf '%s\n' "Sub2API upstream ${short_sha}" > "$NAME_FILE"
+            printf '%s\n' "https://github.com/Wei-Shaw/sub2api/commit/${UPSTREAM_SHA}" > "$URL_FILE"
+            {
+              printf 'No matching published upstream Release was found for commit %s.\n\n' "$UPSTREAM_SHA"
+              printf '## Upstream commits\n\n'
+              if [[ -n "${PREVIOUS_UPSTREAM_SHA:-}" ]] && git -C "$GENERATED_DIR" cat-file -e "${PREVIOUS_UPSTREAM_SHA}^{commit}" 2>/dev/null; then
+                git -C "$GENERATED_DIR" log --max-count=50 --pretty='- %s (%h)' "${PREVIOUS_UPSTREAM_SHA}..${UPSTREAM_SHA}"
+              else
+                git -C "$GENERATED_DIR" log -n 20 --pretty='- %s (%h)' "$UPSTREAM_SHA"
+              fi
+            } > "$NOTES_FILE"
+          }
+
+          if ! UPSTREAM_RELEASE_TAG="$(gh api repos/Wei-Shaw/sub2api/releases/latest --jq '.tag_name // ""')"; then
+            echo "Unable to query the latest upstream Release; using commit summary."
+            write_fallback_notes
+            exit 0
+          fi
+          if [[ -z "$UPSTREAM_RELEASE_TAG" ]]; then
+            echo "Latest upstream Release did not provide a tag; using commit summary."
+            write_fallback_notes
+            exit 0
+          fi
+
+          RELEASE_ENDPOINT="repos/Wei-Shaw/sub2api/releases/tags/${UPSTREAM_RELEASE_TAG}"
+          if ! UPSTREAM_RELEASE_NAME="$(gh api "$RELEASE_ENDPOINT" --jq '.name // .tag_name // ""')" ||
+             ! UPSTREAM_RELEASE_URL="$(gh api "$RELEASE_ENDPOINT" --jq '.html_url // ""')"; then
+            echo "Unable to read upstream Release metadata; using commit summary."
+            write_fallback_notes
+            exit 0
+          fi
+          if [[ -z "$UPSTREAM_RELEASE_URL" ]]; then
+            echo "Latest upstream Release metadata is incomplete; using commit summary."
+            write_fallback_notes
+            exit 0
+          fi
+
+          git -C "$GENERATED_DIR" fetch --deepen=500 upstream "$UPSTREAM_REF" || true
+          if ! git -C "$GENERATED_DIR" fetch --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:refs/tags/${UPSTREAM_RELEASE_TAG}"; then
+            echo "Unable to fetch upstream tag $UPSTREAM_RELEASE_TAG; using commit summary."
+            write_fallback_notes
+            exit 0
+          fi
+
+          UPSTREAM_RELEASE_SHA="$(git -C "$GENERATED_DIR" rev-list -n 1 "refs/tags/${UPSTREAM_RELEASE_TAG}")"
+          if ! git -C "$GENERATED_DIR" merge-base --is-ancestor "$UPSTREAM_RELEASE_SHA" "$UPSTREAM_SHA"; then
+            echo "Latest upstream Release $UPSTREAM_RELEASE_TAG is not contained in $UPSTREAM_SHA; using commit summary."
+            write_fallback_notes
+            exit 0
+          fi
+
+          printf '%s\n' "$UPSTREAM_RELEASE_TAG" > "$TAG_FILE"
+          printf '%s\n' "$UPSTREAM_RELEASE_NAME" > "$NAME_FILE"
+          printf '%s\n' "$UPSTREAM_RELEASE_URL" > "$URL_FILE"
+          if ! gh api "$RELEASE_ENDPOINT" --jq '.body // ""' > "$NOTES_FILE"; then
+            echo "Unable to read upstream Release notes; using commit summary."
+            write_fallback_notes
+            exit 0
+          fi
+          if [[ ! -s "$NOTES_FILE" ]]; then
+            printf 'Upstream Release %s did not provide release notes.\n' "$UPSTREAM_RELEASE_TAG" > "$NOTES_FILE"
+          fi
+          echo "Captured upstream Release $UPSTREAM_RELEASE_TAG at $UPSTREAM_RELEASE_SHA."
 
       - name: Verify theme overlay and UTF-8
         if: env.SHOULD_PUBLISH == 'true'

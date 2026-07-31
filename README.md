@@ -104,6 +104,8 @@ themed-release   GHCR 镜像
 11. Docker 镜像和二进制 Release 使用同一个 `2026.<月>.<运行编号>` 版本号。
 12. 管理后台版本卡片每 30 分钟检查 `kibght/sub2aouter`，发现新版本后显示黄色提醒。
 13. Docker 构建只显示 Compose 更新命令，不在容器内部替换二进制。
+14. 同步时继承当前源码已包含的上游 Release 标题、链接和完整更新日志。
+15. 找不到匹配的上游 Release 时，自动回退为上游提交摘要。
 
 
 任何检查失败时，不更新 `themed-release` 和 `latest`，现有部署继续使用上一个通过验证的版本。

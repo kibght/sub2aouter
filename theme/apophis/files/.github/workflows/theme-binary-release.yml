@@ -78,10 +78,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          set -euo pipefail
+          UPSTREAM_RELEASE_TAG="$(tr -d '[:space:]' < .apophis-upstream-release-tag)"
+          UPSTREAM_RELEASE_NAME="$(cat .apophis-upstream-release-name)"
+          UPSTREAM_RELEASE_URL="$(tr -d '[:space:]' < .apophis-upstream-release-url)"
+          UPSTREAM_SHA="$(tr -d '[:space:]' < .apophis-upstream-sha)"
+          THEMED_NOTES_FILE="$RUNNER_TEMP/themed-release-notes.md"
+          {
+            printf '> Based on upstream [%s](%s) (%s).\n\n' "$UPSTREAM_RELEASE_NAME" "$UPSTREAM_RELEASE_URL" "$UPSTREAM_RELEASE_TAG"
+            cat .apophis-upstream-release-notes.md
+            printf '\n\n---\n\n'
+            printf 'Apophis themed build %s, generated from upstream commit %s.\n' "$RELEASE_VERSION" "$UPSTREAM_SHA"
+          } > "$THEMED_NOTES_FILE"
+
           gh release create "$RELEASE_TAG" \
             dist/*.tar.gz dist/*.zip dist/checksums.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target themed-release \
-            --title "Sub2Aouter $RELEASE_VERSION" \
-            --notes "Apophis themed binary release generated from upstream commit $(cat .apophis-upstream-sha)." \
+            --title "Sub2Aouter $RELEASE_VERSION (based on $UPSTREAM_RELEASE_TAG)" \
+            --notes-file "$THEMED_NOTES_FILE" \
             --latest
