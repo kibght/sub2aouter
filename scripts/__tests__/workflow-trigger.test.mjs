@@ -21,3 +21,11 @@ test('upstream theme workflow runs the full regression suite before publishing l
   assert.ok(immutablePush < releaseBranch)
   assert.ok(releaseBranch < latestPush)
 })
+test('upstream sync verifies the release contract before fetching upstream', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  const contract = workflow.indexOf('name: Verify release pipeline contract')
+  const fetch = workflow.indexOf('name: Fetch upstream source')
+  assert.match(workflow, /node scripts\/verify-release-pipeline\.mjs --root \./)
+  assert.ok(contract >= 0, 'release contract step must exist')
+  assert.ok(contract < fetch, 'release contract must run before fetching upstream')
+})

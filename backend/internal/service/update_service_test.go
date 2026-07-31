@@ -185,3 +185,39 @@ func TestUpdateServiceRollbackToVersionAcceptsVPrefix(t *testing.T) {
 	require.NotErrorIs(t, err, ErrRollbackVersionNotAllowed)
 	require.Contains(t, err.Error(), "no compatible release found")
 }
+
+func TestCompareVersionsCalendarRelease(t *testing.T) {
+	tests := []struct {
+		current string
+		latest  string
+	}{
+		{current: "2026.7.21", latest: "2026.7.22"},
+		{current: "2026.7.99", latest: "2026.8.1"},
+		{current: "2026.12.99", latest: "2027.1.1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.current+"_to_"+tt.latest, func(t *testing.T) {
+			require.Equal(t, -1, compareVersions(tt.current, tt.latest))
+		})
+	}
+}
+
+func TestUpdateServiceDetectsNewThemedCalendarRelease(t *testing.T) {
+	client := &updateServiceGitHubClientStub{
+		release: &GitHubRelease{
+			TagName: "v2026.7.22",
+			Name:    "Sub2Aouter 2026.7.22",
+			HTMLURL: "https://github.com/kibght/sub2aouter/releases/tag/v2026.7.22",
+		},
+	}
+	svc := NewUpdateService(&updateServiceCacheStub{}, client, "2026.7.21", "docker")
+
+	info, err := svc.CheckUpdate(context.Background(), true)
+
+	require.NoError(t, err)
+	require.Equal(t, "2026.7.22", info.LatestVersion)
+	require.True(t, info.HasUpdate)
+	require.Equal(t, "docker", info.BuildType)
+	require.Equal(t, "https://github.com/kibght/sub2aouter/releases/tag/v2026.7.22", info.ReleaseInfo.HTMLURL)
+}

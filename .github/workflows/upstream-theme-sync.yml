@@ -37,6 +37,9 @@ jobs:
           fetch-depth: 0
           ref: main
 
+      - name: Verify release pipeline contract
+        run: node scripts/verify-release-pipeline.mjs --root .
+
       - name: Fetch upstream source
         shell: bash
         run: |
