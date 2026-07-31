@@ -1,0 +1,134 @@
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+
+export const RELEASE_PIPELINE_FILES = Object.freeze([
+  '.github/workflows/upstream-theme-sync.yml',
+  '.github/workflows/theme-binary-release.yml',
+  'backend/internal/service/update_service.go',
+  'Dockerfile',
+  'frontend/src/components/common/VersionBadge.vue',
+  'frontend/src/views/HomeView.vue',
+  'README.md',
+  'theme/apophis/files/frontend/src/views/HomeView.vue',
+  'theme/apophis/files/README.md',
+  'theme/apophis/files/.github/workflows/theme-binary-release.yml',
+  'theme/apophis/manifest.json',
+])
+
+function violation(code, path, message) {
+  return { code, path, message }
+}
+
+function hasPattern(text, pattern) {
+  return pattern.test(text)
+}
+
+function hasOrderedMarkers(text, markers) {
+  let cursor = -1
+  for (const marker of markers) {
+    const index = text.indexOf(marker, cursor + 1)
+    if (index < 0 || index <= cursor) {
+      return false
+    }
+    cursor = index
+  }
+  return true
+}
+
+function manifestHasPatch(manifest, target, sentinel) {
+  return (manifest.patches || []).some(
+    (entry) => entry.target === target && entry.sentinel === sentinel,
+  )
+}
+
+function manifestHasFile(manifest, target) {
+  return (manifest.files || []).some((entry) => entry.target === target)
+}
+
+export async function verifyReleasePipelineContract(root = '.', options = {}) {
+  const base = resolve(root)
+  const readText = options.readText || ((path) => readFile(resolve(base, path), 'utf8'))
+  const files = new Map()
+  const violations = []
+
+  for (const path of RELEASE_PIPELINE_FILES) {
+    try {
+      files.set(path, await readText(path))
+    } catch (error) {
+      violations.push(violation('file.missing', path, `Unable to read required file: ${error.message}`))
+    }
+  }
+
+  const check = (code, path, condition, message) => {
+    if (!condition) {
+      violations.push(violation(code, path, message))
+    }
+  }
+
+  const syncPath = '.github/workflows/upstream-theme-sync.yml'
+  const sync = files.get(syncPath) || ''
+  check('sync.push_main', syncPath, hasPattern(sync, /\n  push:\n    branches:\n      - main\n/), 'Sync must run for pushes to main.')
+  check('sync.schedule', syncPath, hasPattern(sync, /cron:\s*'\*\/30 \* \* \* \*'/), 'Sync must poll upstream every 30 minutes.')
+  check('sync.upstream', syncPath, sync.includes('https://github.com/Wei-Shaw/sub2api.git'), 'Sync must fetch the canonical upstream repository.')
+  check('sync.skip_unchanged', syncPath, hasPattern(sync, /github\.event_name[^\n]+schedule[^\n]+PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Scheduled runs must skip unchanged upstream revisions.')
+  check('sync.theme_overlay', syncPath, sync.includes('node scripts/apply-theme.mjs --root .'), 'Sync must apply the Apophis overlay to fetched upstream source.')
+  check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-upstream-release-notes.md'), 'Sync must persist upstream revision and release notes metadata.')
+  check('sync.publish_order', syncPath, hasOrderedMarkers(sync, [
+    'name: Push immutable themed image',
+    'name: Update generated release branch',
+    'name: Publish latest image after release branch succeeds',
+  ]), 'Immutable image, release branch, and latest image must publish in safe order.')
+  check('sync.latest_image', syncPath, sync.includes('docker push "${IMAGE}:latest"'), 'Sync must publish the Docker latest tag.')
+
+  const binaryPath = '.github/workflows/theme-binary-release.yml'
+  const binary = files.get(binaryPath) || ''
+  check('binary.workflow_run', binaryPath, hasPattern(binary, /workflow_run:[\s\S]*workflows:[\s\S]*Sync Upstream With Apophis Theme[\s\S]*types:[\s\S]*completed/), 'Binary release must trigger after the sync workflow completes.')
+  check('binary.success_guard', binaryPath, binary.includes("github.event.workflow_run.conclusion == 'success'"), 'Binary release must require a successful sync conclusion.')
+  check('binary.checkout', binaryPath, hasPattern(binary, /ref:\s*themed-release/), 'Binary release must build the generated themed-release branch.')
+  check('binary.version', binaryPath, binary.includes('cat backend/cmd/server/VERSION'), 'Binary release must reuse the generated version.')
+  check('binary.publish', binaryPath, binary.includes('gh release create') && binary.includes('--target themed-release') && binary.includes('--latest'), 'Binary release must publish the themed branch as the latest GitHub Release.')
+  check('binary.notes', binaryPath, binary.includes('.apophis-upstream-release-notes.md') && binary.includes('--notes-file'), 'Binary release must include the captured upstream notes file.')
+
+  const overlayBinaryPath = 'theme/apophis/files/.github/workflows/theme-binary-release.yml'
+  check('binary.overlay_copy', overlayBinaryPath, files.get(overlayBinaryPath) === binary, 'The permanent theme copy of the binary workflow must match the active workflow.')
+
+  const servicePath = 'backend/internal/service/update_service.go'
+  const service = files.get(servicePath) || ''
+  check('backend.repository', servicePath, hasPattern(service, /githubRepo\s+=\s+"kibght\/sub2aouter"/), 'Backend update checks must use themed Releases.')
+
+  const dockerfilePath = 'Dockerfile'
+  const dockerfile = files.get(dockerfilePath) || ''
+  check('docker.build_type', dockerfilePath, dockerfile.includes('-X main.BuildType=docker'), 'Docker builds must identify themselves as Docker deployments.')
+
+  const badgePath = 'frontend/src/components/common/VersionBadge.vue'
+  const badge = files.get(badgePath) || ''
+  check('frontend.repository', badgePath, badge.includes("const GITHUB_REPO = 'kibght/sub2aouter'"), 'Frontend release links must use the themed repository.')
+  check('frontend.image', badgePath, badge.includes("const DOCKER_IMAGE = 'ghcr.io/kibght/sub2aouter'"), 'Frontend Docker commands must use the themed image.')
+  check('frontend.refresh', badgePath, badge.includes('VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000') && hasPattern(badge, /setInterval\([\s\S]*fetchVersion\(true\)/), 'Frontend must refresh release information every 30 minutes.')
+  check('frontend.docker_update', badgePath, badge.includes('docker compose pull sub2api') && badge.includes('docker compose up -d --no-deps sub2api'), 'Frontend must expose safe Docker update commands.')
+
+  const contributorPattern = /KKBK-233|<h[1-6][^>]*>\s*Contributors\s*<\/h[1-6]>|^\s*#{1,6}\s+Contributors\s*$/im
+  for (const path of [
+    'frontend/src/views/HomeView.vue',
+    'README.md',
+    'theme/apophis/files/frontend/src/views/HomeView.vue',
+    'theme/apophis/files/README.md',
+  ]) {
+    check('template.contributors', path, !contributorPattern.test(files.get(path) || ''), 'The shipped template must not add an explicit contributor card or account.')
+  }
+
+  const manifestPath = 'theme/apophis/manifest.json'
+  const manifestText = files.get(manifestPath) || ''
+  try {
+    const manifest = JSON.parse(manifestText)
+    check('manifest.backend_repository', manifestPath, manifestHasPatch(manifest, servicePath, 'githubRepo     = "kibght/sub2aouter"'), 'Theme manifest must preserve the custom update repository.')
+    check('manifest.frontend_repository', manifestPath, manifestHasPatch(manifest, badgePath, "const GITHUB_REPO = 'kibght/sub2aouter'"), 'Theme manifest must preserve frontend release discovery.')
+    check('manifest.frontend_refresh', manifestPath, manifestHasPatch(manifest, badgePath, 'const VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000'), 'Theme manifest must preserve periodic frontend refresh.')
+    check('manifest.docker_build_type', manifestPath, manifestHasPatch(manifest, dockerfilePath, '-X main.BuildType=docker'), 'Theme manifest must preserve Docker build identification.')
+    check('manifest.binary_workflow', manifestPath, manifestHasFile(manifest, binaryPath), 'Theme manifest must carry the binary release workflow into generated releases.')
+  } catch (error) {
+    violations.push(violation('manifest.invalid', manifestPath, `Theme manifest is invalid JSON: ${error.message}`))
+  }
+
+  return violations
+}
