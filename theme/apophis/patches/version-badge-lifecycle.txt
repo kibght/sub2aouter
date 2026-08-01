@@ -1,0 +1,19 @@
+onMounted(() => {
+  if (isAdmin.value) {
+    // Use cached version if available, otherwise fetch
+    void appStore.fetchVersion(false)
+    versionRefreshInterval = window.setInterval(() => {
+      if (isAdmin.value) {
+        void appStore.fetchVersion(true)
+      }
+    }, VERSION_REFRESH_INTERVAL_MS)
+  }
+  document.addEventListener('click', handleClickOutside)
+})
+
+onBeforeUnmount(() => {
+  if (versionRefreshInterval !== undefined) {
+    window.clearInterval(versionRefreshInterval)
+  }
+  document.removeEventListener('click', handleClickOutside)
+})
