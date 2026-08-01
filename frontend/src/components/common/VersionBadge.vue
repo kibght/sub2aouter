@@ -232,7 +232,6 @@
               </div>
 
               <!-- Priority 3: Update available for source build - show git pull hint -->
-
               <div v-else-if="hasUpdate && !isReleaseBuild" class="space-y-2">
                 <a
                   v-if="releaseInfo?.html_url && releaseInfo.html_url !== '#'"

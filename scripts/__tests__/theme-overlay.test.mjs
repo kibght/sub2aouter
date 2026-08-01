@@ -123,3 +123,47 @@ test('direct Docker update migration also applies to a clean upstream badge', as
   const badge = await readFile(path.join(root, 'frontend/src/components/common/VersionBadge.vue'), 'utf8')
   assert.match(badge, /buildType\.value === 'release' \|\| buildType\.value === 'docker'/)
 })
+
+test('removes the legacy Docker reminder even when an earlier overlay left the direct-update comment behind', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-docker-panel-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-docker-panel-overlay-'))
+  await mkdir(path.join(root, 'frontend/src/components/common'), { recursive: true })
+  await mkdir(path.join(overlay, 'patches'), { recursive: true })
+
+  const manifest = JSON.parse(await readFile('theme/apophis/manifest.json', 'utf8'))
+  const panelPatch = manifest.patches.find(
+    (entry) => entry.source === 'patches/version-badge-restore-update-panel.txt',
+  )
+  const conditionPatch = manifest.patches.find(
+    (entry) => entry.source === 'patches/version-badge-direct-source-condition.txt',
+  )
+  assert.ok(panelPatch)
+  assert.ok(conditionPatch)
+
+  const directComment = '              <!-- Priority 3: Update available for source build - show git pull hint -->'
+  await writeFile(
+    path.join(root, 'frontend/src/components/common/VersionBadge.vue'),
+    `${panelPatch.marker}${directComment}\n              <div v-else-if="hasUpdate && !isReleaseBuild && !isDockerBuild" class="space-y-2">\n`,
+  )
+  await writeFile(
+    path.join(overlay, 'patches/panel.txt'),
+    await readFile(path.join('theme/apophis', panelPatch.source), 'utf8'),
+  )
+  await writeFile(
+    path.join(overlay, 'patches/condition.txt'),
+    await readFile(path.join('theme/apophis', conditionPatch.source), 'utf8'),
+  )
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    patches: [
+      { ...panelPatch, source: 'patches/panel.txt' },
+      { ...conditionPatch, source: 'patches/condition.txt' },
+    ],
+  }))
+
+  await applyTheme({ root, overlay })
+  const badge = await readFile(path.join(root, 'frontend/src/components/common/VersionBadge.vue'), 'utf8')
+  assert.doesNotMatch(badge, /Docker deployment - show a safe Compose update command/)
+  assert.doesNotMatch(badge, /isDockerBuild|dockerUpdateCommand/)
+  assert.match(badge, /v-else-if="hasUpdate && !isReleaseBuild" class="space-y-2"/)
+  assert.equal(badge.match(/Priority 3: Update available for source build/g)?.length, 1)
+})
