@@ -181,7 +181,7 @@ jobs:
               if [[ -n "$commit_subject" ]]; then
                 printf -- '- %s (`%s`).\n' "$commit_subject" "${RELEASE_SOURCE_SHA:0:12}"
               else
-                printf -- '- ????????? `%s`?\n' "${RELEASE_SOURCE_SHA:0:12}"
+                printf -- '- 已合入仓库修复提交 `%s`。\n' "${RELEASE_SOURCE_SHA:0:12}"
               fi
             fi
             printf '\n---\n\n'
