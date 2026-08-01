@@ -70,13 +70,13 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   const syncPath = '.github/workflows/upstream-theme-sync.yml'
   const sync = files.get(syncPath) || ''
   check('sync.push_main', syncPath, hasPattern(sync, /\n  push:\n    branches:\n      - main\n/), 'Sync must run for pushes to main.')
-  check('sync.schedule', syncPath, hasPattern(sync, /cron:\s*'\*\/30 \* \* \* \*'/), 'Sync must poll upstream every 30 minutes.')
+  check('sync.schedule', syncPath, hasPattern(sync, /cron:\s*'7,37 \* \* \* \*'/), 'Sync must poll upstream every 30 minutes off the hourly load boundary.')
   check('sync.upstream', syncPath, sync.includes('https://github.com/Wei-Shaw/sub2api.git'), 'Sync must fetch the canonical upstream repository.')
   check('sync.skip_unchanged', syncPath, hasPattern(sync, /github\.event_name[^\n]+schedule[^\n]+PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Scheduled runs must skip unchanged upstream revisions.')
   check('sync.theme_overlay', syncPath, sync.includes('node scripts/apply-theme.mjs --root .'), 'Sync must apply the Apophis overlay to fetched upstream source.')
   check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-release-notes.md'), 'Sync must persist upstream, repository, and release notes metadata.')
-  check('sync.repository_source', syncPath, sync.includes('git worktree add --detach "$GENERATED_DIR" origin/themed-release') && sync.includes('RELEASE_KIND="repository"') && sync.includes('without fetching upstream'), 'Push releases must reuse themed-release without fetching upstream.')
-  check('sync.repository_notes', syncPath, sync.includes('## Repository fixes') && sync.includes('Capture repository release notes'), 'Push releases must publish repository fix notes.')
+  check('sync.repository_source', syncPath, sync.includes('git worktree add --detach "$GENERATED_DIR" origin/themed-release') && sync.includes('RELEASE_KIND="repository"') && sync.includes('不重复获取上游'), 'Push releases must reuse themed-release without fetching upstream.')
+  check('sync.repository_notes', syncPath, sync.includes('## \u4ed3\u5e93\u4fee\u590d') && sync.includes('Capture repository release notes'), 'Push releases must publish repository fix notes.')
   check('sync.release_version', syncPath, sync.includes('PREVIOUS_RELEASE_VERSION') && sync.includes('node scripts/next-release-version.mjs \"$PREVIOUS_RELEASE_VERSION\"'), 'Sync must migrate the next release to v0.1.200 and increment the persisted version.')
   check('sync.publish_order', syncPath, hasOrderedMarkers(sync, [
     'name: Push immutable themed image',

@@ -1,4 +1,4 @@
-﻿import assert from 'node:assert/strict'
+import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
@@ -36,7 +36,15 @@ test('main pushes reuse the existing themed release without fetching upstream', 
   assert.match(workflow, /github\.event_name.*push/)
   assert.match(workflow, /git worktree add --detach "\$GENERATED_DIR" origin\/themed-release/)
   assert.match(workflow, /RELEASE_KIND="repository"/)
-  assert.match(workflow, /Repository fixes/)
+  assert.match(workflow, /\u4ed3\u5e93\u4fee\u590d/)
   assert.match(workflow, /\.apophis-release-notes\.md/)
   assert.match(workflow, /rm -rf \"\$GENERATED_DIR\/theme\" \"\$GENERATED_DIR\/scripts\"/)
+})
+
+test('scheduled upstream sync avoids hourly load boundaries and retries transient fetch failures', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  assert.match(workflow, /cron:\s*'7,37 \* \* \* \*'/)
+  assert.doesNotMatch(workflow, /cron:\s*'\*\/30 \* \* \* \*'/)
+  assert.match(workflow, /fetch_upstream_with_retry\(\)/)
+  assert.match(workflow, /git fetch --depth=1 upstream "\$UPSTREAM_REF"/)
 })

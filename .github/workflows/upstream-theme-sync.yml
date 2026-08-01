@@ -12,7 +12,8 @@ on:
         default: main
         type: string
   schedule:
-    - cron: '*/30 * * * *'
+    # 错开整点高峰，降低 GitHub Actions 定时任务延迟或漏触发的概率。
+    - cron: '7,37 * * * *'
 
 concurrency:
   group: upstream-theme-sync
@@ -46,17 +47,30 @@ jobs:
           set -euo pipefail
           git fetch origin +refs/heads/themed-release:refs/remotes/origin/themed-release
 
+          fetch_upstream_with_retry() {
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              if git fetch --depth=1 upstream "$UPSTREAM_REF"; then
+                return 0
+              fi
+              echo "上游获取失败，第 ${attempt}/5 次重试。" >&2
+              sleep $((attempt * 10))
+            done
+            echo "上游获取连续失败，停止本次同步。" >&2
+            return 1
+          }
+
           if [[ "${{ github.event_name }}" == "push" ]]; then
             git worktree add --detach "$GENERATED_DIR" origin/themed-release
             UPSTREAM_SHA="$(tr -d '[:space:]' < "$GENERATED_DIR/.apophis-upstream-sha")"
             RELEASE_SOURCE_SHA="${{ github.sha }}"
             RELEASE_KIND="repository"
             RELEASE_IMAGE_TAG="repository-${RELEASE_SOURCE_SHA:0:12}"
-            echo "Repository push detected; reusing themed-release without fetching upstream."
+            echo "检测到仓库推送，复用现有主题发布分支，不重复获取上游。"
           else
             git remote remove upstream 2>/dev/null || true
             git remote add upstream "$UPSTREAM_REPOSITORY"
-            git fetch --depth=1 upstream "$UPSTREAM_REF"
+            fetch_upstream_with_retry
             git worktree add --detach "$GENERATED_DIR" FETCH_HEAD
             UPSTREAM_SHA="$(git -C "$GENERATED_DIR" rev-parse HEAD)"
             RELEASE_SOURCE_SHA="$UPSTREAM_SHA"
@@ -93,20 +107,20 @@ jobs:
 
           if [[ "$RELEASE_KIND" == "upstream" && "${{ github.event_name }}" == "schedule" && "$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA" ]]; then
             echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
-            echo "Upstream is unchanged at $UPSTREAM_SHA; skipping scheduled build and release."
+            echo "上游版本未变化：$UPSTREAM_SHA，跳过本次定时构建和发布。"
             exit 0
           fi
 
           if [[ "$RELEASE_KIND" == "repository" && "$PREVIOUS_REPOSITORY_SHA" == "$RELEASE_SOURCE_SHA" ]]; then
             echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
-            echo "Repository commit $RELEASE_SOURCE_SHA is already published; skipping duplicate release."
+            echo "仓库提交 $RELEASE_SOURCE_SHA 已经发布，跳过重复发布。"
             exit 0
           fi
 
           RELEASE_VERSION="$(node scripts/next-release-version.mjs "$PREVIOUS_RELEASE_VERSION")"
           echo "SHOULD_PUBLISH=true" >> "$GITHUB_ENV"
           echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
-          echo "Publishing $RELEASE_KIND source $RELEASE_SOURCE_SHA as $RELEASE_VERSION."
+          echo "正在将 $RELEASE_KIND 来源 $RELEASE_SOURCE_SHA 发布为 $RELEASE_VERSION。"
 
       - name: Copy permanent theme source
         if: env.SHOULD_PUBLISH == 'true'
@@ -157,17 +171,17 @@ jobs:
 
           printf 'Sub2Aouter %s\n' "$RELEASE_VERSION" > "$TITLE_FILE"
           {
-            printf '## Repository fixes\n\n'
+            printf '## 仓库修复\n\n'
             if [[ -n "$BASE_SHA" && ! "$BASE_SHA" =~ ^0+$ ]] &&
                git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null &&
                git merge-base --is-ancestor "$BASE_SHA" "$RELEASE_SOURCE_SHA" &&
                [[ "$BASE_SHA" != "$RELEASE_SOURCE_SHA" ]]; then
-              git log --reverse --pretty='- %s (`%h`)' "${BASE_SHA}..${RELEASE_SOURCE_SHA}"
+              git log --reverse --format='%h' "${BASE_SHA}..${RELEASE_SOURCE_SHA}" | while read -r commit; do printf -- '- 已合入仓库修复提交 `%s`。\n' "$commit"; done
             else
-              git log -1 --pretty='- %s (`%h`)' "$RELEASE_SOURCE_SHA"
+              printf -- '- 已合入仓库修复提交 `%s`。\n' "${RELEASE_SOURCE_SHA:0:12}"
             fi
             printf '\n---\n\n'
-            printf 'Repository release from commit `%s`, based on upstream commit `%s`.\n' "$RELEASE_SOURCE_SHA" "$UPSTREAM_SHA"
+            printf '本次仓库发布基于提交 `%s`，对应上游提交 `%s`。\n' "$RELEASE_SOURCE_SHA" "$UPSTREAM_SHA"
           } > "$NOTES_FILE"
 
       - name: Capture upstream release notes
@@ -185,26 +199,26 @@ jobs:
           write_fallback_notes() {
             local short_sha="${UPSTREAM_SHA:0:12}"
             printf '%s\n' "unreleased-${short_sha}" > "$TAG_FILE"
-            printf '%s\n' "Sub2API upstream ${short_sha}" > "$NAME_FILE"
+            printf '%s\n' "上游版本 ${short_sha}" > "$NAME_FILE"
             printf '%s\n' "https://github.com/Wei-Shaw/sub2api/commit/${UPSTREAM_SHA}" > "$URL_FILE"
             {
-              printf 'No matching published upstream Release was found for commit %s.\n\n' "$UPSTREAM_SHA"
-              printf '## Upstream commits\n\n'
+              printf '未找到与上游提交 %s 匹配的已发布版本。\n\n' "$UPSTREAM_SHA"
+              printf '## 上游提交\n\n'
               if [[ -n "${PREVIOUS_UPSTREAM_SHA:-}" ]] && git -C "$GENERATED_DIR" cat-file -e "${PREVIOUS_UPSTREAM_SHA}^{commit}" 2>/dev/null; then
-                git -C "$GENERATED_DIR" log --max-count=50 --pretty='- %s (%h)' "${PREVIOUS_UPSTREAM_SHA}..${UPSTREAM_SHA}"
+                git -C "$GENERATED_DIR" log --max-count=50 --format='%h' "${PREVIOUS_UPSTREAM_SHA}..${UPSTREAM_SHA}" | while read -r commit; do printf -- '- 上游提交 `%s`。\n' "$commit"; done
               else
-                git -C "$GENERATED_DIR" log -n 20 --pretty='- %s (%h)' "$UPSTREAM_SHA"
+                git -C "$GENERATED_DIR" log -n 20 --format='%h' "$UPSTREAM_SHA" | while read -r commit; do printf -- '- 上游提交 `%s`。\n' "$commit"; done
               fi
             } > "$NOTES_FILE"
           }
 
           if ! UPSTREAM_RELEASE_TAG="$(gh api repos/Wei-Shaw/sub2api/releases/latest --jq '.tag_name // ""')"; then
-            echo "Unable to query the latest upstream Release; using commit summary."
+            echo "无法查询上游最新发布版本，改用提交摘要。"
             write_fallback_notes
             exit 0
           fi
           if [[ -z "$UPSTREAM_RELEASE_TAG" ]]; then
-            echo "Latest upstream Release did not provide a tag; using commit summary."
+            echo "上游最新发布版本没有标签，改用提交摘要。"
             write_fallback_notes
             exit 0
           fi
@@ -212,26 +226,26 @@ jobs:
           RELEASE_ENDPOINT="repos/Wei-Shaw/sub2api/releases/tags/${UPSTREAM_RELEASE_TAG}"
           if ! UPSTREAM_RELEASE_NAME="$(gh api "$RELEASE_ENDPOINT" --jq '.name // .tag_name // ""')" ||
              ! UPSTREAM_RELEASE_URL="$(gh api "$RELEASE_ENDPOINT" --jq '.html_url // ""')"; then
-            echo "Unable to read upstream Release metadata; using commit summary."
+            echo "无法读取上游发布信息，改用提交摘要。"
             write_fallback_notes
             exit 0
           fi
           if [[ -z "$UPSTREAM_RELEASE_URL" ]]; then
-            echo "Latest upstream Release metadata is incomplete; using commit summary."
+            echo "上游最新发布信息不完整，改用提交摘要。"
             write_fallback_notes
             exit 0
           fi
 
           git -C "$GENERATED_DIR" fetch --deepen=500 upstream "$UPSTREAM_REF" || true
           if ! git -C "$GENERATED_DIR" fetch --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:refs/tags/${UPSTREAM_RELEASE_TAG}"; then
-            echo "Unable to fetch upstream tag $UPSTREAM_RELEASE_TAG; using commit summary."
+            echo "无法获取上游标签 $UPSTREAM_RELEASE_TAG，改用提交摘要。"
             write_fallback_notes
             exit 0
           fi
 
           UPSTREAM_RELEASE_SHA="$(git -C "$GENERATED_DIR" rev-list -n 1 "refs/tags/${UPSTREAM_RELEASE_TAG}")"
           if ! git -C "$GENERATED_DIR" merge-base --is-ancestor "$UPSTREAM_RELEASE_SHA" "$UPSTREAM_SHA"; then
-            echo "Latest upstream Release $UPSTREAM_RELEASE_TAG is not contained in $UPSTREAM_SHA; using commit summary."
+            echo "上游发布版本 $UPSTREAM_RELEASE_TAG 不属于提交 $UPSTREAM_SHA，改用提交摘要。"
             write_fallback_notes
             exit 0
           fi
@@ -240,14 +254,14 @@ jobs:
           printf '%s\n' "$UPSTREAM_RELEASE_NAME" > "$NAME_FILE"
           printf '%s\n' "$UPSTREAM_RELEASE_URL" > "$URL_FILE"
           if ! gh api "$RELEASE_ENDPOINT" --jq '.body // ""' > "$NOTES_FILE"; then
-            echo "Unable to read upstream Release notes; using commit summary."
+            echo "无法读取上游发布说明，改用提交摘要。"
             write_fallback_notes
             exit 0
           fi
           if [[ ! -s "$NOTES_FILE" ]]; then
-            printf 'Upstream Release %s did not provide release notes.\n' "$UPSTREAM_RELEASE_TAG" > "$NOTES_FILE"
+            printf '上游发布版本 %s 没有提供发布说明。\n' "$UPSTREAM_RELEASE_TAG" > "$NOTES_FILE"
           fi
-          echo "Captured upstream Release $UPSTREAM_RELEASE_TAG at $UPSTREAM_RELEASE_SHA."
+          echo "已记录上游发布版本 $UPSTREAM_RELEASE_TAG，对应提交 $UPSTREAM_RELEASE_SHA。"
 
       - name: Compose upstream release notes
         if: env.SHOULD_PUBLISH == 'true' && env.RELEASE_KIND == 'upstream'
@@ -257,12 +271,14 @@ jobs:
           UPSTREAM_RELEASE_TAG="$(tr -d '[:space:]' < "$GENERATED_DIR/.apophis-upstream-release-tag")"
           UPSTREAM_RELEASE_NAME="$(cat "$GENERATED_DIR/.apophis-upstream-release-name")"
           UPSTREAM_RELEASE_URL="$(tr -d '[:space:]' < "$GENERATED_DIR/.apophis-upstream-release-url")"
-          printf 'Sub2Aouter %s (based on %s)\n' "$RELEASE_VERSION" "$UPSTREAM_RELEASE_TAG" > "$GENERATED_DIR/.apophis-release-title"
+          printf 'Sub2Aouter %s（基于上游 %s）\n' "$RELEASE_VERSION" "$UPSTREAM_RELEASE_TAG" > "$GENERATED_DIR/.apophis-release-title"
           {
-            printf '> Based on upstream [%s](%s) (%s).\n\n' "$UPSTREAM_RELEASE_NAME" "$UPSTREAM_RELEASE_URL" "$UPSTREAM_RELEASE_TAG"
-            cat "$GENERATED_DIR/.apophis-upstream-release-notes.md"
+            printf '> 基于上游版本 [%s](%s)（%s）。\n\n' "$UPSTREAM_RELEASE_NAME" "$UPSTREAM_RELEASE_URL" "$UPSTREAM_RELEASE_TAG"
+            printf '???????%s\n\n' "$UPSTREAM_RELEASE_URL"
+            printf '?????`%s`\n\n' "$UPSTREAM_SHA"
+            printf '????????????????????????????\n'
             printf '\n\n---\n\n'
-            printf 'Apophis themed build %s, generated from upstream commit `%s`.\n' "$RELEASE_VERSION" "$UPSTREAM_SHA"
+            printf 'Apophis 主题版本 %s，生成自上游提交 `%s`。\n' "$RELEASE_VERSION" "$UPSTREAM_SHA"
           } > "$GENERATED_DIR/.apophis-release-notes.md"
 
       - name: Verify theme overlay and UTF-8
@@ -370,9 +386,9 @@ jobs:
           git add --all
           RELEASE_TREE="$(git write-tree)"
           if [[ "$RELEASE_KIND" == "repository" ]]; then
-            RELEASE_MESSAGE="chore: publish repository fixes ${RELEASE_SOURCE_SHA:0:12} as ${RELEASE_VERSION}"
+            RELEASE_MESSAGE="发布：仓库修复 ${RELEASE_SOURCE_SHA:0:12}，版本 ${RELEASE_VERSION}"
           else
-            RELEASE_MESSAGE="chore: sync upstream ${UPSTREAM_SHA} with apophis theme as ${RELEASE_VERSION}"
+            RELEASE_MESSAGE="同步：上游 ${UPSTREAM_SHA}，Apophis 主题版本 ${RELEASE_VERSION}"
           fi
           RELEASE_COMMIT="$(printf '%s\n' "$RELEASE_MESSAGE" | git commit-tree "$RELEASE_TREE")"
           git push --no-thin origin "${RELEASE_COMMIT}:refs/heads/themed-release" --force

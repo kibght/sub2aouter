@@ -31,7 +31,7 @@ test('current repository satisfies the automatic release and frontend update con
 test('contract rejects a sync workflow that no longer polls upstream every 30 minutes', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/upstream-theme-sync.yml'
-  files.set(path, files.get(path).replace("cron: '*/30 * * * *'", "cron: '0 * * * *'"))
+  files.set(path, files.get(path).replace("cron: '7,37 * * * *'", "cron: '0 * * * *'"))
 
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
   assert.ok(violations.some((violation) => violation.code === 'sync.schedule'))
