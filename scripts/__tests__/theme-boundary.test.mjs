@@ -151,6 +151,14 @@ test('repository release notes describe fixes instead of listing bare commit has
   assert.doesNotMatch(workflow, /git log --reverse --format='%h'/)
 })
 
+test('repository release notes use the current push boundary before the last published repository revision', async () => {
+  const workflow = await read('.github/workflows/upstream-theme-sync.yml')
+  const pushBoundary = workflow.indexOf('BASE_SHA="${{ github.event.before }}"')
+  const publishedFallback = workflow.indexOf('BASE_SHA="$PREVIOUS_REPOSITORY_SHA"', pushBoundary)
+  assert.ok(pushBoundary >= 0, 'repository notes must start from the current push boundary')
+  assert.ok(publishedFallback > pushBoundary, 'last published revision must only be a fallback')
+})
+
 test('themed binary releases publish generated repository or upstream notes from a common notes file', async () => {
   const [workflow, overlayWorkflow] = await Promise.all([
     read('.github/workflows/theme-binary-release.yml'),
