@@ -1,0 +1,3 @@
+const isReleaseBuild = computed(
+  () => buildType.value === 'release' || buildType.value === 'docker'
+)

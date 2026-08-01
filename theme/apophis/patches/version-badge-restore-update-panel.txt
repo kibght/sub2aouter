@@ -1,0 +1,1 @@
+              <!-- Priority 3: Update available for source build - show git pull hint -->

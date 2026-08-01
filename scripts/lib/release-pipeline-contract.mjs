@@ -74,7 +74,9 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.upstream', syncPath, sync.includes('https://github.com/Wei-Shaw/sub2api.git'), 'Sync must fetch the canonical upstream repository.')
   check('sync.skip_unchanged', syncPath, hasPattern(sync, /github\.event_name[^\n]+schedule[^\n]+PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Scheduled runs must skip unchanged upstream revisions.')
   check('sync.theme_overlay', syncPath, sync.includes('node scripts/apply-theme.mjs --root .'), 'Sync must apply the Apophis overlay to fetched upstream source.')
-  check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-upstream-release-notes.md'), 'Sync must persist upstream revision and release notes metadata.')
+  check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-release-notes.md'), 'Sync must persist upstream, repository, and release notes metadata.')
+  check('sync.repository_source', syncPath, sync.includes('git worktree add --detach "$GENERATED_DIR" origin/themed-release') && sync.includes('RELEASE_KIND="repository"') && sync.includes('without fetching upstream'), 'Push releases must reuse themed-release without fetching upstream.')
+  check('sync.repository_notes', syncPath, sync.includes('## Repository fixes') && sync.includes('Capture repository release notes'), 'Push releases must publish repository fix notes.')
   check('sync.release_version', syncPath, sync.includes('PREVIOUS_RELEASE_VERSION') && sync.includes('node scripts/next-release-version.mjs \"$PREVIOUS_RELEASE_VERSION\"'), 'Sync must migrate the next release to v0.1.200 and increment the persisted version.')
   check('sync.publish_order', syncPath, hasOrderedMarkers(sync, [
     'name: Push immutable themed image',
@@ -90,7 +92,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('binary.checkout', binaryPath, hasPattern(binary, /ref:\s*themed-release/), 'Binary release must build the generated themed-release branch.')
   check('binary.version', binaryPath, binary.includes('cat backend/cmd/server/VERSION'), 'Binary release must reuse the generated version.')
   check('binary.publish', binaryPath, binary.includes('gh release create') && binary.includes('--target themed-release') && binary.includes('--latest'), 'Binary release must publish the themed branch as the latest GitHub Release.')
-  check('binary.notes', binaryPath, binary.includes('.apophis-upstream-release-notes.md') && binary.includes('--notes-file'), 'Binary release must include the captured upstream notes file.')
+  check('binary.notes', binaryPath, binary.includes('.apophis-release-title') && binary.includes('.apophis-release-notes.md') && binary.includes('--notes-file'), 'Binary release must include the generated repository or upstream notes file.')
 
   const overlayBinaryPath = 'theme/apophis/files/.github/workflows/theme-binary-release.yml'
   check('binary.overlay_copy', overlayBinaryPath, files.get(overlayBinaryPath) === binary, 'The permanent theme copy of the binary workflow must match the active workflow.')
@@ -112,7 +114,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('frontend.repository', badgePath, badge.includes("const GITHUB_REPO = 'kibght/sub2aouter'"), 'Frontend release links must use the themed repository.')
   check('frontend.image', badgePath, badge.includes("const DOCKER_IMAGE = 'ghcr.io/kibght/sub2aouter'"), 'Frontend Docker commands must use the themed image.')
   check('frontend.refresh', badgePath, badge.includes('VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000') && hasPattern(badge, /setInterval\([\s\S]*fetchVersion\(true\)/), 'Frontend must refresh release information every 30 minutes.')
-  check('frontend.docker_update', badgePath, badge.includes('docker compose pull sub2api') && badge.includes('docker compose up -d --no-deps sub2api'), 'Frontend must expose safe Docker update commands.')
+  check('frontend.docker_update', badgePath, badge.includes("buildType.value === 'release' || buildType.value === 'docker'") && badge.includes('@click="handleUpdate"') && badge.includes('@click="toggleRollbackPanel"') && !badge.includes('docker compose pull sub2api') && !badge.includes('const isDockerBuild = computed'), 'Docker builds must keep the original direct update and rollback flow.')
 
   const contributorPattern = /KKBK-233|<h[1-6][^>]*>\s*Contributors\s*<\/h[1-6]>|^\s*#{1,6}\s+Contributors\s*$/im
   for (const path of [
@@ -131,6 +133,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     check('manifest.backend_repository', manifestPath, manifestHasPatch(manifest, servicePath, 'githubRepo     = "kibght/sub2aouter"'), 'Theme manifest must preserve the custom update repository.')
     check('manifest.frontend_repository', manifestPath, manifestHasPatch(manifest, badgePath, "const GITHUB_REPO = 'kibght/sub2aouter'"), 'Theme manifest must preserve frontend release discovery.')
     check('manifest.frontend_refresh', manifestPath, manifestHasPatch(manifest, badgePath, 'const VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000'), 'Theme manifest must preserve periodic frontend refresh.')
+    check('manifest.frontend_direct_update', manifestPath, manifestHasPatch(manifest, badgePath, "buildType.value === 'release' || buildType.value === 'docker'"), 'Theme manifest must preserve direct Docker update and rollback behavior.')
     check('manifest.docker_build_type', manifestPath, manifestHasPatch(manifest, dockerfilePath, '-X main.BuildType=docker'), 'Theme manifest must preserve Docker build identification.')
     check('manifest.binary_workflow', manifestPath, manifestHasFile(manifest, binaryPath), 'Theme manifest must carry the binary release workflow into generated releases.')
   } catch (error) {

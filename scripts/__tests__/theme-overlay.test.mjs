@@ -84,3 +84,42 @@ test('supports exact replacement patches', async () => {
   assert.equal(first.changed, true)
   assert.equal(second.changed, false)
 })
+
+test('direct Docker update migration also applies to a clean upstream badge', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-direct-update-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-direct-update-overlay-'))
+  await mkdir(path.join(root, 'frontend/src/components/common'), { recursive: true })
+  await mkdir(path.join(overlay, 'patches'), { recursive: true })
+
+  await writeFile(
+    path.join(root, 'frontend/src/components/common/VersionBadge.vue'),
+    "const isReleaseBuild = computed(() => buildType.value === 'release')\n\nfunction toggleDropdown() {}\n",
+  )
+  await writeFile(
+    path.join(overlay, 'patches/direct-state.txt'),
+    await readFile('theme/apophis/patches/version-badge-direct-update-state.txt', 'utf8'),
+  )
+  await writeFile(path.join(overlay, 'patches/remove-old-state.txt'), '')
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    patches: [
+      {
+        target: 'frontend/src/components/common/VersionBadge.vue',
+        operation: 'replace',
+        marker: "const isReleaseBuild = computed(() => buildType.value === 'release')",
+        source: 'patches/direct-state.txt',
+        sentinel: "buildType.value === 'release' || buildType.value === 'docker'",
+      },
+      {
+        target: 'frontend/src/components/common/VersionBadge.vue',
+        operation: 'replace',
+        marker: "const isDockerBuild = computed(() => buildType.value === 'docker')",
+        source: 'patches/remove-old-state.txt',
+        sentinel: "buildType.value === 'release' || buildType.value === 'docker'\n)\n\nfunction toggleDropdown",
+      },
+    ],
+  }))
+
+  await applyTheme({ root, overlay })
+  const badge = await readFile(path.join(root, 'frontend/src/components/common/VersionBadge.vue'), 'utf8')
+  assert.match(badge, /buildType\.value === 'release' \|\| buildType\.value === 'docker'/)
+})

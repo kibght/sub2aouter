@@ -111,17 +111,19 @@ test('version badge checks the custom repository every 30 minutes', async () => 
 })
 
 
-test('Docker deployments expose reminder-only updates with the themed image', async () => {
+test('Docker deployments keep direct update and version rollback with themed repository links', async () => {
   const [dockerfile, badge, manifestText] = await Promise.all([
     read('Dockerfile'),
     read('frontend/src/components/common/VersionBadge.vue'),
     read('theme/apophis/manifest.json'),
   ])
   assert.match(dockerfile, /-X main\.BuildType=docker/)
-  assert.match(badge, /const isDockerBuild = computed/)
-  assert.match(badge, /docker compose pull sub2api/)
-  assert.match(badge, /hasUpdate && isDockerBuild/)
-  assert.match(badge, /v-if="!isDockerBuild"/)
+  assert.match(badge, /buildType\.value === 'release' \|\| buildType\.value === 'docker'/)
+  assert.match(badge, /@click="handleUpdate"/)
+  assert.match(badge, /@click="toggleRollbackPanel"/)
+  assert.doesNotMatch(badge, /docker compose pull sub2api/)
+  assert.doesNotMatch(badge, /const isDockerBuild = computed/)
+  assert.doesNotMatch(badge, /v-if="!isDockerBuild"/)
 
   const manifest = JSON.parse(manifestText)
   assert.ok((manifest.patches || []).some(
@@ -142,15 +144,15 @@ test('upstream sync captures release notes only for a release contained in the f
   assert.match(workflow, /git -C "\$GENERATED_DIR" log/)
 })
 
-test('themed binary releases publish inherited upstream notes from a notes file', async () => {
+test('themed binary releases publish generated repository or upstream notes from a common notes file', async () => {
   const [workflow, overlayWorkflow] = await Promise.all([
     read('.github/workflows/theme-binary-release.yml'),
     read('theme/apophis/files/.github/workflows/theme-binary-release.yml'),
   ])
-  assert.match(workflow, /\.apophis-upstream-release-tag/)
-  assert.match(workflow, /\.apophis-upstream-release-notes\.md/)
+  assert.match(workflow, /\.apophis-release-title/)
+  assert.match(workflow, /\.apophis-release-notes\.md/)
   assert.match(workflow, /--notes-file/)
-  assert.match(workflow, /UPSTREAM_RELEASE_TAG/)
+  assert.match(workflow, /RELEASE_TITLE/)
   assert.doesNotMatch(workflow, /--notes\s+"/)
   assert.equal(workflow, overlayWorkflow)
 })
