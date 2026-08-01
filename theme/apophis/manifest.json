@@ -1,0 +1,507 @@
+{
+  "version": 1,
+  "upstream": "Wei-Shaw/sub2api",
+  "files": [
+    {
+      "source": "files/frontend/src/views/HomeView.vue",
+      "target": "frontend/src/views/HomeView.vue"
+    },
+    {
+      "source": "files/frontend/src/views/__tests__/HomeView.spec.ts",
+      "target": "frontend/src/views/__tests__/HomeView.spec.ts"
+    },
+    {
+      "source": "files/frontend/src/views/__tests__/HomeView.compact.spec.ts",
+      "target": "frontend/src/views/__tests__/HomeView.compact.spec.ts"
+    },
+    {
+      "source": "files/frontend/src/styles/apophis-theme.css",
+      "target": "frontend/src/styles/apophis-theme.css"
+    },
+    {
+      "source": "files/README.md",
+      "target": "README.md"
+    },
+    {
+      "source": "files/docs/images/theme-overview.png",
+      "target": "docs/images/theme-overview.png"
+    },
+    {
+      "source": "files/frontend/src/api/__tests__/admin.system.rollback.spec.ts",
+      "target": "frontend/src/api/__tests__/admin.system.rollback.spec.ts"
+    },
+    {
+      "source": "files/frontend/src/views/admin/__tests__/GroupsView.columnSettings.spec.ts",
+      "target": "frontend/src/views/admin/__tests__/GroupsView.columnSettings.spec.ts"
+    },
+    {
+      "source": "files/frontend/src/views/admin/__tests__/GroupsView.duplicate.spec.ts",
+      "target": "frontend/src/views/admin/__tests__/GroupsView.duplicate.spec.ts"
+    },
+    {
+      "source": "files/.github/workflows/theme-binary-release.yml",
+      "target": ".github/workflows/theme-binary-release.yml"
+    },
+    {
+      "source": "files/.goreleaser.theme.yaml",
+      "target": ".goreleaser.theme.yaml"
+    }
+  ],
+  "patches": [
+    {
+      "target": ".gitignore",
+      "marker": "scripts",
+      "position": "after",
+      "source": "patches/gitignore-scripts.txt",
+      "sentinel": "!scripts/**"
+    },
+    {
+      "target": "frontend/src/style.css",
+      "marker": "@tailwind base;",
+      "position": "before",
+      "source": "patches/style-import.txt",
+      "sentinel": "@import './styles/apophis-theme.css';"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "marker": "      colors: {",
+      "position": "after",
+      "source": "patches/tailwind-semantic-colors.txt",
+      "sentinel": "        gray: {\n          50: '#fafafa'"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "operation": "replace",
+      "marker": "        // 主色调 - Teal/Cyan 青色系\n        primary: {\n          50: '#f0fdfa',\n          100: '#ccfbf1',\n          200: '#99f6e4',\n          300: '#5eead4',\n          400: '#2dd4bf',\n          500: '#14b8a6',\n          600: '#0d9488',\n          700: '#0f766e',\n          800: '#115e59',\n          900: '#134e4a',\n          950: '#042f2e'\n        },",
+      "source": "patches/tailwind-primary-palette.txt",
+      "sentinel": "50: 'hsl(var(--muted) / <alpha-value>)'"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "operation": "replace",
+      "marker": "        // 辅助色 - 深蓝灰\n        accent: {\n          50: '#f8fafc',\n          100: '#f1f5f9',\n          200: '#e2e8f0',\n          300: '#cbd5e1',\n          400: '#94a3b8',\n          500: '#64748b',\n          600: '#475569',\n          700: '#334155',\n          800: '#1e293b',\n          900: '#0f172a',\n          950: '#020617'\n        },",
+      "source": "patches/tailwind-accent-palette.txt",
+      "sentinel": "accent: {\n          DEFAULT: 'hsl(var(--accent) / <alpha-value>)'"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "operation": "replace",
+      "marker": "        // 深色模式背景\n        dark: {\n          50: '#f8fafc',\n          100: '#f1f5f9',\n          200: '#e2e8f0',\n          300: '#cbd5e1',\n          400: '#94a3b8',\n          500: '#64748b',\n          600: '#475569',\n          700: '#334155',\n          800: '#1e293b',\n          900: '#0f172a',\n          950: '#020617'\n        }",
+      "source": "patches/tailwind-dark-palette.txt",
+      "sentinel": "dark: {\n          50: '#fafafa'"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "operation": "replace",
+      "marker": "        glow: '0 0 20px rgba(20, 184, 166, 0.25)',\n        'glow-lg': '0 0 40px rgba(20, 184, 166, 0.35)',",
+      "source": "patches/tailwind-neutral-glow-shadows.txt",
+      "sentinel": "glow: '0 0 20px hsl(var(--foreground) / 0.12)'"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "operation": "replace",
+      "marker": "      backgroundImage: {\n        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',\n        'gradient-primary': 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',\n        'gradient-dark': 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',\n        'gradient-glass':\n          'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',\n        'mesh-gradient':\n          'radial-gradient(at 40% 20%, rgba(20, 184, 166, 0.12) 0px, transparent 50%), radial-gradient(at 80% 0%, rgba(6, 182, 212, 0.08) 0px, transparent 50%), radial-gradient(at 0% 50%, rgba(20, 184, 166, 0.08) 0px, transparent 50%)'\n      },",
+      "source": "patches/tailwind-neutral-background-images.txt",
+      "sentinel": "'gradient-primary': 'linear-gradient(135deg, hsl(var(--foreground))"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "operation": "replace",
+      "marker": "        glow: {\n          '0%': { boxShadow: '0 0 20px rgba(20, 184, 166, 0.25)' },\n          '100%': { boxShadow: '0 0 30px rgba(20, 184, 166, 0.4)' }\n        }",
+      "source": "patches/tailwind-neutral-glow-keyframes.txt",
+      "sentinel": "boxShadow: '0 0 20px hsl(var(--foreground) / 0.12)'"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "marker": "        sans: [",
+      "position": "after",
+      "source": "patches/tailwind-font.txt",
+      "sentinel": "          'Inter',"
+    },
+    {
+      "target": "deploy/docker-compose.yml",
+      "operation": "replace",
+      "marker": "    image: weishaw/sub2api:latest",
+      "source": "patches/docker-compose-image.txt",
+      "sentinel": "    image: ${SUB2API_IMAGE:-ghcr.io/kibght/sub2aouter:latest}"
+    },
+    {
+      "target": "deploy/docker-compose.local.yml",
+      "operation": "replace",
+      "marker": "    image: weishaw/sub2api:latest",
+      "source": "patches/docker-compose-image.txt",
+      "sentinel": "    image: ${SUB2API_IMAGE:-ghcr.io/kibght/sub2aouter:latest}"
+    },
+    {
+      "target": "deploy/docker-compose.standalone.yml",
+      "operation": "replace",
+      "marker": "    image: weishaw/sub2api:latest",
+      "source": "patches/docker-compose-image.txt",
+      "sentinel": "    image: ${SUB2API_IMAGE:-ghcr.io/kibght/sub2aouter:latest}"
+    },
+    {
+      "target": "Dockerfile",
+      "operation": "replace",
+      "marker": "RUN --mount=type=cache,id=sub2api-pnpm-store,target=/root/.local/share/pnpm/store \\",
+      "source": "patches/dockerfile-pnpm-cache.txt",
+      "sentinel": "id=sub2api-pnpm-store-v2,target=/root/.local/share/pnpm/store,sharing=locked,uid=0,gid=0,mode=0755"
+    },
+    {
+      "target": "frontend/package.json",
+      "marker": "  \"type\": \"module\",",
+      "position": "after",
+      "source": "patches/frontend-package-manager.txt",
+      "sentinel": "  \"packageManager\": \"pnpm@9.15.9\","
+    },
+    {
+      "target": "Dockerfile",
+      "operation": "replace",
+      "marker": "RUN corepack enable && corepack prepare pnpm@9 --activate",
+      "source": "patches/dockerfile-pnpm-version.txt",
+      "sentinel": "RUN corepack enable && corepack prepare pnpm@9.15.9 --activate"
+    },
+    {
+      "target": ".github/workflows/backend-ci.yml",
+      "operation": "replace",
+      "marker": "          version: 9",
+      "source": "patches/workflow-pnpm-version.txt",
+      "sentinel": "          version: 9.15.9"
+    },
+    {
+      "target": ".github/workflows/release.yml",
+      "operation": "replace",
+      "marker": "          version: 9",
+      "source": "patches/workflow-pnpm-version.txt",
+      "sentinel": "          version: 9.15.9"
+    },
+    {
+      "target": ".github/workflows/security-scan.yml",
+      "operation": "replace",
+      "marker": "          version: 9",
+      "source": "patches/workflow-pnpm-version.txt",
+      "sentinel": "          version: 9.15.9"
+    },
+    {
+      "target": ".gitignore",
+      "marker": "output/",
+      "position": "after",
+      "source": "patches/gitignore-windows-local-env.txt",
+      "sentinel": "tools/windows-local/.env"
+    },
+    {
+      "target": "frontend/src/components/layout/AppLayout.vue",
+      "operation": "replace",
+      "marker": "  <div class=\"min-h-screen bg-gray-50 dark:bg-dark-950\">",
+      "source": "patches/app-layout-shell.txt",
+      "sentinel": "class=\"app-shell "
+    },
+    {
+      "target": "frontend/src/components/layout/AppLayout.vue",
+      "operation": "replace",
+      "marker": "      class=\"relative min-h-screen transition-all duration-300\"",
+      "source": "patches/app-layout-main.txt",
+      "sentinel": "class=\"app-main "
+    },
+    {
+      "target": "frontend/src/components/layout/AppLayout.vue",
+      "operation": "replace",
+      "marker": "      <main class=\"p-4 md:p-6 lg:p-8\">",
+      "source": "patches/app-layout-content.txt",
+      "sentinel": "class=\"app-content "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "  <header class=\"glass sticky top-0 z-30 border-b border-gray-200/50 dark:border-dark-700/50\">",
+      "source": "patches/app-header-root.txt",
+      "sentinel": "class=\"app-header "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "    <div class=\"flex h-16 items-center justify-between gap-2 px-2 sm:px-4 md:px-6\">",
+      "source": "patches/app-header-inner.txt",
+      "sentinel": "class=\"app-header-inner "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "      <div class=\"flex shrink-0 items-center gap-2 sm:gap-4\">",
+      "source": "patches/app-header-title-wrap.txt",
+      "sentinel": "class=\"app-header-title-wrap "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "          <h1 class=\"text-lg font-semibold text-gray-900 dark:text-white\">",
+      "source": "patches/app-header-title.txt",
+      "sentinel": "class=\"app-header-title "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "          <p v-if=\"pageDescription\" class=\"text-xs text-gray-500 dark:text-dark-400\">",
+      "source": "patches/app-header-description.txt",
+      "sentinel": "class=\"app-header-description "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "      <div class=\"flex min-w-0 items-center gap-1 sm:gap-3\">",
+      "source": "patches/app-header-actions.txt",
+      "sentinel": "class=\"app-header-actions "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "          class=\"group relative hidden items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 dark:bg-primary-900/20 sm:flex\"",
+      "source": "patches/app-header-balance.txt",
+      "sentinel": "class=\"app-header-balance "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "            class=\"h-4 w-4 text-primary-600 dark:text-primary-400\"",
+      "source": "patches/app-header-balance-icon.txt",
+      "sentinel": "class=\"app-header-balance-icon "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "          <span class=\"text-sm font-semibold text-primary-700 dark:text-primary-300\">",
+      "source": "patches/app-header-balance-value.txt",
+      "sentinel": "class=\"app-header-balance-value "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "            class=\"flex items-center gap-2 rounded-xl p-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-dark-800\"",
+      "source": "patches/app-header-user.txt",
+      "sentinel": "class=\"app-header-user "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "            <div class=\"flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 text-sm font-medium text-white shadow-sm\">",
+      "source": "patches/app-header-avatar.txt",
+      "sentinel": "class=\"app-header-avatar "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "              <span v-else>{{ userInitials }}</span>",
+      "source": "patches/app-header-user-id.txt",
+      "sentinel": "<span v-else>{{ user.id }}</span>"
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "            <div class=\"hidden text-left md:block\">\n              <div class=\"text-sm font-medium text-gray-900 dark:text-white\">\n                {{ displayName }}",
+      "source": "patches/app-header-user-copy.txt",
+      "sentinel": "class=\"app-header-user-copy "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "              <div class=\"text-xs capitalize text-gray-500 dark:text-dark-400\">\n                {{ user.role }}",
+      "source": "patches/app-header-user-role.txt",
+      "sentinel": "class=\"app-header-user-role "
+    },
+    {
+      "target": "frontend/src/components/layout/AppHeader.vue",
+      "operation": "replace",
+      "marker": "const userInitials = computed(() => {\n  if (!user.value) return ''\n  // Prefer username, fallback to email\n  if (user.value.username) {\n    return user.value.username.substring(0, 2).toUpperCase()\n  }\n  if (user.value.email) {\n    // Get the part before @ and take first 2 chars\n    const localPart = user.value.email.split('@')[0]\n    return localPart.substring(0, 2).toUpperCase()\n  }\n  return ''\n})",
+      "source": "patches/app-header-remove-user-initials.txt",
+      "sentinel": "// Console avatar uses the stable numeric user ID."
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "  <div class=\"relative flex min-h-screen items-center justify-center overflow-hidden p-4\">",
+      "source": "patches/auth-layout-shell.txt",
+      "sentinel": "class=\"auth-shell "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "      class=\"absolute inset-0 bg-gradient-to-br from-gray-50 via-primary-50/30 to-gray-100 dark:from-dark-950 dark:via-dark-900 dark:to-dark-950\"",
+      "source": "patches/auth-layout-background.txt",
+      "sentinel": "class=\"auth-background "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "    <div class=\"pointer-events-none absolute inset-0 overflow-hidden\">",
+      "source": "patches/auth-layout-decorations.txt",
+      "sentinel": "class=\"auth-decorations "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "        class=\"absolute -right-40 -top-40 h-80 w-80 rounded-full bg-primary-400/20 blur-3xl\"",
+      "source": "patches/auth-layout-orb-top.txt",
+      "sentinel": "class=\"auth-orb auth-orb-top "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "        class=\"absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-primary-500/15 blur-3xl\"",
+      "source": "patches/auth-layout-orb-bottom.txt",
+      "sentinel": "class=\"auth-orb auth-orb-bottom "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "        class=\"absolute left-1/2 top-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary-300/10 blur-3xl\"",
+      "source": "patches/auth-layout-orb-center.txt",
+      "sentinel": "class=\"auth-orb auth-orb-center "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "        class=\"absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.03)_1px,transparent_1px)] bg-[size:64px_64px]\"",
+      "source": "patches/auth-layout-grid.txt",
+      "sentinel": "class=\"auth-grid "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "    <div class=\"relative z-10 w-full max-w-md\">",
+      "source": "patches/auth-layout-container.txt",
+      "sentinel": "class=\"auth-container "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "      <div class=\"mb-8 text-center\">",
+      "source": "patches/auth-layout-brand.txt",
+      "sentinel": "class=\"auth-brand "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "            class=\"mb-4 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl shadow-lg shadow-primary-500/30\"",
+      "source": "patches/auth-layout-logo.txt",
+      "sentinel": "class=\"auth-logo "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "          <h1 class=\"text-gradient mb-2 text-3xl font-bold\">",
+      "source": "patches/auth-layout-site-name.txt",
+      "sentinel": "class=\"auth-site-name "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "          <p class=\"text-sm text-gray-500 dark:text-dark-400\">",
+      "source": "patches/auth-layout-subtitle.txt",
+      "sentinel": "class=\"auth-site-subtitle "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "      <div class=\"card-glass rounded-2xl p-8 shadow-glass\">",
+      "source": "patches/auth-layout-card.txt",
+      "sentinel": "class=\"auth-card "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "      <div class=\"mt-6 text-center text-sm\">",
+      "source": "patches/auth-layout-footer.txt",
+      "sentinel": "class=\"auth-footer "
+    },
+    {
+      "target": "frontend/src/components/layout/AuthLayout.vue",
+      "operation": "replace",
+      "marker": "      <div class=\"mt-8 text-center text-xs text-gray-400 dark:text-dark-500\">",
+      "source": "patches/auth-layout-copyright.txt",
+      "sentinel": "class=\"auth-copyright "
+    },
+    {
+      "target": ".gitignore",
+      "marker": "docs/*",
+      "position": "after",
+      "source": "patches/gitignore-theme-docs.txt",
+      "sentinel": "!docs/images/theme-overview.png"
+    },
+    {
+      "target": "backend/internal/service/update_service.go",
+      "operation": "replace",
+      "marker": "githubRepo     = \"Wei-Shaw/sub2api\"",
+      "source": "patches/update-repository.txt",
+      "sentinel": "githubRepo     = \"kibght/sub2aouter\""
+    },
+    {
+      "target": "frontend/src/components/common/VersionBadge.vue",
+      "operation": "replace",
+      "marker": "const GITHUB_REPO = 'Wei-Shaw/sub2api'\n// Docker Hub image published by CI (tags carry no \"v\" prefix, e.g. weishaw/sub2api:0.1.146)\nconst DOCKER_IMAGE = 'weishaw/sub2api'",
+      "source": "patches/version-badge-repository.txt",
+      "sentinel": "const GITHUB_REPO = 'kibght/sub2aouter'"
+    },
+    {
+      "target": "frontend/src/components/common/VersionBadge.vue",
+      "operation": "replace",
+      "marker": "\nconst VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000\nlet versionRefreshInterval: number | undefined\n",
+      "source": "patches/version-badge-remove-refresh.txt",
+      "sentinel": "const rollbackError = ref('')\n\nconst { copied, copyToClipboard } = useClipboard()"
+    },
+    {
+      "target": "frontend/src/components/common/VersionBadge.vue",
+      "operation": "replace",
+      "marker": "const isReleaseBuild = computed(\n  () => buildType.value === 'release' || buildType.value === 'docker'\n)",
+      "source": "patches/version-badge-official-state.txt",
+      "sentinel": "const isReleaseBuild = computed(() => buildType.value === 'release')"
+    },
+    {
+      "target": "frontend/src/components/common/VersionBadge.vue",
+      "operation": "replace",
+      "marker": "onMounted(() => {\n  if (isAdmin.value) {\n    // Use cached version if available, otherwise fetch\n    void appStore.fetchVersion(false)\n    versionRefreshInterval = window.setInterval(() => {\n      if (isAdmin.value) {\n        void appStore.fetchVersion(true)\n      }\n    }, VERSION_REFRESH_INTERVAL_MS)\n  }\n  document.addEventListener('click', handleClickOutside)\n})\n\nonBeforeUnmount(() => {\n  if (versionRefreshInterval !== undefined) {\n    window.clearInterval(versionRefreshInterval)\n  }\n  document.removeEventListener('click', handleClickOutside)\n})",
+      "source": "patches/version-badge-official-lifecycle.txt",
+      "sentinel": "onMounted(() => {\n  if (isAdmin.value) {\n    // Use cached version if available, otherwise fetch\n    appStore.fetchVersion(false)\n  }\n  document.addEventListener('click', handleClickOutside)\n})\n\nonBeforeUnmount(() => {\n  document.removeEventListener('click', handleClickOutside)\n})"
+    },
+    {
+      "target": "Dockerfile",
+      "operation": "replace",
+      "marker": "-X main.BuildType=release",
+      "source": "patches/dockerfile-build-type.txt",
+      "sentinel": "-X main.BuildType=docker"
+    },
+    {
+      "target": "frontend/src/views/user/RedeemView.vue",
+      "operation": "replace",
+      "marker": "        <div class=\"bg-gradient-to-br from-primary-500 to-primary-600 px-6 py-8 text-center\">\n          <div\n            class=\"mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm\"\n          >\n            <Icon name=\"creditCard\" size=\"xl\" class=\"text-white\" />\n          </div>\n          <p class=\"text-sm font-medium text-primary-100\">{{ t('redeem.currentBalance') }}</p>\n          <p class=\"mt-2 text-4xl font-bold text-white\">\n            ${{ user?.balance?.toFixed(2) || '0.00' }}\n          </p>\n          <p class=\"mt-2 text-sm text-primary-100\">\n            {{ t('redeem.concurrency') }}: {{ user?.concurrency || 0 }} {{ t('redeem.requests') }}\n          </p>\n        </div>",
+      "source": "patches/user-redeem-balance-summary.txt",
+      "sentinel": "redeem-balance-summary"
+    },
+    {
+      "target": "frontend/src/views/admin/SettingsView.vue",
+      "operation": "replace",
+      "marker": "  background: linear-gradient(90deg, #14b8a6, #0ea5e9);",
+      "source": "patches/admin-settings-active-tab.txt",
+      "sentinel": "  background: hsl(var(--foreground));"
+    },
+    {
+      "target": "frontend/src/views/KeyUsageView.vue",
+      "operation": "replace",
+      "marker": "  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.2);\n  border-color: #14b8a6;",
+      "source": "patches/key-usage-focus-ring.txt",
+      "sentinel": "border-color: hsl(var(--foreground));"
+    },
+    {
+      "target": "frontend/src/components/common/DataTable.vue",
+      "operation": "replace",
+      "marker": ".dark .sticky-header-cell {\n  background-color: rgb(31 41 55);\n}\n\n/* Sticky 列基础样式 */\n.sticky-col {\n  position: sticky;\n  z-index: 20; /* 表体固定列 */\n}\n\n/* 单列固定（无勾选列时） */\n.sticky-col-left {\n  left: 0;\n}\n\n/* 双列固定（有勾选列时）：第一列（勾选） */\n.sticky-col-left-first {\n  left: 0;\n}\n\n/* 双列固定（有勾选列时）：第二列（名称） */\n.sticky-col-left-second {\n  left: var(--select-col-width);\n}\n\n/* 操作列固定 */\n.sticky-col-right {\n  right: 0;\n}\n\n/* 表头 sticky 列 - 需要比普通表头单元格更高的 z-index */\n.sticky-header-cell.sticky-col {\n  z-index: 220; /* 高于普通表头单元格和表体固定列 */\n}\n\n/* 表体 sticky 列背景 */\ntbody .sticky-col {\n  background-color: white;\n}\n\n.dark tbody .sticky-col {\n  background-color: rgb(17 24 39);\n}\n\n/* hover 状态保持 */\ntbody tr:hover .sticky-col {\n  background-color: rgb(249 250 251);\n}\n\n.dark tbody tr:hover .sticky-col {\n  background-color: rgb(31 41 55);\n}\n\n/* 阴影只在可滚动时显示 */",
+      "source": "patches/data-table-neutral-sticky-columns.txt",
+      "sentinel": "background-color: hsl(var(--card));"
+    },
+    {
+      "target": "frontend/src/views/admin/SettingsView.vue",
+      "operation": "replace",
+      "marker": ".dark .settings-tabs-shell {\n  border-color: rgb(51 65 85 / 0.65);\n  background: rgb(15 23 42 / 0.86);\n  box-shadow:\n    0 16px 36px rgb(0 0 0 / 0.28),\n    0 1px 0 rgb(255 255 255 / 0.06) inset;\n}\n\n.dark .settings-tab::before {\n  background: linear-gradient(135deg, rgb(30 41 59 / 0.9), rgb(51 65 85 / 0.62));\n}\n\n.dark .settings-tab-active {\n  box-shadow:\n    0 12px 26px rgb(0 0 0 / 0.22),\n    0 1px 0 rgb(255 255 255 / 0.08) inset;\n}",
+      "source": "patches/admin-settings-neutral-dark-tabs.txt",
+      "sentinel": "background: hsl(var(--card) / 0.96);"
+    }
+  ]
+}
