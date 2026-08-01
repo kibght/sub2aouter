@@ -28,6 +28,21 @@ test('current repository satisfies the automatic release and frontend update con
   assert.deepEqual(violations, [])
 })
 
+test('contract rejects literal question-mark placeholders in upstream release notes', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(
+    path,
+    files.get(path).replace(
+      "cat \"$GENERATED_DIR/.apophis-upstream-release-notes.md\"",
+      "printf '???????%s\\n\\n' \"$UPSTREAM_RELEASE_URL\"",
+    ),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.release_notes_encoding'))
+})
+
 test('contract rejects a sync workflow that no longer polls upstream every 30 minutes', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/upstream-theme-sync.yml'
