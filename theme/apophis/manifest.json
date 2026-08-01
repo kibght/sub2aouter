@@ -471,37 +471,30 @@
     {
       "target": "frontend/src/components/common/VersionBadge.vue",
       "operation": "replace",
-      "marker": "const isReleaseBuild = computed(() => buildType.value === 'release')",
+      "marker": "const isReleaseBuild = computed(\n  () => buildType.value === 'release' || buildType.value === 'docker'\n)",
       "source": "patches/version-badge-direct-update-state.txt",
-      "sentinel": "buildType.value === 'release' || buildType.value === 'docker'"
+      "sentinel": "const isDockerBuild = computed(() => buildType.value === 'docker')"
     },
     {
       "target": "frontend/src/components/common/VersionBadge.vue",
       "operation": "replace",
-      "marker": "const isDockerBuild = computed(() => buildType.value === 'docker')\nconst dockerUpdateCommand = computed(() =>\n  ['docker compose pull sub2api', 'docker compose up -d --no-deps sub2api'].join('\\n')\n)\n",
-      "source": "patches/version-badge-remove-docker-state.txt",
-      "sentinel": "buildType.value === 'release' || buildType.value === 'docker'\n)\n\nfunction toggleDropdown"
-    },
-    {
-      "target": "frontend/src/components/common/VersionBadge.vue",
-      "operation": "replace",
-      "marker": "              <!-- Priority 3: Docker deployment - show a safe Compose update command -->\n              <div v-else-if=\"hasUpdate && isDockerBuild\" class=\"space-y-2\">\n                <a\n                  v-if=\"releaseInfo?.html_url && releaseInfo.html_url !== '#'\"\n                  :href=\"releaseInfo.html_url\"\n                  target=\"_blank\"\n                  rel=\"noopener noreferrer\"\n                  class=\"group flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 transition-colors hover:bg-amber-100 dark:border-amber-800/50 dark:bg-amber-900/20 dark:hover:bg-amber-900/30\"\n                >\n                  <Icon name=\"download\" size=\"sm\" :stroke-width=\"2\" class=\"text-amber-600 dark:text-amber-400\" />\n                  <div class=\"min-w-0 flex-1\">\n                    <p class=\"text-sm font-medium text-amber-700 dark:text-amber-300\">\n                      {{ t('version.updateAvailable') }}\n                    </p>\n                    <p class=\"text-xs text-amber-600/70 dark:text-amber-400/70\">\n                      v{{ latestVersion }}\n                    </p>\n                  </div>\n                </a>\n\n                <div class=\"overflow-hidden rounded-lg border border-gray-200 dark:border-dark-600\">\n                  <div class=\"flex items-center justify-between border-b border-gray-200 bg-gray-100 px-2 py-1.5 dark:border-dark-600 dark:bg-dark-700\">\n                    <span class=\"text-[11px] font-medium text-gray-500 dark:text-dark-300\">\n                      {{ t('version.deployDocker') }}\n                    </span>\n                    <button\n                      @click=\"copyToClipboard(dockerUpdateCommand)\"\n                      class=\"flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600 dark:text-dark-400 dark:hover:bg-dark-600 dark:hover:text-dark-200\"\n                    >\n                      <Icon :name=\"copied ? 'check' : 'copy'\" size=\"xs\" :stroke-width=\"2\" />\n                      {{ copied ? t('version.copied') : t('version.copyCommand') }}\n                    </button>\n                  </div>\n                  <code class=\"block select-all whitespace-pre-wrap break-all bg-gray-50 p-2.5 font-mono text-[10px] leading-relaxed text-gray-600 dark:bg-dark-900 dark:text-dark-300\">{{ dockerUpdateCommand }}</code>\n                </div>\n              </div>\n\n              <!-- Priority 4: Update available for source build - show git pull hint -->",
+      "marker": "              <!-- Priority 3: Update available for source build - show git pull hint -->",
       "source": "patches/version-badge-restore-update-panel.txt",
-      "sentinel": "<!-- Priority 3: Update available for source build - show git pull hint -->\n              <div v-else-if=\"hasUpdate && !isReleaseBuild\" class=\"space-y-2\">"
+      "sentinel": "<!-- Priority 3: Docker deployment - show a safe Compose update command -->"
     },
     {
       "target": "frontend/src/components/common/VersionBadge.vue",
       "operation": "replace",
-      "marker": "v-else-if=\"hasUpdate && !isReleaseBuild && !isDockerBuild\"",
+      "marker": "v-else-if=\"hasUpdate && !isReleaseBuild\"",
       "source": "patches/version-badge-direct-source-condition.txt",
-      "sentinel": "v-else-if=\"hasUpdate && !isReleaseBuild\""
+      "sentinel": "v-else-if=\"hasUpdate && !isReleaseBuild && !isDockerBuild\""
     },
     {
       "target": "frontend/src/components/common/VersionBadge.vue",
       "operation": "replace",
-      "marker": "                <!-- Version rollback entry -->\n                <div v-if=\"!isDockerBuild\" class=\"border-t border-gray-100 pt-2 dark:border-dark-700\">",
+      "marker": "                <!-- Version rollback entry -->\n                <div class=\"border-t border-gray-100 pt-2 dark:border-dark-700\">",
       "source": "patches/version-badge-rollback-visible.txt",
-      "sentinel": "                <!-- Version rollback entry -->\n                <div class=\"border-t border-gray-100 pt-2 dark:border-dark-700\">"
+      "sentinel": "                <!-- Version rollback entry -->\n                <div v-if=\"!isDockerBuild\" class=\"border-t border-gray-100 pt-2 dark:border-dark-700\">"
     },
     {
       "target": "frontend/src/views/user/RedeemView.vue",
