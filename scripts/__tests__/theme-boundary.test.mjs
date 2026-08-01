@@ -144,6 +144,13 @@ test('upstream sync captures release notes only for a release contained in the f
   assert.match(workflow, /git -C "\$GENERATED_DIR" log/)
 })
 
+test('repository release notes describe fixes instead of listing bare commit hashes', async () => {
+  const workflow = await read('.github/workflows/upstream-theme-sync.yml')
+  assert.match(workflow, /git log --reverse --format='- %s \(`%h`\)\.'/)
+  assert.match(workflow, /git log -1 --format='%s'/)
+  assert.doesNotMatch(workflow, /git log --reverse --format='%h'/)
+})
+
 test('themed binary releases publish generated repository or upstream notes from a common notes file', async () => {
   const [workflow, overlayWorkflow] = await Promise.all([
     read('.github/workflows/theme-binary-release.yml'),

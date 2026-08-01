@@ -95,9 +95,13 @@ test('direct Docker update migration also applies to a clean upstream badge', as
     path.join(root, 'frontend/src/components/common/VersionBadge.vue'),
     "const isReleaseBuild = computed(() => buildType.value === 'release')\n\nfunction toggleDropdown() {}\n",
   )
+  const directStatePatch = await readFile(
+    'theme/apophis/patches/version-badge-direct-update-state.txt',
+    'utf8',
+  )
   await writeFile(
     path.join(overlay, 'patches/direct-state.txt'),
-    await readFile('theme/apophis/patches/version-badge-direct-update-state.txt', 'utf8'),
+    directStatePatch.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'),
   )
   await writeFile(path.join(overlay, 'patches/remove-old-state.txt'), '')
   await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({

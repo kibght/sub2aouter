@@ -176,9 +176,14 @@ jobs:
                git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null &&
                git merge-base --is-ancestor "$BASE_SHA" "$RELEASE_SOURCE_SHA" &&
                [[ "$BASE_SHA" != "$RELEASE_SOURCE_SHA" ]]; then
-              git log --reverse --format='%h' "${BASE_SHA}..${RELEASE_SOURCE_SHA}" | while read -r commit; do printf -- '- 已合入仓库修复提交 `%s`。\n' "$commit"; done
+              git log --reverse --format='- %s (`%h`).' "${BASE_SHA}..${RELEASE_SOURCE_SHA}"
             else
-              printf -- '- 已合入仓库修复提交 `%s`。\n' "${RELEASE_SOURCE_SHA:0:12}"
+              commit_subject="$(git log -1 --format='%s' "$RELEASE_SOURCE_SHA" 2>/dev/null || true)"
+              if [[ -n "$commit_subject" ]]; then
+                printf -- '- %s (`%s`).\n' "$commit_subject" "${RELEASE_SOURCE_SHA:0:12}"
+              else
+                printf -- '- ????????? `%s`?\n' "${RELEASE_SOURCE_SHA:0:12}"
+              fi
             fi
             printf '\n---\n\n'
             printf '本次仓库发布基于提交 `%s`，对应上游提交 `%s`。\n' "$RELEASE_SOURCE_SHA" "$UPSTREAM_SHA"

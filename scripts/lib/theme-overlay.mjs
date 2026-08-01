@@ -28,11 +28,13 @@ function applyPatch(text, patch, patchText) {
   if (text.includes(patch.sentinel)) return text
   const index = text.indexOf(patch.marker)
   if (index < 0) throw new Error(`Patch marker not found in ${patch.target}: ${patch.marker}`)
+  const targetEol = text.includes('\r\n') ? '\r\n' : '\n'
+  const normalizedPatchText = patchText.replace(/\r\n?/g, '\n').replace(/\n/g, targetEol)
   if (patch.operation === 'replace') {
-    return `${text.slice(0, index)}${patchText}${text.slice(index + patch.marker.length)}`
+    return `${text.slice(0, index)}${normalizedPatchText}${text.slice(index + patch.marker.length)}`
   }
   const insertionIndex = patch.position === 'after' ? index + patch.marker.length : index
-  return `${text.slice(0, insertionIndex)}${patchText}${text.slice(insertionIndex)}`
+  return `${text.slice(0, insertionIndex)}${normalizedPatchText}${text.slice(insertionIndex)}`
 }
 
 async function expectedTargets({ root, overlay }) {
