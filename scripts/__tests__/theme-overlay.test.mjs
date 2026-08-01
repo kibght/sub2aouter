@@ -85,89 +85,98 @@ test('supports exact replacement patches', async () => {
   assert.equal(second.changed, false)
 })
 
-test('direct Docker update migration also applies to a clean upstream badge', async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-direct-update-root-'))
-  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-direct-update-overlay-'))
+test('repository pointer patches preserve the official update flow', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-update-pointer-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-update-pointer-overlay-'))
   await mkdir(path.join(root, 'frontend/src/components/common'), { recursive: true })
+  await mkdir(path.join(root, 'backend/internal/service'), { recursive: true })
   await mkdir(path.join(overlay, 'patches'), { recursive: true })
 
+  const officialBadge = [
+    "const GITHUB_REPO = 'Wei-Shaw/sub2api'",
+    '// Docker Hub image published by CI (tags carry no "v" prefix, e.g. weishaw/sub2api:0.1.146)',
+    "const DOCKER_IMAGE = 'weishaw/sub2api'",
+    "const rollbackError = ref('')",
+    '',
+    'const { copied, copyToClipboard } = useClipboard()',
+    "const isReleaseBuild = computed(() => buildType.value === 'release')",
+    "onMounted(() => {",
+    '  if (isAdmin.value) {',
+    '    // Use cached version if available, otherwise fetch',
+    '    appStore.fetchVersion(false)',
+    "  }",
+    "  document.addEventListener('click', handleClickOutside)",
+    '})',
+    '',
+    'onBeforeUnmount(() => {',
+    "  document.removeEventListener('click', handleClickOutside)",
+    '})',
+    '',
+  ].join('\n')
+  await writeFile(path.join(root, 'frontend/src/components/common/VersionBadge.vue'), officialBadge)
   await writeFile(
-    path.join(root, 'frontend/src/components/common/VersionBadge.vue'),
-    "const isReleaseBuild = computed(() => buildType.value === 'release')\n\nfunction toggleDropdown() {}\n",
+    path.join(root, 'backend/internal/service/update_service.go'),
+    'githubRepo     = "Wei-Shaw/sub2api"\n',
   )
-  const directStatePatch = await readFile(
-    'theme/apophis/patches/version-badge-direct-update-state.txt',
-    'utf8',
-  )
-  await writeFile(
-    path.join(overlay, 'patches/direct-state.txt'),
-    directStatePatch.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'),
-  )
-  await writeFile(path.join(overlay, 'patches/remove-old-state.txt'), '')
-  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
-    patches: [
-      {
-        target: 'frontend/src/components/common/VersionBadge.vue',
-        operation: 'replace',
-        marker: "const isReleaseBuild = computed(() => buildType.value === 'release')",
-        source: 'patches/direct-state.txt',
-        sentinel: "buildType.value === 'release' || buildType.value === 'docker'",
-      },
-      {
-        target: 'frontend/src/components/common/VersionBadge.vue',
-        operation: 'replace',
-        marker: "const isDockerBuild = computed(() => buildType.value === 'docker')",
-        source: 'patches/remove-old-state.txt',
-        sentinel: "buildType.value === 'release' || buildType.value === 'docker'\n)\n\nfunction toggleDropdown",
-      },
-    ],
-  }))
-
-  await applyTheme({ root, overlay })
-  const badge = await readFile(path.join(root, 'frontend/src/components/common/VersionBadge.vue'), 'utf8')
-  assert.match(badge, /buildType\.value === 'release' \|\| buildType\.value === 'docker'/)
-})
-
-test('removes the legacy Docker reminder even when an earlier overlay left the direct-update comment behind', async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-docker-panel-root-'))
-  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-docker-panel-overlay-'))
-  await mkdir(path.join(root, 'frontend/src/components/common'), { recursive: true })
-  await mkdir(path.join(overlay, 'patches'), { recursive: true })
 
   const manifest = JSON.parse(await readFile('theme/apophis/manifest.json', 'utf8'))
-  const panelPatch = manifest.patches.find(
-    (entry) => entry.source === 'patches/version-badge-restore-update-panel.txt',
+  const pointerPatches = manifest.patches.filter(
+    (entry) => entry.source === 'patches/update-repository.txt' ||
+      entry.source === 'patches/version-badge-repository.txt' ||
+      entry.source === 'patches/version-badge-remove-refresh.txt' ||
+      entry.source === 'patches/version-badge-official-state.txt' ||
+      entry.source === 'patches/version-badge-official-lifecycle.txt',
   )
-  const conditionPatch = manifest.patches.find(
-    (entry) => entry.source === 'patches/version-badge-direct-source-condition.txt',
-  )
-  assert.ok(panelPatch)
-  assert.ok(conditionPatch)
-
-  const directComment = '              <!-- Priority 3: Update available for source build - show git pull hint -->'
-  await writeFile(
-    path.join(root, 'frontend/src/components/common/VersionBadge.vue'),
-    `${panelPatch.marker}${directComment}\n              <div v-else-if="hasUpdate && !isReleaseBuild && !isDockerBuild" class="space-y-2">\n`,
-  )
-  await writeFile(
-    path.join(overlay, 'patches/panel.txt'),
-    await readFile(path.join('theme/apophis', panelPatch.source), 'utf8'),
-  )
-  await writeFile(
-    path.join(overlay, 'patches/condition.txt'),
-    await readFile(path.join('theme/apophis', conditionPatch.source), 'utf8'),
-  )
-  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
-    patches: [
-      { ...panelPatch, source: 'patches/panel.txt' },
-      { ...conditionPatch, source: 'patches/condition.txt' },
-    ],
-  }))
+  assert.equal(pointerPatches.length, 5)
+  for (const patch of pointerPatches) {
+    await writeFile(
+      path.join(overlay, patch.source),
+      await readFile(path.join('theme/apophis', patch.source), 'utf8'),
+    )
+  }
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({ patches: pointerPatches }))
 
   await applyTheme({ root, overlay })
   const badge = await readFile(path.join(root, 'frontend/src/components/common/VersionBadge.vue'), 'utf8')
-  assert.doesNotMatch(badge, /Docker deployment - show a safe Compose update command/)
-  assert.doesNotMatch(badge, /isDockerBuild|dockerUpdateCommand/)
-  assert.match(badge, /v-else-if="hasUpdate && !isReleaseBuild" class="space-y-2"/)
-  assert.equal(badge.match(/Priority 3: Update available for source build/g)?.length, 1)
+  const service = await readFile(path.join(root, 'backend/internal/service/update_service.go'), 'utf8')
+  assert.match(badge, /const GITHUB_REPO = 'kibght\/sub2aouter'/)
+  assert.match(badge, /const DOCKER_IMAGE = 'ghcr\.io\/kibght\/sub2aouter'/)
+  assert.match(badge, /const isReleaseBuild = computed\(\(\) => buildType\.value === 'release'\)/)
+  assert.match(service, /githubRepo     = "kibght\/sub2aouter"/)
+
+  const staleRoot = await mkdtemp(path.join(os.tmpdir(), 'sub2api-stale-update-root-'))
+  await mkdir(path.join(staleRoot, 'frontend/src/components/common'), { recursive: true })
+  await mkdir(path.join(staleRoot, 'backend/internal/service'), { recursive: true })
+  const refreshMigration = pointerPatches.find(
+    (entry) => entry.source === 'patches/version-badge-remove-refresh.txt',
+  )
+  const stateMigration = pointerPatches.find(
+    (entry) => entry.source === 'patches/version-badge-official-state.txt',
+  )
+  const lifecycleMigration = pointerPatches.find(
+    (entry) => entry.source === 'patches/version-badge-official-lifecycle.txt',
+  )
+  const staleBadge = [
+    "const GITHUB_REPO = 'kibght/sub2aouter'",
+    "const DOCKER_IMAGE = 'ghcr.io/kibght/sub2aouter'",
+    refreshMigration.marker,
+    'const { copied, copyToClipboard } = useClipboard()',
+    stateMigration.marker,
+    lifecycleMigration.marker,
+    '',
+  ].join('\n')
+  await writeFile(path.join(staleRoot, 'frontend/src/components/common/VersionBadge.vue'), staleBadge)
+  await writeFile(
+    path.join(staleRoot, 'backend/internal/service/update_service.go'),
+    'githubRepo     = "kibght/sub2aouter"\n',
+  )
+  await applyTheme({ root: staleRoot, overlay })
+  const migratedBadge = await readFile(
+    path.join(staleRoot, 'frontend/src/components/common/VersionBadge.vue'),
+    'utf8',
+  )
+  assert.doesNotMatch(migratedBadge, /VERSION_REFRESH_INTERVAL_MS/)
+  assert.doesNotMatch(migratedBadge, /release' \|\| buildType\.value === 'docker'/)
+  assert.match(migratedBadge, /const isReleaseBuild = computed\(\(\) => buildType\.value === 'release'\)/)
+  assert.match(migratedBadge, /appStore\.fetchVersion\(false\)/)
 })

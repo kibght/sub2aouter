@@ -1,5 +1,0 @@
-const rollingBack = ref(false)
-const rollbackError = ref('')
-
-const VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000
-let versionRefreshInterval: number | undefined

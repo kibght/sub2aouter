@@ -641,15 +641,6 @@ func (s *UpdateService) saveToCache(ctx context.Context, info *UpdateInfo) {
 func compareVersions(current, latest string) int {
 	currentParts := parseVersion(current)
 	latestParts := parseVersion(latest)
-	currentIsThemedRelease := isThemedReleaseVersion(currentParts)
-	latestIsThemedRelease := isThemedReleaseVersion(latestParts)
-
-	if currentIsThemedRelease != latestIsThemedRelease {
-		if currentIsThemedRelease {
-			return 1
-		}
-		return -1
-	}
 
 	for i := 0; i < 3; i++ {
 		if currentParts[i] < latestParts[i] {
@@ -660,10 +651,6 @@ func compareVersions(current, latest string) int {
 		}
 	}
 	return 0
-}
-
-func isThemedReleaseVersion(parts [3]int) bool {
-	return parts[0] == 0 && parts[1] == 1 && parts[2] >= 200
 }
 
 func parseVersion(v string) [3]int {

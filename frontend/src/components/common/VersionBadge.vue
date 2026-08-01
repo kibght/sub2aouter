@@ -695,9 +695,6 @@ const selectedRollbackVersion = ref('')
 const rollingBack = ref(false)
 const rollbackError = ref('')
 
-const VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000
-let versionRefreshInterval: number | undefined
-
 const { copied, copyToClipboard } = useClipboard()
 
 // Manual rollback methods differ by deployment: script installs use install.sh,
@@ -731,9 +728,7 @@ const activeManualCommand = computed(() =>
 )
 
 // Only show update check for release builds (binary/docker deployment)
-const isReleaseBuild = computed(
-  () => buildType.value === 'release' || buildType.value === 'docker'
-)
+const isReleaseBuild = computed(() => buildType.value === 'release')
 
 function toggleDropdown() {
   dropdownOpen.value = !dropdownOpen.value
@@ -916,20 +911,12 @@ function handleClickOutside(event: MouseEvent) {
 onMounted(() => {
   if (isAdmin.value) {
     // Use cached version if available, otherwise fetch
-    void appStore.fetchVersion(false)
-    versionRefreshInterval = window.setInterval(() => {
-      if (isAdmin.value) {
-        void appStore.fetchVersion(true)
-      }
-    }, VERSION_REFRESH_INTERVAL_MS)
+    appStore.fetchVersion(false)
   }
   document.addEventListener('click', handleClickOutside)
 })
 
 onBeforeUnmount(() => {
-  if (versionRefreshInterval !== undefined) {
-    window.clearInterval(versionRefreshInterval)
-  }
   document.removeEventListener('click', handleClickOutside)
 })
 </script>

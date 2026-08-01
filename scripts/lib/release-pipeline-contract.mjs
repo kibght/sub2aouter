@@ -114,8 +114,8 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   const badge = files.get(badgePath) || ''
   check('frontend.repository', badgePath, badge.includes("const GITHUB_REPO = 'kibght/sub2aouter'"), 'Frontend release links must use the themed repository.')
   check('frontend.image', badgePath, badge.includes("const DOCKER_IMAGE = 'ghcr.io/kibght/sub2aouter'"), 'Frontend Docker commands must use the themed image.')
-  check('frontend.refresh', badgePath, badge.includes('VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000') && hasPattern(badge, /setInterval\([\s\S]*fetchVersion\(true\)/), 'Frontend must refresh release information every 30 minutes.')
-  check('frontend.docker_update', badgePath, badge.includes("buildType.value === 'release' || buildType.value === 'docker'") && badge.includes('@click="handleUpdate"') && badge.includes('@click="toggleRollbackPanel"') && !badge.includes('docker compose pull sub2api') && !badge.includes('const isDockerBuild = computed'), 'Docker builds must keep the original direct update and rollback flow.')
+  check('frontend.refresh', badgePath, badge.includes("const isReleaseBuild = computed(() => buildType.value === 'release')") && !badge.includes('VERSION_REFRESH_INTERVAL_MS') && !hasPattern(badge, /setInterval\([\s\S]*fetchVersion\(true\)/), 'Frontend update behavior must stay aligned with the official source.')
+  check('frontend.docker_update', badgePath, badge.includes("const isReleaseBuild = computed(() => buildType.value === 'release')") && badge.includes('@click="handleUpdate"') && badge.includes('@click="toggleRollbackPanel"') && !badge.includes("buildType.value === 'release' || buildType.value === 'docker'") && !badge.includes('const isDockerBuild = computed') && !badge.includes('dockerUpdateCommand'), 'Docker builds must keep the official manual-update flow instead of in-place replacement.')
 
   const contributorPattern = /KKBK-233|<h[1-6][^>]*>\s*Contributors\s*<\/h[1-6]>|^\s*#{1,6}\s+Contributors\s*$/im
   for (const path of [
@@ -133,8 +133,8 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     const manifest = JSON.parse(manifestText)
     check('manifest.backend_repository', manifestPath, manifestHasPatch(manifest, servicePath, 'githubRepo     = "kibght/sub2aouter"'), 'Theme manifest must preserve the custom update repository.')
     check('manifest.frontend_repository', manifestPath, manifestHasPatch(manifest, badgePath, "const GITHUB_REPO = 'kibght/sub2aouter'"), 'Theme manifest must preserve frontend release discovery.')
-    check('manifest.frontend_refresh', manifestPath, manifestHasPatch(manifest, badgePath, 'const VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000'), 'Theme manifest must preserve periodic frontend refresh.')
-    check('manifest.frontend_direct_update', manifestPath, manifestHasPatch(manifest, badgePath, "buildType.value === 'release' || buildType.value === 'docker'"), 'Theme manifest must preserve direct Docker update and rollback behavior.')
+    check('manifest.frontend_refresh', manifestPath, !manifestHasPatch(manifest, badgePath, 'const VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000'), 'Theme manifest must not alter the official frontend refresh behavior.')
+    check('manifest.frontend_direct_update', manifestPath, !manifestHasPatch(manifest, badgePath, "buildType.value === 'release' || buildType.value === 'docker'") && !manifestHasPatch(manifest, badgePath, 'dockerUpdateCommand'), 'Theme manifest must not replace the official Docker update flow.')
     check('manifest.docker_build_type', manifestPath, manifestHasPatch(manifest, dockerfilePath, '-X main.BuildType=docker'), 'Theme manifest must preserve Docker build identification.')
     check('manifest.binary_workflow', manifestPath, manifestHasFile(manifest, binaryPath), 'Theme manifest must carry the binary release workflow into generated releases.')
   } catch (error) {

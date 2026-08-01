@@ -434,13 +434,6 @@
       "sentinel": "githubRepo     = \"kibght/sub2aouter\""
     },
     {
-      "target": "backend/internal/service/update_service.go",
-      "operation": "replace",
-      "marker": "func compareVersions(current, latest string) int {\n\tcurrentParts := parseVersion(current)\n\tlatestParts := parseVersion(latest)\n\n\tfor i := 0; i < 3; i++ {\n\t\tif currentParts[i] < latestParts[i] {\n\t\t\treturn -1\n\t\t}\n\t\tif currentParts[i] > latestParts[i] {\n\t\t\treturn 1\n\t\t}\n\t}\n\treturn 0\n}",
-      "source": "patches/update-version-migration.txt",
-      "sentinel": "func isThemedReleaseVersion"
-    },
-    {
       "target": "frontend/src/components/common/VersionBadge.vue",
       "operation": "replace",
       "marker": "const GITHUB_REPO = 'Wei-Shaw/sub2api'\n// Docker Hub image published by CI (tags carry no \"v\" prefix, e.g. weishaw/sub2api:0.1.146)\nconst DOCKER_IMAGE = 'weishaw/sub2api'",
@@ -450,16 +443,23 @@
     {
       "target": "frontend/src/components/common/VersionBadge.vue",
       "operation": "replace",
-      "marker": "const rollingBack = ref(false)\nconst rollbackError = ref('')",
-      "source": "patches/version-badge-refresh-state.txt",
-      "sentinel": "const VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000"
+      "marker": "\nconst VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000\nlet versionRefreshInterval: number | undefined\n",
+      "source": "patches/version-badge-remove-refresh.txt",
+      "sentinel": "const rollbackError = ref('')\n\nconst { copied, copyToClipboard } = useClipboard()"
     },
     {
       "target": "frontend/src/components/common/VersionBadge.vue",
       "operation": "replace",
-      "marker": "onMounted(() => {\n  if (isAdmin.value) {\n    // Use cached version if available, otherwise fetch\n    appStore.fetchVersion(false)\n  }\n  document.addEventListener('click', handleClickOutside)\n})\n\nonBeforeUnmount(() => {\n  document.removeEventListener('click', handleClickOutside)\n})",
-      "source": "patches/version-badge-lifecycle.txt",
-      "sentinel": "versionRefreshInterval = window.setInterval"
+      "marker": "const isReleaseBuild = computed(\n  () => buildType.value === 'release' || buildType.value === 'docker'\n)",
+      "source": "patches/version-badge-official-state.txt",
+      "sentinel": "const isReleaseBuild = computed(() => buildType.value === 'release')"
+    },
+    {
+      "target": "frontend/src/components/common/VersionBadge.vue",
+      "operation": "replace",
+      "marker": "onMounted(() => {\n  if (isAdmin.value) {\n    // Use cached version if available, otherwise fetch\n    void appStore.fetchVersion(false)\n    versionRefreshInterval = window.setInterval(() => {\n      if (isAdmin.value) {\n        void appStore.fetchVersion(true)\n      }\n    }, VERSION_REFRESH_INTERVAL_MS)\n  }\n  document.addEventListener('click', handleClickOutside)\n})\n\nonBeforeUnmount(() => {\n  if (versionRefreshInterval !== undefined) {\n    window.clearInterval(versionRefreshInterval)\n  }\n  document.removeEventListener('click', handleClickOutside)\n})",
+      "source": "patches/version-badge-official-lifecycle.txt",
+      "sentinel": "onMounted(() => {\n  if (isAdmin.value) {\n    // Use cached version if available, otherwise fetch\n    appStore.fetchVersion(false)\n  }\n  document.addEventListener('click', handleClickOutside)\n})\n\nonBeforeUnmount(() => {\n  document.removeEventListener('click', handleClickOutside)\n})"
     },
     {
       "target": "Dockerfile",
@@ -467,41 +467,6 @@
       "marker": "-X main.BuildType=release",
       "source": "patches/dockerfile-build-type.txt",
       "sentinel": "-X main.BuildType=docker"
-    },
-    {
-      "target": "frontend/src/components/common/VersionBadge.vue",
-      "operation": "replace",
-      "marker": "const isReleaseBuild = computed(() => buildType.value === 'release')",
-      "source": "patches/version-badge-direct-update-state.txt",
-      "sentinel": "buildType.value === 'release' || buildType.value === 'docker'"
-    },
-    {
-      "target": "frontend/src/components/common/VersionBadge.vue",
-      "operation": "replace",
-      "marker": "const isDockerBuild = computed(() => buildType.value === 'docker')\nconst dockerUpdateCommand = computed(() =>\n  ['docker compose pull sub2api', 'docker compose up -d --no-deps sub2api'].join('\\n')\n)\n",
-      "source": "patches/version-badge-remove-docker-state.txt",
-      "sentinel": "buildType.value === 'release' || buildType.value === 'docker'\n)\n\nfunction toggleDropdown"
-    },
-    {
-      "target": "frontend/src/components/common/VersionBadge.vue",
-      "operation": "replace",
-      "marker": "              <!-- Priority 3: Docker deployment - show a safe Compose update command -->\n              <div v-else-if=\"hasUpdate && isDockerBuild\" class=\"space-y-2\">\n                <a\n                  v-if=\"releaseInfo?.html_url && releaseInfo.html_url !== '#'\"\n                  :href=\"releaseInfo.html_url\"\n                  target=\"_blank\"\n                  rel=\"noopener noreferrer\"\n                  class=\"group flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 transition-colors hover:bg-amber-100 dark:border-amber-800/50 dark:bg-amber-900/20 dark:hover:bg-amber-900/30\"\n                >\n                  <Icon name=\"download\" size=\"sm\" :stroke-width=\"2\" class=\"text-amber-600 dark:text-amber-400\" />\n                  <div class=\"min-w-0 flex-1\">\n                    <p class=\"text-sm font-medium text-amber-700 dark:text-amber-300\">\n                      {{ t('version.updateAvailable') }}\n                    </p>\n                    <p class=\"text-xs text-amber-600/70 dark:text-amber-400/70\">\n                      v{{ latestVersion }}\n                    </p>\n                  </div>\n                </a>\n\n                <div class=\"overflow-hidden rounded-lg border border-gray-200 dark:border-dark-600\">\n                  <div class=\"flex items-center justify-between border-b border-gray-200 bg-gray-100 px-2 py-1.5 dark:border-dark-600 dark:bg-dark-700\">\n                    <span class=\"text-[11px] font-medium text-gray-500 dark:text-dark-300\">\n                      {{ t('version.deployDocker') }}\n                    </span>\n                    <button\n                      @click=\"copyToClipboard(dockerUpdateCommand)\"\n                      class=\"flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600 dark:text-dark-400 dark:hover:bg-dark-600 dark:hover:text-dark-200\"\n                    >\n                      <Icon :name=\"copied ? 'check' : 'copy'\" size=\"xs\" :stroke-width=\"2\" />\n                      {{ copied ? t('version.copied') : t('version.copyCommand') }}\n                    </button>\n                  </div>\n                  <code class=\"block select-all whitespace-pre-wrap break-all bg-gray-50 p-2.5 font-mono text-[10px] leading-relaxed text-gray-600 dark:bg-dark-900 dark:text-dark-300\">{{ dockerUpdateCommand }}</code>\n                </div>\n              </div>\n\n              <!-- Priority 4: Update available for source build - show git pull hint -->",
-      "source": "patches/version-badge-restore-update-panel.txt",
-      "sentinel": "<!-- Priority 3: Update available for source build - show git pull hint -->\n              <div v-else-if=\"hasUpdate && !isReleaseBuild\" class=\"space-y-2\">"
-    },
-    {
-      "target": "frontend/src/components/common/VersionBadge.vue",
-      "operation": "replace",
-      "marker": "v-else-if=\"hasUpdate && !isReleaseBuild && !isDockerBuild\"",
-      "source": "patches/version-badge-direct-source-condition.txt",
-      "sentinel": "v-else-if=\"hasUpdate && !isReleaseBuild\""
-    },
-    {
-      "target": "frontend/src/components/common/VersionBadge.vue",
-      "operation": "replace",
-      "marker": "                <!-- Version rollback entry -->\n                <div v-if=\"!isDockerBuild\" class=\"border-t border-gray-100 pt-2 dark:border-dark-700\">",
-      "source": "patches/version-badge-rollback-visible.txt",
-      "sentinel": "                <!-- Version rollback entry -->\n                <div class=\"border-t border-gray-100 pt-2 dark:border-dark-700\">"
     },
     {
       "target": "frontend/src/views/user/RedeemView.vue",

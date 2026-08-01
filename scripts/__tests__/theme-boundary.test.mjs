@@ -64,8 +64,11 @@ test('panel updater and binary release workflow use the custom repository', asyn
   assert.match(workflow, /gh release create/)
   assert.match(workflow, /checksums\.txt/)
   const manifest = JSON.parse(manifestText)
-  assert.ok((manifest.patches || []).some((entry) => entry.target === 'backend/internal/service/update_service.go'))
-  assert.ok((manifest.patches || []).some((entry) => entry.sentinel === 'func isThemedReleaseVersion'))
+  assert.ok((manifest.patches || []).some(
+    (entry) => entry.source === 'patches/update-repository.txt' &&
+      entry.target === 'backend/internal/service/update_service.go',
+  ))
+  assert.ok((manifest.patches || []).every((entry) => entry.sentinel !== 'func isThemedReleaseVersion'))
   assert.ok((manifest.files || []).some((entry) => entry.target === '.github/workflows/theme-binary-release.yml'))
 })
 
@@ -92,38 +95,42 @@ test('Docker images and binary releases share one generated release version', as
   assert.doesNotMatch(binaryWorkflow, /date -u/)
 })
 
-test('version badge checks the custom repository every 30 minutes', async () => {
+test('version badge keeps the official update flow with custom repository pointers', async () => {
   const [badge, manifestText] = await Promise.all([
     read('frontend/src/components/common/VersionBadge.vue'),
     read('theme/apophis/manifest.json'),
   ])
   assert.match(badge, /const GITHUB_REPO = 'kibght\/sub2aouter'/)
   assert.match(badge, /const DOCKER_IMAGE = 'ghcr\.io\/kibght\/sub2aouter'/)
-  assert.match(badge, /VERSION_REFRESH_INTERVAL_MS = 30 \* 60 \* 1000/)
-  assert.match(badge, /setInterval\([\s\S]*fetchVersion\(true\)/)
-  assert.match(badge, /clearInterval\(versionRefreshInterval\)/)
+  assert.match(badge, /const isReleaseBuild = computed\(\(\) => buildType\.value === 'release'\)/)
+  assert.doesNotMatch(badge, /VERSION_REFRESH_INTERVAL_MS/)
+  assert.doesNotMatch(badge, /buildType\.value === 'release' \|\| buildType\.value === 'docker'/)
+  assert.doesNotMatch(badge, /isDockerBuild|dockerUpdateCommand/)
 
   const manifest = JSON.parse(manifestText)
   const versionBadgePatches = (manifest.patches || []).filter(
     (entry) => entry.target === 'frontend/src/components/common/VersionBadge.vue',
   )
-  assert.ok(versionBadgePatches.length >= 3, 'version reminder patches must survive upstream generation')
+  assert.deepEqual(versionBadgePatches.map((entry) => entry.source), [
+    'patches/version-badge-repository.txt',
+    'patches/version-badge-remove-refresh.txt',
+    'patches/version-badge-official-state.txt',
+    'patches/version-badge-official-lifecycle.txt',
+  ])
 })
 
 
-test('Docker deployments keep direct update and version rollback with themed repository links', async () => {
+test('Docker builds keep the official manual-update path instead of in-place replacement', async () => {
   const [dockerfile, badge, manifestText] = await Promise.all([
     read('Dockerfile'),
     read('frontend/src/components/common/VersionBadge.vue'),
     read('theme/apophis/manifest.json'),
   ])
   assert.match(dockerfile, /-X main\.BuildType=docker/)
-  assert.match(badge, /buildType\.value === 'release' \|\| buildType\.value === 'docker'/)
-  assert.match(badge, /@click="handleUpdate"/)
-  assert.match(badge, /@click="toggleRollbackPanel"/)
-  assert.doesNotMatch(badge, /docker compose pull sub2api/)
-  assert.doesNotMatch(badge, /const isDockerBuild = computed/)
-  assert.doesNotMatch(badge, /v-if="!isDockerBuild"/)
+  assert.match(badge, /v-else-if="hasUpdate && !isReleaseBuild"/)
+  assert.match(badge, /v-else-if="hasUpdate && isReleaseBuild"/)
+  assert.doesNotMatch(badge, /buildType\.value === 'release' \|\| buildType\.value === 'docker'/)
+  assert.doesNotMatch(badge, /@click="handleUpdate"[\s\S]*buildType\.value === 'docker'/)
 
   const manifest = JSON.parse(manifestText)
   assert.ok((manifest.patches || []).some(
