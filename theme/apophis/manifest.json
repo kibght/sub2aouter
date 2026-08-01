@@ -67,21 +67,49 @@
       "marker": "      colors: {",
       "position": "after",
       "source": "patches/tailwind-semantic-colors.txt",
-      "sentinel": "background: 'hsl(var(--background) / <alpha-value>)'"
+      "sentinel": "        gray: {\n          50: '#fafafa'"
     },
     {
       "target": "frontend/tailwind.config.js",
-      "marker": "        primary: {",
-      "position": "after",
-      "source": "patches/tailwind-primary-defaults.txt",
-      "sentinel": "DEFAULT: 'hsl(var(--primary) / <alpha-value>)'"
+      "operation": "replace",
+      "marker": "        // 主色调 - Teal/Cyan 青色系\n        primary: {\n          50: '#f0fdfa',\n          100: '#ccfbf1',\n          200: '#99f6e4',\n          300: '#5eead4',\n          400: '#2dd4bf',\n          500: '#14b8a6',\n          600: '#0d9488',\n          700: '#0f766e',\n          800: '#115e59',\n          900: '#134e4a',\n          950: '#042f2e'\n        },",
+      "source": "patches/tailwind-primary-palette.txt",
+      "sentinel": "50: 'hsl(var(--muted) / <alpha-value>)'"
     },
     {
       "target": "frontend/tailwind.config.js",
-      "marker": "        accent: {",
-      "position": "after",
-      "source": "patches/tailwind-accent-defaults.txt",
-      "sentinel": "DEFAULT: 'hsl(var(--accent) / <alpha-value>)'"
+      "operation": "replace",
+      "marker": "        // 辅助色 - 深蓝灰\n        accent: {\n          50: '#f8fafc',\n          100: '#f1f5f9',\n          200: '#e2e8f0',\n          300: '#cbd5e1',\n          400: '#94a3b8',\n          500: '#64748b',\n          600: '#475569',\n          700: '#334155',\n          800: '#1e293b',\n          900: '#0f172a',\n          950: '#020617'\n        },",
+      "source": "patches/tailwind-accent-palette.txt",
+      "sentinel": "accent: {\n          DEFAULT: 'hsl(var(--accent) / <alpha-value>)'"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "operation": "replace",
+      "marker": "        // 深色模式背景\n        dark: {\n          50: '#f8fafc',\n          100: '#f1f5f9',\n          200: '#e2e8f0',\n          300: '#cbd5e1',\n          400: '#94a3b8',\n          500: '#64748b',\n          600: '#475569',\n          700: '#334155',\n          800: '#1e293b',\n          900: '#0f172a',\n          950: '#020617'\n        }",
+      "source": "patches/tailwind-dark-palette.txt",
+      "sentinel": "dark: {\n          50: '#fafafa'"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "operation": "replace",
+      "marker": "        glow: '0 0 20px rgba(20, 184, 166, 0.25)',\n        'glow-lg': '0 0 40px rgba(20, 184, 166, 0.35)',",
+      "source": "patches/tailwind-neutral-glow-shadows.txt",
+      "sentinel": "glow: '0 0 20px hsl(var(--foreground) / 0.12)'"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "operation": "replace",
+      "marker": "      backgroundImage: {\n        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',\n        'gradient-primary': 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',\n        'gradient-dark': 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',\n        'gradient-glass':\n          'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',\n        'mesh-gradient':\n          'radial-gradient(at 40% 20%, rgba(20, 184, 166, 0.12) 0px, transparent 50%), radial-gradient(at 80% 0%, rgba(6, 182, 212, 0.08) 0px, transparent 50%), radial-gradient(at 0% 50%, rgba(20, 184, 166, 0.08) 0px, transparent 50%)'\n      },",
+      "source": "patches/tailwind-neutral-background-images.txt",
+      "sentinel": "'gradient-primary': 'linear-gradient(135deg, hsl(var(--foreground))"
+    },
+    {
+      "target": "frontend/tailwind.config.js",
+      "operation": "replace",
+      "marker": "        glow: {\n          '0%': { boxShadow: '0 0 20px rgba(20, 184, 166, 0.25)' },\n          '100%': { boxShadow: '0 0 30px rgba(20, 184, 166, 0.4)' }\n        }",
+      "source": "patches/tailwind-neutral-glow-keyframes.txt",
+      "sentinel": "boxShadow: '0 0 20px hsl(var(--foreground) / 0.12)'"
     },
     {
       "target": "frontend/tailwind.config.js",
@@ -467,6 +495,41 @@
       "marker": "                <!-- Version rollback entry -->\n                <div class=\"border-t border-gray-100 pt-2 dark:border-dark-700\">",
       "source": "patches/version-badge-rollback-visibility.txt",
       "sentinel": "<div v-if=\"!isDockerBuild\" class=\"border-t border-gray-100 pt-2 dark:border-dark-700\">"
+    },
+    {
+      "target": "frontend/src/views/user/RedeemView.vue",
+      "operation": "replace",
+      "marker": "        <div class=\"bg-gradient-to-br from-primary-500 to-primary-600 px-6 py-8 text-center\">\n          <div\n            class=\"mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm\"\n          >\n            <Icon name=\"creditCard\" size=\"xl\" class=\"text-white\" />\n          </div>\n          <p class=\"text-sm font-medium text-primary-100\">{{ t('redeem.currentBalance') }}</p>\n          <p class=\"mt-2 text-4xl font-bold text-white\">\n            ${{ user?.balance?.toFixed(2) || '0.00' }}\n          </p>\n          <p class=\"mt-2 text-sm text-primary-100\">\n            {{ t('redeem.concurrency') }}: {{ user?.concurrency || 0 }} {{ t('redeem.requests') }}\n          </p>\n        </div>",
+      "source": "patches/user-redeem-balance-summary.txt",
+      "sentinel": "redeem-balance-summary"
+    },
+    {
+      "target": "frontend/src/views/admin/SettingsView.vue",
+      "operation": "replace",
+      "marker": "  background: linear-gradient(90deg, #14b8a6, #0ea5e9);",
+      "source": "patches/admin-settings-active-tab.txt",
+      "sentinel": "  background: hsl(var(--foreground));"
+    },
+    {
+      "target": "frontend/src/views/KeyUsageView.vue",
+      "operation": "replace",
+      "marker": "  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.2);\n  border-color: #14b8a6;",
+      "source": "patches/key-usage-focus-ring.txt",
+      "sentinel": "border-color: hsl(var(--foreground));"
+    },
+    {
+      "target": "frontend/src/components/common/DataTable.vue",
+      "operation": "replace",
+      "marker": ".dark .sticky-header-cell {\n  background-color: rgb(31 41 55);\n}\n\n/* Sticky 列基础样式 */\n.sticky-col {\n  position: sticky;\n  z-index: 20; /* 表体固定列 */\n}\n\n/* 单列固定（无勾选列时） */\n.sticky-col-left {\n  left: 0;\n}\n\n/* 双列固定（有勾选列时）：第一列（勾选） */\n.sticky-col-left-first {\n  left: 0;\n}\n\n/* 双列固定（有勾选列时）：第二列（名称） */\n.sticky-col-left-second {\n  left: var(--select-col-width);\n}\n\n/* 操作列固定 */\n.sticky-col-right {\n  right: 0;\n}\n\n/* 表头 sticky 列 - 需要比普通表头单元格更高的 z-index */\n.sticky-header-cell.sticky-col {\n  z-index: 220; /* 高于普通表头单元格和表体固定列 */\n}\n\n/* 表体 sticky 列背景 */\ntbody .sticky-col {\n  background-color: white;\n}\n\n.dark tbody .sticky-col {\n  background-color: rgb(17 24 39);\n}\n\n/* hover 状态保持 */\ntbody tr:hover .sticky-col {\n  background-color: rgb(249 250 251);\n}\n\n.dark tbody tr:hover .sticky-col {\n  background-color: rgb(31 41 55);\n}\n\n/* 阴影只在可滚动时显示 */",
+      "source": "patches/data-table-neutral-sticky-columns.txt",
+      "sentinel": "background-color: hsl(var(--card));"
+    },
+    {
+      "target": "frontend/src/views/admin/SettingsView.vue",
+      "operation": "replace",
+      "marker": ".dark .settings-tabs-shell {\n  border-color: rgb(51 65 85 / 0.65);\n  background: rgb(15 23 42 / 0.86);\n  box-shadow:\n    0 16px 36px rgb(0 0 0 / 0.28),\n    0 1px 0 rgb(255 255 255 / 0.06) inset;\n}\n\n.dark .settings-tab::before {\n  background: linear-gradient(135deg, rgb(30 41 59 / 0.9), rgb(51 65 85 / 0.62));\n}\n\n.dark .settings-tab-active {\n  box-shadow:\n    0 12px 26px rgb(0 0 0 / 0.22),\n    0 1px 0 rgb(255 255 255 / 0.08) inset;\n}",
+      "source": "patches/admin-settings-neutral-dark-tabs.txt",
+      "sentinel": "background: hsl(var(--card) / 0.96);"
     }
   ]
 }

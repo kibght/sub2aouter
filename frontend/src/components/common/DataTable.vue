@@ -989,7 +989,7 @@ defineExpose({
 }
 
 .dark .sticky-header-cell {
-  background-color: rgb(31 41 55);
+  background-color: hsl(var(--muted));
 }
 
 /* Sticky 列基础样式 */
@@ -1025,20 +1025,20 @@ defineExpose({
 
 /* 表体 sticky 列背景 */
 tbody .sticky-col {
-  background-color: white;
+  background-color: hsl(var(--card));
 }
 
 .dark tbody .sticky-col {
-  background-color: rgb(17 24 39);
+  background-color: hsl(var(--card));
 }
 
 /* hover 状态保持 */
 tbody tr:hover .sticky-col {
-  background-color: rgb(249 250 251);
+  background-color: hsl(var(--muted));
 }
 
 .dark tbody tr:hover .sticky-col {
-  background-color: rgb(31 41 55);
+  background-color: hsl(var(--muted));
 }
 
 /* 阴影只在可滚动时显示 */
