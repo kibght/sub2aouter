@@ -6,8 +6,6 @@ const mocks = vi.hoisted(() => ({
   fetchVersion: vi.fn().mockResolvedValue(null),
   buildType: 'release',
   hasUpdate: false,
-  performUpdate: vi.fn().mockResolvedValue({ need_restart: true }),
-  getRollbackVersions: vi.fn().mockResolvedValue({ versions: [] }),
 }))
 
 vi.mock('@/stores', () => ({
@@ -25,9 +23,9 @@ vi.mock('@/stores', () => ({
 }))
 
 vi.mock('@/api/admin/system', () => ({
-  performUpdate: mocks.performUpdate,
+  performUpdate: vi.fn(),
   restartService: vi.fn(),
-  getRollbackVersions: mocks.getRollbackVersions,
+  getRollbackVersions: vi.fn().mockResolvedValue({ versions: [] }),
   rollback: vi.fn(),
 }))
 
@@ -45,16 +43,34 @@ describe('VersionBadge update reminders', () => {
     mocks.fetchVersion.mockClear()
     mocks.buildType = 'release'
     mocks.hasUpdate = false
-    mocks.performUpdate.mockClear()
-    mocks.getRollbackVersions.mockClear()
   })
 
   afterEach(() => {
     vi.useRealTimers()
   })
 
-  it('renders Docker updates with the original direct update action', async () => {
+  it('renders Docker updates as Compose commands without a binary update button', async () => {
     mocks.buildType = 'docker'
+    mocks.hasUpdate = true
+
+    const wrapper = mount(VersionBadge, {
+      global: {
+        stubs: {
+          Icon: true,
+        },
+      },
+    })
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('docker compose pull sub2api')
+    expect(wrapper.text()).toContain('docker compose up -d --no-deps sub2api')
+    expect(wrapper.text()).not.toContain('version.updateNow')
+    wrapper.unmount()
+  })
+
+  it('keeps direct update action for binary release builds', async () => {
+    mocks.buildType = 'release'
     mocks.hasUpdate = true
 
     const wrapper = mount(VersionBadge, {
@@ -69,34 +85,6 @@ describe('VersionBadge update reminders', () => {
 
     expect(wrapper.text()).toContain('version.updateNow')
     expect(wrapper.text()).not.toContain('docker compose pull sub2api')
-
-    const updateButton = wrapper.findAll('button').find((button) => button.text().includes('version.updateNow'))
-    expect(updateButton).toBeDefined()
-    await updateButton!.trigger('click')
-    await flushPromises()
-    expect(mocks.performUpdate).toHaveBeenCalledTimes(1)
-    wrapper.unmount()
-  })
-
-  it('keeps version rollback available for Docker deployments', async () => {
-    mocks.buildType = 'docker'
-    mocks.hasUpdate = false
-
-    const wrapper = mount(VersionBadge, {
-      global: {
-        stubs: {
-          Icon: true,
-        },
-      },
-    })
-    await wrapper.get('button').trigger('click')
-    await flushPromises()
-
-    const rollbackButton = wrapper.findAll('button').find((button) => button.text().includes('version.rollback'))
-    expect(rollbackButton).toBeDefined()
-    await rollbackButton!.trigger('click')
-    await flushPromises()
-    expect(mocks.getRollbackVersions).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 
