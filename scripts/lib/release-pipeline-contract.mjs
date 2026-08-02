@@ -108,7 +108,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
 
   const dockerfilePath = 'Dockerfile'
   const dockerfile = files.get(dockerfilePath) || ''
-  check('docker.build_type', dockerfilePath, dockerfile.includes('-X main.BuildType=docker'), 'Docker builds must identify themselves as Docker deployments.')
+  check('docker.build_type', dockerfilePath, dockerfile.includes('-X main.BuildType=release'), 'Docker builds must use the official release build type.')
 
   const badgePath = 'frontend/src/components/common/VersionBadge.vue'
   const badge = files.get(badgePath) || ''
@@ -135,7 +135,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     check('manifest.frontend_repository', manifestPath, manifestHasPatch(manifest, badgePath, "const GITHUB_REPO = 'kibght/sub2aouter'"), 'Theme manifest must preserve frontend release discovery.')
     check('manifest.frontend_refresh', manifestPath, !manifestHasPatch(manifest, badgePath, 'const VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000'), 'Theme manifest must not alter the official frontend refresh behavior.')
     check('manifest.frontend_direct_update', manifestPath, !manifestHasPatch(manifest, badgePath, "buildType.value === 'release' || buildType.value === 'docker'") && !manifestHasPatch(manifest, badgePath, 'dockerUpdateCommand'), 'Theme manifest must not replace the official Docker update flow.')
-    check('manifest.docker_build_type', manifestPath, manifestHasPatch(manifest, dockerfilePath, '-X main.BuildType=docker'), 'Theme manifest must preserve Docker build identification.')
+    check('manifest.docker_build_type', manifestPath, !manifestHasPatch(manifest, dockerfilePath, '-X main.BuildType=docker') && !manifestHasPatch(manifest, dockerfilePath, '-X main.BuildType=release'), 'Theme manifest must not override the official Docker build type.')
     check('manifest.binary_workflow', manifestPath, manifestHasFile(manifest, binaryPath), 'Theme manifest must carry the binary release workflow into generated releases.')
   } catch (error) {
     violations.push(violation('manifest.invalid', manifestPath, `Theme manifest is invalid JSON: ${error.message}`))

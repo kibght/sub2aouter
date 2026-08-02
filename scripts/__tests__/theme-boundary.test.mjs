@@ -120,22 +120,21 @@ test('version badge keeps the official update flow with custom repository pointe
 })
 
 
-test('Docker builds keep the official manual-update path instead of in-place replacement', async () => {
+test('Docker builds use the official release update path', async () => {
   const [dockerfile, badge, manifestText] = await Promise.all([
     read('Dockerfile'),
     read('frontend/src/components/common/VersionBadge.vue'),
     read('theme/apophis/manifest.json'),
   ])
-  assert.match(dockerfile, /-X main\.BuildType=docker/)
+  assert.match(dockerfile, /-X main\.BuildType=release/)
   assert.match(badge, /v-else-if="hasUpdate && !isReleaseBuild"/)
   assert.match(badge, /v-else-if="hasUpdate && isReleaseBuild"/)
   assert.doesNotMatch(badge, /buildType\.value === 'release' \|\| buildType\.value === 'docker'/)
   assert.doesNotMatch(badge, /@click="handleUpdate"[\s\S]*buildType\.value === 'docker'/)
 
   const manifest = JSON.parse(manifestText)
-  assert.ok((manifest.patches || []).some(
-    (entry) => entry.target === 'Dockerfile' && entry.sentinel === '-X main.BuildType=docker',
-  ))
+  assert.equal((manifest.patches || []).some((entry) => entry.target === 'Dockerfile' && entry.source === 'patches/dockerfile-build-type.txt'), false)
+  assert.ok((manifest.patches || []).some((entry) => entry.target === 'Dockerfile' && entry.sentinel === 'id=sub2api-pnpm-store-v2,target=/root/.local/share/pnpm/store,sharing=locked,uid=0,gid=0,mode=0755'))
 })
 
 test('upstream sync captures release notes only for a release contained in the fetched source', async () => {

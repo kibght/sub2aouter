@@ -462,13 +462,6 @@
       "sentinel": "onMounted(() => {\n  if (isAdmin.value) {\n    // Use cached version if available, otherwise fetch\n    appStore.fetchVersion(false)\n  }\n  document.addEventListener('click', handleClickOutside)\n})\n\nonBeforeUnmount(() => {\n  document.removeEventListener('click', handleClickOutside)\n})"
     },
     {
-      "target": "Dockerfile",
-      "operation": "replace",
-      "marker": "-X main.BuildType=release",
-      "source": "patches/dockerfile-build-type.txt",
-      "sentinel": "-X main.BuildType=docker"
-    },
-    {
       "target": "frontend/src/views/user/RedeemView.vue",
       "operation": "replace",
       "marker": "        <div class=\"bg-gradient-to-br from-primary-500 to-primary-600 px-6 py-8 text-center\">\n          <div\n            class=\"mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm\"\n          >\n            <Icon name=\"creditCard\" size=\"xl\" class=\"text-white\" />\n          </div>\n          <p class=\"text-sm font-medium text-primary-100\">{{ t('redeem.currentBalance') }}</p>\n          <p class=\"mt-2 text-4xl font-bold text-white\">\n            ${{ user?.balance?.toFixed(2) || '0.00' }}\n          </p>\n          <p class=\"mt-2 text-sm text-primary-100\">\n            {{ t('redeem.concurrency') }}: {{ user?.concurrency || 0 }} {{ t('redeem.requests') }}\n          </p>\n        </div>",
