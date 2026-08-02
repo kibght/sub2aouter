@@ -149,6 +149,13 @@
     {
       "target": "Dockerfile",
       "operation": "replace",
+      "marker": "RUN mkdir -p /app/data && chown sub2api:sub2api /app/data",
+      "source": "patches/dockerfile-update-permissions.txt",
+      "sentinel": "RUN mkdir -p /app/data && chown -R sub2api:sub2api /app"
+    },
+    {
+      "target": "Dockerfile",
+      "operation": "replace",
       "marker": "RUN --mount=type=cache,id=sub2api-pnpm-store,target=/root/.local/share/pnpm/store \\",
       "source": "patches/dockerfile-pnpm-cache.txt",
       "sentinel": "id=sub2api-pnpm-store-v2,target=/root/.local/share/pnpm/store,sharing=locked,uid=0,gid=0,mode=0755"
