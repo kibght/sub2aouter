@@ -135,7 +135,16 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     check('manifest.frontend_repository', manifestPath, manifestHasPatch(manifest, badgePath, "const GITHUB_REPO = 'kibght/sub2aouter'"), 'Theme manifest must preserve frontend release discovery.')
     check('manifest.frontend_refresh', manifestPath, !manifestHasPatch(manifest, badgePath, 'const VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000'), 'Theme manifest must not alter the official frontend refresh behavior.')
     check('manifest.frontend_direct_update', manifestPath, !manifestHasPatch(manifest, badgePath, "buildType.value === 'release' || buildType.value === 'docker'") && !manifestHasPatch(manifest, badgePath, 'dockerUpdateCommand'), 'Theme manifest must not replace the official Docker update flow.')
-    check('manifest.docker_build_type', manifestPath, !manifestHasPatch(manifest, dockerfilePath, '-X main.BuildType=docker') && !manifestHasPatch(manifest, dockerfilePath, '-X main.BuildType=release'), 'Theme manifest must not override the official Docker build type.')
+    const dockerBuildTypeMigration = (manifest.patches || []).find(
+      (entry) => entry.target === dockerfilePath && entry.source === 'patches/dockerfile-build-type-migration.txt',
+    )
+    check('manifest.docker_build_type', manifestPath,
+      !manifestHasPatch(manifest, dockerfilePath, '-X main.BuildType=release') &&
+      !manifestHasPatch(manifest, dockerfilePath, '-X main.BuildType=docker') ||
+      Boolean(dockerBuildTypeMigration &&
+        dockerBuildTypeMigration.marker === '-X main.BuildType=docker' &&
+        dockerBuildTypeMigration.sentinel === '-X main.BuildType=release'),
+      'Theme manifest must keep the official Docker build type and may only migrate stale generated snapshots.')
     check('manifest.binary_workflow', manifestPath, manifestHasFile(manifest, binaryPath), 'Theme manifest must carry the binary release workflow into generated releases.')
   } catch (error) {
     violations.push(violation('manifest.invalid', manifestPath, `Theme manifest is invalid JSON: ${error.message}`))

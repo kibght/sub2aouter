@@ -12,7 +12,8 @@ test('Dockerfile uses an isolated writable pnpm cache mount', async () => {
 
 test('theme overlay persists the Dockerfile cache fix after upstream sync', async () => {
   const manifest = JSON.parse(await readFile('theme/apophis/manifest.json', 'utf8'))
-  const patch = manifest.patches.find((entry) => entry.target === 'Dockerfile' && entry.operation === 'replace')
+  const patch = manifest.patches.find(
+    (entry) => entry.target === 'Dockerfile' && entry.sentinel?.includes('sub2api-pnpm-store-v2'),
+  )
   assert.ok(patch)
-  assert.ok(patch.sentinel.includes('sub2api-pnpm-store-v2'))
 })

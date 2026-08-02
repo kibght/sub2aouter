@@ -142,6 +142,13 @@
     {
       "target": "Dockerfile",
       "operation": "replace",
+      "marker": "-X main.BuildType=docker",
+      "source": "patches/dockerfile-build-type-migration.txt",
+      "sentinel": "-X main.BuildType=release"
+    },
+    {
+      "target": "Dockerfile",
+      "operation": "replace",
       "marker": "RUN --mount=type=cache,id=sub2api-pnpm-store,target=/root/.local/share/pnpm/store \\",
       "source": "patches/dockerfile-pnpm-cache.txt",
       "sentinel": "id=sub2api-pnpm-store-v2,target=/root/.local/share/pnpm/store,sharing=locked,uid=0,gid=0,mode=0755"
