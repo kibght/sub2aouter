@@ -1,0 +1,94 @@
+name: Publish Themed Binary Release
+
+on:
+  workflow_run:
+    workflows:
+      - Sync Upstream With Apophis Theme
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+jobs:
+  binary-release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: themed-release
+          fetch-depth: 0
+
+      - name: Read release version and skip duplicates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_VERSION="$(cat backend/cmd/server/VERSION | tr -d '[:space:]')"
+          if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid themed release version: $RELEASE_VERSION" >&2
+            exit 1
+          fi
+          RELEASE_TAG="v${RELEASE_VERSION}"
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
+            echo "Release $RELEASE_TAG already exists; nothing to publish."
+            exit 0
+          fi
+          echo "SHOULD_PUBLISH=true" >> "$GITHUB_ENV"
+          git tag -f "$RELEASE_TAG"
+
+      - uses: pnpm/action-setup@v6
+        if: env.SHOULD_PUBLISH == 'true'
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v6
+        if: env.SHOULD_PUBLISH == 'true'
+        with:
+          node-version: '20'
+
+      - run: pnpm install --frozen-lockfile
+        if: env.SHOULD_PUBLISH == 'true'
+        working-directory: frontend
+
+      - run: pnpm run build
+        if: env.SHOULD_PUBLISH == 'true'
+        working-directory: frontend
+
+      - uses: actions/setup-go@v6
+        if: env.SHOULD_PUBLISH == 'true'
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+
+      - uses: goreleaser/goreleaser-action@v7
+        if: env.SHOULD_PUBLISH == 'true'
+        with:
+          version: '~> v2'
+          args: release --clean --skip=publish --skip=validate --config=.goreleaser.theme.yaml
+
+      - name: Publish GitHub binary release
+        if: env.SHOULD_PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_TITLE="$(cat .apophis-release-title)"
+          if [[ -z "$RELEASE_TITLE" || ! -s .apophis-release-notes.md ]]; then
+            echo "Generated release title or notes are missing." >&2
+            exit 1
+          fi
+
+          gh release create "$RELEASE_TAG" \
+            dist/*.tar.gz dist/*.zip dist/checksums.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target themed-release \
+            --title "$RELEASE_TITLE" \
+            --notes-file .apophis-release-notes.md \
+            --latest
