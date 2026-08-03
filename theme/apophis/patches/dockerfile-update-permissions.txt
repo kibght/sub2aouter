@@ -1,0 +1,1 @@
+RUN mkdir -p /app/data && chown -R sub2api:sub2api /app
