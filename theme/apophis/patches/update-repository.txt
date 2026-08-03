@@ -1,0 +1,1 @@
+githubRepo     = "kibght/sub2aouter"
