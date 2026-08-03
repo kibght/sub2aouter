@@ -19,6 +19,22 @@
       "target": "frontend/src/styles/apophis-theme.css"
     },
     {
+      "source": "files/frontend/src/components/common/AnnouncementBell.vue",
+      "target": "frontend/src/components/common/AnnouncementBell.vue"
+    },
+    {
+      "source": "files/frontend/src/components/common/AnnouncementPopup.vue",
+      "target": "frontend/src/components/common/AnnouncementPopup.vue"
+    },
+    {
+      "source": "files/frontend/src/components/common/__tests__/AnnouncementBell.spec.ts",
+      "target": "frontend/src/components/common/__tests__/AnnouncementBell.spec.ts"
+    },
+    {
+      "source": "files/frontend/src/components/common/__tests__/AnnouncementPopup.spec.ts",
+      "target": "frontend/src/components/common/__tests__/AnnouncementPopup.spec.ts"
+    },
+    {
       "source": "files/README.md",
       "target": "README.md"
     },
