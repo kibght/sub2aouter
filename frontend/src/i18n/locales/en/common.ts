@@ -1,4 +1,4 @@
-export default {
+﻿export default {
   common: {
     loading: 'Loading...',
     submitting: 'Submitting...',
@@ -153,6 +153,7 @@ export default {
     dashboard: 'Dashboard',
     announcements: 'Announcements',
     apiKeys: 'API Keys',
+    infiniteCanvas: 'Infinite Canvas',
     batchImage: 'Batch Images',
     usage: 'Usage',
     redeem: 'Redeem',
@@ -198,6 +199,27 @@ export default {
     contentModeration: 'Content Moderation',
     promptAudit: 'Prompt Audit',
     auditLogs: 'Audit Logs',
+  },
+
+  infiniteCanvas: {
+    title: 'Infinite Canvas',
+    description: 'Open the AI image, video, and creative workspace with your current API key',
+    frameTitle: 'Infinite Canvas creative workspace',
+    selectKey: 'Select the API key used by Canvas',
+    openStandalone: 'Open in new window',
+    loadingKeys: 'Loading available API keys…',
+    noKeyTitle: 'An active API key is required',
+    noKeyDescription: 'Create or enable an API key first. Canvas receives it through a same-origin channel and never places it in the address bar.',
+    manageKeys: 'Manage API keys',
+    connecting: 'Connecting to Infinite Canvas securely…',
+    connectionFailed: 'Infinite Canvas did not start correctly',
+    connectionFailedDescription: 'Verify that the release contains the Canvas build output, then retry.',
+    retry: 'Reconnect',
+    loadKeysFailed: 'Failed to load API keys',
+    statusIdle: 'Waiting',
+    statusConnecting: 'Connecting',
+    statusReady: 'Connected',
+    statusError: 'Connection failed'
   },
 
   // Auth

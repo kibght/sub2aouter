@@ -37,6 +37,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
+          submodules: recursive
 
       - name: Verify release pipeline contract
         run: node scripts/verify-release-pipeline.mjs --root .
@@ -134,11 +135,26 @@ jobs:
           cp -a tools/windows-local "$GENERATED_DIR/tools/windows-local"
           cp THEME.md "$GENERATED_DIR/THEME.md"
           cp .github/workflows/upstream-theme-sync.yml "$GENERATED_DIR/.github/workflows/upstream-theme-sync.yml"
+          cp .github/workflows/infinite-canvas-upstream-sync.yml "$GENERATED_DIR/.github/workflows/infinite-canvas-upstream-sync.yml"
 
       - name: Apply theme overlay
         if: env.SHOULD_PUBLISH == 'true'
         run: node scripts/apply-theme.mjs --root .
         working-directory: ${{ env.GENERATED_DIR }}
+
+      - name: Carry Infinite Canvas integration
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .gitmodules "$GENERATED_DIR/.gitmodules"
+          CANVAS_SHA="$(git rev-parse HEAD:integrations/infinite-canvas)"
+          mkdir -p "$GENERATED_DIR/integrations"
+          git -C "$GENERATED_DIR" update-index --add --cacheinfo "160000,$CANVAS_SHA,integrations/infinite-canvas"
+          git -C "$GENERATED_DIR" submodule sync -- integrations/infinite-canvas
+          git -C "$GENERATED_DIR" submodule update --init --depth=1 -- integrations/infinite-canvas
+          node scripts/apply-sub2-infinite-canvas-integration.mjs --root "$GENERATED_DIR"
+          node scripts/apply-infinite-canvas-patches.mjs --root "$GENERATED_DIR/integrations/infinite-canvas"
 
       - name: Write unified release metadata
         if: env.SHOULD_PUBLISH == 'true'
@@ -290,6 +306,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/apply-theme.mjs --root . --check
+          node scripts/apply-sub2-infinite-canvas-integration.mjs --root . --check
           node scripts/check-encoding.mjs .
           node --test scripts/__tests__/*.test.mjs
 

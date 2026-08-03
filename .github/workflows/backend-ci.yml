@@ -58,6 +58,33 @@ jobs:
       - name: Frontend typecheck and critical vitest
         run: make test-frontend
 
+
+  infinite-canvas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - name: Apply integration adapter
+        run: node scripts/apply-infinite-canvas-patches.mjs --root integrations/infinite-canvas
+      - name: Install Infinite Canvas dependencies
+        working-directory: integrations/infinite-canvas/web
+        run: bun install --frozen-lockfile
+      - name: Infinite Canvas typecheck
+        working-directory: integrations/infinite-canvas/web
+        run: VITE_BASE=/canvas-app/ bun run typecheck
+      - name: Infinite Canvas production build
+        working-directory: integrations/infinite-canvas/web
+        run: VITE_BASE=/canvas-app/ bun run build && cp ../VERSION dist/version.txt
+      - name: Integration contract tests
+        run: |
+          node scripts/apply-sub2-infinite-canvas-integration.mjs --root . --check
+          node --test scripts/__tests__/infinite-canvas-integration.test.mjs scripts/__tests__/infinite-canvas-workflows.test.mjs
+
   golangci-lint:
     runs-on: ubuntu-latest
     steps:

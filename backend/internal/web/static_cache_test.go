@@ -18,6 +18,7 @@ func TestIsFingerprintedEmbeddedAssetPath(t *testing.T) {
 		want bool
 	}{
 		{name: "fingerprinted_js", path: "assets/index-AbCd1234.js", want: true},
+		{name: "canvas_fingerprinted_js", path: "canvas-app/assets/index-AbCd1234.js", want: true},
 		{name: "fingerprinted_css", path: "assets/app-a1B2c3D4.css", want: true},
 		{name: "fingerprinted_url_safe_hash", path: "assets/app-aB1-2_Cd.css", want: true},
 		{name: "nested_fingerprinted_asset", path: "assets/vendor/chunk-AbCd1234.js", want: true},

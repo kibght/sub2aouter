@@ -19,6 +19,7 @@ jobs:
         with:
           ref: themed-release
           fetch-depth: 0
+          submodules: recursive
 
       - name: Read release version and skip duplicates
         env:
@@ -52,6 +53,11 @@ jobs:
         with:
           node-version: '20'
 
+      - uses: oven-sh/setup-bun@v2
+        if: env.SHOULD_PUBLISH == 'true'
+        with:
+          bun-version: 1.3.13
+
       - run: pnpm install --frozen-lockfile
         if: env.SHOULD_PUBLISH == 'true'
         working-directory: frontend
@@ -59,6 +65,21 @@ jobs:
       - run: pnpm run build
         if: env.SHOULD_PUBLISH == 'true'
         working-directory: frontend
+
+      - name: Build Infinite Canvas
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/apply-infinite-canvas-patches.mjs --root integrations/infinite-canvas
+          cd integrations/infinite-canvas/web
+          bun install --frozen-lockfile
+          VITE_BASE=/canvas-app/ bun run typecheck
+          VITE_BASE=/canvas-app/ bun run build
+          cp ../VERSION dist/version.txt
+          cd ../../..
+          mkdir -p backend/internal/web/dist/canvas-app
+          cp -a integrations/infinite-canvas/web/dist/. backend/internal/web/dist/canvas-app/
 
       - uses: actions/setup-go@v6
         if: env.SHOULD_PUBLISH == 'true'

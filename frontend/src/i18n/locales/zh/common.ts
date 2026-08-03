@@ -1,4 +1,4 @@
-export default {
+﻿export default {
   common: {
     loading: '加载中...',
     submitting: '提交中...',
@@ -153,6 +153,7 @@ export default {
     dashboard: '仪表盘',
     announcements: '公告',
     apiKeys: 'API 密钥',
+    infiniteCanvas: '无限画布',
     batchImage: '批量生图',
     usage: '使用记录',
     redeem: '兑换',
@@ -198,6 +199,27 @@ export default {
     contentModeration: '内容审核',
     promptAudit: '提示词审计',
     auditLogs: '操作日志',
+  },
+
+  infiniteCanvas: {
+    title: '无限画布',
+    description: '使用当前 API 密钥直接进入 AI 图片、视频与创意工作台',
+    frameTitle: '无限画布创作工作台',
+    selectKey: '选择画布使用的 API 密钥',
+    openStandalone: '新窗口打开',
+    loadingKeys: '正在读取可用 API 密钥…',
+    noKeyTitle: '需要一个可用的 API 密钥',
+    noKeyDescription: '先创建或启用一个 API 密钥，画布会通过同源安全通道使用它，密钥不会出现在地址栏。',
+    manageKeys: '管理 API 密钥',
+    connecting: '正在安全连接无限画布…',
+    connectionFailed: '无限画布没有正确启动',
+    connectionFailedDescription: '请检查发布包是否包含 Canvas 产物，然后重试。',
+    retry: '重新连接',
+    loadKeysFailed: '读取 API 密钥失败',
+    statusIdle: '等待连接',
+    statusConnecting: '连接中',
+    statusReady: '已连接',
+    statusError: '连接失败'
   },
 
   // Auth

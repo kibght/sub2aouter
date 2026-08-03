@@ -99,8 +99,17 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 			cleanPath = "index.html"
 		}
 
-		// For index.html or SPA routes, serve with injected settings
-		if cleanPath == "index.html" || !s.fileExists(cleanPath) {
+		// For index.html or SPA routes, serve the correct application shell.
+		if cleanPath == "index.html" {
+			s.serveIndexHTML(c)
+			return
+		}
+		if !s.fileExists(cleanPath) {
+			indexPath, canvas := resolveEmbeddedSPARequest(path)
+			if canvas {
+				s.serveStaticHTML(c, indexPath)
+				return
+			}
 			s.serveIndexHTML(c)
 			return
 		}
@@ -124,6 +133,29 @@ func (s *FrontendServer) fileExists(path string) bool {
 	}
 	_ = file.Close()
 	return true
+}
+
+func (s *FrontendServer) serveStaticHTML(c *gin.Context, indexPath string) {
+	file, err := s.distFS.Open(indexPath)
+	if err != nil {
+		c.String(http.StatusNotFound, "Frontend not found")
+		c.Abort()
+		return
+	}
+	defer func() { _ = file.Close() }()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Failed to read frontend")
+		c.Abort()
+		return
+	}
+	// Apply the request nonce to the Canvas shell.
+	content = replaceNoncePlaceholder(content, middleware.GetNonceFromContext(c))
+
+	c.Header("Cache-Control", "no-cache")
+	c.Data(http.StatusOK, "text/html; charset=utf-8", content)
+	c.Abort()
 }
 
 // tryServeOverride checks if a local override file exists and serves it.
@@ -333,7 +365,8 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 			return
 		}
 
-		serveIndexHTML(c, distFS)
+		indexPath, _ := resolveEmbeddedSPARequest(path)
+		serveHTMLFile(c, distFS, indexPath)
 	}
 }
 
@@ -370,7 +403,11 @@ func shouldBypassEmbeddedFrontend(path string) bool {
 }
 
 func serveIndexHTML(c *gin.Context, fsys fs.FS) {
-	file, err := fsys.Open("index.html")
+	serveHTMLFile(c, fsys, "index.html")
+}
+
+func serveHTMLFile(c *gin.Context, fsys fs.FS, indexPath string) {
+	file, err := fsys.Open(indexPath)
 	if err != nil {
 		c.String(http.StatusNotFound, "Frontend not found")
 		c.Abort()
@@ -384,6 +421,8 @@ func serveIndexHTML(c *gin.Context, fsys fs.FS) {
 		c.Abort()
 		return
 	}
+	// Apply the request nonce to the selected SPA shell.
+	content = replaceNoncePlaceholder(content, middleware.GetNonceFromContext(c))
 
 	c.Data(http.StatusOK, "text/html; charset=utf-8", content)
 	c.Abort()
