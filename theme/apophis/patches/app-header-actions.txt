@@ -1,0 +1,1 @@
+      <div class="app-header-actions flex min-w-0 items-center gap-1 sm:gap-3">
