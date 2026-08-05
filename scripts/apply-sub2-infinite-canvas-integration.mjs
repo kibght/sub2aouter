@@ -7,6 +7,33 @@ import { fileURLToPath } from 'node:url'
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const templateRoot = path.join(scriptDir, 'infinite-canvas-integration', 'sub2-files')
 
+export async function reconcileInfiniteCanvasLocaleBlock(file, block, check = false) {
+  const content = await readFile(file, 'utf8')
+  const blockStart = content.indexOf('  infiniteCanvas: {')
+  const authMarker = '  // Auth'
+  const canonicalEnd = block.indexOf(authMarker)
+  const canonicalBlock = (canonicalEnd >= 0 ? block.slice(0, canonicalEnd) : block).replace(/\n+$/, '\n\n')
+  const lineEnding = content.includes('\r\n') ? '\r\n' : '\n'
+  const effectiveBlock = canonicalBlock.replaceAll('\n', lineEnding)
+
+  if (blockStart < 0) {
+    if (check) throw new Error(`Infinite Canvas locale block missing in ${file}`)
+    const authIndex = content.indexOf(authMarker)
+    if (authIndex < 0) throw new Error(`Infinite Canvas locale auth marker missing in ${file}`)
+    await writeFile(file, `${content.slice(0, authIndex)}${effectiveBlock}${content.slice(authIndex)}`, 'utf8')
+    return true
+  }
+
+  const blockEnd = content.indexOf(authMarker, blockStart)
+  if (blockEnd < 0) throw new Error(`Infinite Canvas locale auth marker missing in ${file}`)
+  const currentBlock = content.slice(blockStart, blockEnd)
+  if (currentBlock === effectiveBlock) return false
+  if (check) throw new Error(`Infinite Canvas locale block drift in ${file}`)
+
+  await writeFile(file, `${content.slice(0, blockStart)}${effectiveBlock}${content.slice(blockEnd)}`, 'utf8')
+  return true
+}
+
 const newFiles = [
   'frontend/src/features/infiniteCanvas/bridge.ts',
   'frontend/src/features/infiniteCanvas/__tests__/bridge.spec.ts',
@@ -227,11 +254,7 @@ export async function applySub2InfiniteCanvasIntegration({ root, check = false }
     const file = path.join(resolvedRoot, locale.file)
     const navSentinel = locale.navReplacement.split('\n')[1]
     await ensureReplace(file, locale.navMarker, locale.navReplacement, navSentinel, check)
-    const content = await readFile(file, 'utf8')
-    const blockSentinel = "  infiniteCanvas: {\n    title:"
-    if (!content.includes(withDetectedLineEndings(content, blockSentinel))) {
-      await ensureReplace(file, '  // Auth\n', locale.block, blockSentinel, check)
-    }
+    await reconcileInfiniteCanvasLocaleBlock(file, locale.block, check)
   }
 
   await ensureReplace(

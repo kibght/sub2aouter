@@ -22,6 +22,11 @@ test('Infinite Canvas upstream updates are gated by adapter checks and pull requ
   assert.match(workflow, /gh pr merge --auto --squash/)
   assert.match(workflow, /gh pr checks \"\$PR_NUMBER\" --watch/)
   assert.match(workflow, /gh pr merge --squash \"\$PR_NUMBER\"/)
+  const patchScript = await readFile('scripts/apply-infinite-canvas-patches.mjs', 'utf8')
+  const integrationScript = await readFile('scripts/apply-sub2-infinite-canvas-integration.mjs', 'utf8')
+  assert.match(integrationScript, /reconcileInfiniteCanvasLocaleBlock/)
+  assert.match(patchScript, /web\/src\/pages\/home\/index\.tsx/)
+  assert.match(patchScript, /navigate\(\"\/image\"\)/)
 })
 
 

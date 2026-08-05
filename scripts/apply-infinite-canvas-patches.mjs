@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -38,6 +38,7 @@ export async function applyInfiniteCanvasPatches({ root }) {
   const initPath = path.join(resolvedRoot, 'web/src/components/layout/client-root-init.tsx')
   const layoutPath = path.join(resolvedRoot, 'web/src/layouts/user-layout.tsx')
   const agentChatPath = path.join(resolvedRoot, 'web/src/components/agent/agent-chat.tsx')
+  const homePath = path.join(resolvedRoot, 'web/src/pages/home/index.tsx')
   const historyTestPath = path.join(resolvedRoot, 'canvas-agent/src/agent/codex-history.test.ts')
 
   await copyTemplate(resolvedRoot, 'web/src/lib/sub2-bridge.ts')
@@ -90,6 +91,13 @@ export async function applyInfiniteCanvasPatches({ root }) {
   if (historyTest.includes('\uFFFD')) {
     await writeFile(historyTestPath, historyTest.replaceAll('\uFFFD', '\\uFFFD'), 'utf8')
   }
+
+  await replaceOnce(
+    homePath,
+    '                        <Button size="large" onClick={() => navigate("/canvas")}>\n                            \u6253\u5f00\u753b\u5e03\n                        </Button>\n',
+    '                        <Button size="large" onClick={() => navigate("/canvas")}>\n                            \u6253\u5f00\u753b\u5e03\n                        </Button>\n                        <Button type="primary" size="large" onClick={() => navigate("/image")}>\n                            \u8fdb\u5165\u751f\u56fe\u5de5\u4f5c\u53f0\n                        </Button>\n',
+    'navigate("/image")'
+  )
 
   await replaceOnce(
     agentChatPath,

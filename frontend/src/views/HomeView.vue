@@ -70,15 +70,6 @@
         >
           {{ isAuthenticated ? t('home.goToDashboard') : t('home.login') }}
         </router-link>
-        <a
-          data-test="compact-canvas-entry"
-          href="https://api.kinght.top/canvas?mode=new"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="mt-3 inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:border-dark-700 dark:text-dark-100 dark:hover:bg-dark-800"
-        >
-          打开 Canvas
-        </a>
       </div>
     </main>
 
@@ -254,34 +245,6 @@
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
-
-      <section data-test="canvas-workbench-card" class="mx-auto max-w-7xl px-5 pb-6" aria-labelledby="canvas-workbench-title">
-        <div class="relative overflow-hidden rounded-[2rem] border border-primary/20 bg-card px-6 py-7 shadow-sm lg:px-10">
-          <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_10%,hsl(var(--primary)/0.16),transparent_32%),radial-gradient(circle_at_90%_90%,hsl(var(--accent)/0.2),transparent_30%)]"></div>
-          <div class="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div class="flex min-w-0 items-start gap-4">
-              <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary" aria-hidden="true">
-                <Icon name="sparkles" size="md" />
-              </div>
-              <div class="min-w-0">
-                <p class="text-sm font-medium text-primary">AI 图片与创意工作台</p>
-                <h2 id="canvas-workbench-title" class="mt-1 text-2xl font-semibold">生图工作台</h2>
-                <p class="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">使用无限画布生成、连接和重组图片、文字与图形，让创作从单次生成变成连续推演。</p>
-              </div>
-            </div>
-            <a
-              data-test="canvas-workbench-link"
-              href="https://api.kinght.top/canvas?mode=new"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="home-primary-button shrink-0 px-5 py-3 text-sm"
-            >
-              打开 Canvas
-              <Icon name="externalLink" size="sm" class="ml-2" />
-            </a>
           </div>
         </div>
       </section>
