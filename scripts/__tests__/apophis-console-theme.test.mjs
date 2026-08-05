@@ -44,8 +44,17 @@ test('theme overlay persists authenticated console changes across upstream syncs
   assert.match(appLayoutStatePatch, /const fullHeight = computed/)
 
   const appLayoutMainPatch = (manifest.patches || []).find((entry) => entry.source === 'patches/app-layout-main.txt')
+  const appLayoutShellMigration = (manifest.patches || []).find((entry) => entry.source === 'patches/app-layout-shell-full-height.txt')
+  const appLayoutMainMigration = (manifest.patches || []).find((entry) => entry.source === 'patches/app-layout-main-full-height.txt')
+  const appLayoutContentMigration = (manifest.patches || []).find((entry) => entry.source === 'patches/app-layout-content-full-height.txt')
   assert.ok(appLayoutMainPatch)
-  assert.match(appLayoutMainPatch.marker, /:class=\"\[sidebarCollapsed/)
+  assert.doesNotMatch(appLayoutMainPatch.marker, /:class=/)
+  assert.match(appLayoutMainPatch.sentinel, /class=\"app-main/)
+  assert.ok(appLayoutShellMigration)
+  assert.ok(appLayoutMainMigration)
+  assert.ok(appLayoutContentMigration)
+  assert.match(appLayoutMainMigration.marker, /:class=\"\[sidebarCollapsed/)
+  assert.equal(appLayoutMainMigration.sentinel, 'app-main--full-height')
 
   assert.ok(patchTargets.has('frontend/src/components/layout/AppLayout.vue'))
   assert.ok(patchTargets.has('frontend/src/components/layout/AppHeader.vue'))

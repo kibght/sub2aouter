@@ -235,8 +235,22 @@
     {
       "target": "frontend/src/components/layout/AppLayout.vue",
       "operation": "replace",
-      "marker": "      class=\"relative min-h-screen transition-all duration-300\"\n      :class=\"[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-64']\"",
+      "marker": "  <div class=\"app-shell min-h-screen bg-gray-50 dark:bg-dark-950\">",
+      "source": "patches/app-layout-shell-full-height.txt",
+      "sentinel": "app-shell--full-height"
+    },
+    {
+      "target": "frontend/src/components/layout/AppLayout.vue",
+      "operation": "replace",
+      "marker": "      class=\"relative min-h-screen transition-all duration-300\"",
       "source": "patches/app-layout-main.txt",
+      "sentinel": "class=\"app-main "
+    },
+    {
+      "target": "frontend/src/components/layout/AppLayout.vue",
+      "operation": "replace",
+      "marker": "      :class=\"[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-64']\"",
+      "source": "patches/app-layout-main-full-height.txt",
       "sentinel": "app-main--full-height"
     },
     {
@@ -245,6 +259,13 @@
       "marker": "      <main class=\"p-4 md:p-6 lg:p-8\">",
       "source": "patches/app-layout-content.txt",
       "sentinel": "class=\"app-content "
+    },
+    {
+      "target": "frontend/src/components/layout/AppLayout.vue",
+      "operation": "replace",
+      "marker": "      <main class=\"app-content p-4 md:p-6 lg:p-8\">",
+      "source": "patches/app-layout-content-full-height.txt",
+      "sentinel": "app-content--full-height"
     },
     {
       "target": "frontend/src/components/layout/AppHeader.vue",
