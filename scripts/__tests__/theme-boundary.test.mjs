@@ -72,9 +72,9 @@ test('panel updater and binary release workflow use the custom repository', asyn
   assert.ok((manifest.files || []).some((entry) => entry.target === '.github/workflows/theme-binary-release.yml'))
 })
 
-test('scheduled upstream sync runs every 30 minutes and skips unchanged revisions', async () => {
+test('scheduled upstream sync runs hourly and skips unchanged revisions', async () => {
   const workflow = await read('.github/workflows/upstream-theme-sync.yml')
-  assert.match(workflow, /cron:\s*'7,37 \* \* \* \*'/)
+  assert.match(workflow, /cron:\s*'7 \* \* \* \*'/)
   assert.match(workflow, /\.apophis-upstream-sha/)
   assert.match(workflow, /github\.event_name[^\n]+schedule/)
   assert.match(workflow, /SHOULD_PUBLISH/)

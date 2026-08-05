@@ -35,6 +35,15 @@ GET /canvas-app/version.txt
 
 页面只读取当前用户的 active API Key，并通过同源 `postMessage` 传递给 Canvas。API Key 不会放进 URL。
 
+## 第一阶段 Codex Agent 连接
+
+- 固定入口：`https://api.kinght.top/canvas?mode=new`
+- 页面里增加“连接 Codex”帮助卡片。
+- 复制命令：`npx -y @basketikun/canvas-agent`
+- 自动检测：`http://127.0.0.1:17371/config`
+- 检测失败时显示“下载/启动 Agent”说明。
+- 不把 token 放在公共 URL 中。
+
 ## 上游升级
 
 ### Sub2API
@@ -49,7 +58,7 @@ node scripts/apply-sub2-infinite-canvas-integration.mjs --root <generated-root>
 
 ### Infinite Canvas
 
-`.github/workflows/infinite-canvas-upstream-sync.yml` 定时检查 `basketikun/infinite-canvas/main`。检测到更新后会：
+`.github/workflows/infinite-canvas-upstream-sync.yml` 每小时检查 `basketikun/infinite-canvas` 已发布版本，没有 Release 时回退检查 `main`。检测到更新后会：
 
 1. 更新 Git submodule 指针。
 2. 应用 `scripts/apply-infinite-canvas-patches.mjs`。

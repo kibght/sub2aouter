@@ -1,5 +1,5 @@
 <template>
-  <div class="app-shell min-h-screen bg-gray-50 dark:bg-dark-950">
+  <div class="app-shell min-h-screen bg-gray-50 dark:bg-dark-950" :class="fullHeight ? 'app-shell--full-height' : ''">
     <!-- Background Decoration -->
     <div class="pointer-events-none fixed inset-0 bg-mesh-gradient"></div>
 
@@ -9,13 +9,13 @@
     <!-- Main Content Area -->
     <div
       class="app-main relative min-h-screen transition-all duration-300"
-      :class="[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-64']"
+      :class="[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-64', fullHeight ? 'app-main--full-height' : '']"
     >
       <!-- Header -->
       <AppHeader />
 
       <!-- Main Content -->
-      <main class="app-content p-4 md:p-6 lg:p-8">
+      <main class="app-content p-4 md:p-6 lg:p-8" :class="fullHeight ? 'app-content--full-height' : ''">
         <slot />
       </main>
     </div>
@@ -34,6 +34,8 @@ import AppHeader from './AppHeader.vue'
 
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const layoutProps = withDefaults(defineProps<{ fullHeight?: boolean }>(), { fullHeight: false })
+const fullHeight = computed(() => layoutProps.fullHeight)
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const isAdmin = computed(() => authStore.user?.role === 'admin')
 

@@ -35,6 +35,7 @@ var requiredCSPDirectiveValues = []struct {
 	value     string
 }{
 	{"frame-src", "'self'"},
+	{"connect-src", "http://127.0.0.1:17371"},
 	{"script-src", CloudflareInsightsDomain},
 	{"script-src", StripeDomain},
 	{"frame-src", StripeDomain},

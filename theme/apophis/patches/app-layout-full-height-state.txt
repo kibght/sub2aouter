@@ -1,0 +1,2 @@
+const layoutProps = withDefaults(defineProps<{ fullHeight?: boolean }>(), { fullHeight: false })
+const fullHeight = computed(() => layoutProps.fullHeight)

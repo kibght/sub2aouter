@@ -221,6 +221,13 @@
     {
       "target": "frontend/src/components/layout/AppLayout.vue",
       "operation": "replace",
+      "marker": "const appStore = useAppStore()\nconst authStore = useAuthStore()\n",
+      "source": "patches/app-layout-full-height-state.txt",
+      "sentinel": "const fullHeight = computed(() => layoutProps.fullHeight)"
+    },
+    {
+      "target": "frontend/src/components/layout/AppLayout.vue",
+      "operation": "replace",
       "marker": "  <div class=\"min-h-screen bg-gray-50 dark:bg-dark-950\">",
       "source": "patches/app-layout-shell.txt",
       "sentinel": "class=\"app-shell "

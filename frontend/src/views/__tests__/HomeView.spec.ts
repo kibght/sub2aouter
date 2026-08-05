@@ -97,6 +97,17 @@ describe('HomeView apophis landing theme', () => {
     expect(wrapper.get('[data-test="endpoint-url"]').text()).toBe('https://api.kinght.top/v1')
   })
 
+  it('exposes the fixed Canvas workbench entry without token-bearing URL parameters', () => {
+    const wrapper = mountHome()
+    const card = wrapper.get('[data-test="canvas-workbench-card"]')
+    const link = card.get('[data-test="canvas-workbench-link"]')
+
+    expect(card.text()).toContain('生图工作台')
+    expect(link.text()).toContain('打开 Canvas')
+    expect(link.attributes('href')).toBe('https://api.kinght.top/canvas?mode=new')
+    expect(link.attributes('href')).not.toMatch(/token|api[_-]?key|secret/i)
+  })
+
   it('switches between OpenAI and Claude endpoint modes', async () => {
     const wrapper = mountHome()
 

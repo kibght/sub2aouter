@@ -43,7 +43,7 @@ test('main pushes reuse the existing themed release without fetching upstream', 
 
 test('scheduled upstream sync avoids hourly load boundaries and retries transient fetch failures', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
-  assert.match(workflow, /cron:\s*'7,37 \* \* \* \*'/)
+  assert.match(workflow, /cron:\s*'7 \* \* \* \*'/)
   assert.doesNotMatch(workflow, /cron:\s*'\*\/30 \* \* \* \*'/)
   assert.match(workflow, /fetch_upstream_with_retry\(\)/)
   assert.match(workflow, /git fetch --depth=1 upstream "\$UPSTREAM_REF"/)

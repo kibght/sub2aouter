@@ -81,6 +81,11 @@ func TestGetNonceFromContext(t *testing.T) {
 	})
 }
 
+func TestSecurityHeadersAllowsLocalCanvasAgentDiscovery(t *testing.T) {
+	assert.Contains(t, config.DefaultCSPPolicy, "http://127.0.0.1:17371")
+	assert.Equal(t, 1, countDirectiveValue(config.DefaultCSPPolicy, "connect-src", "http://127.0.0.1:17371"))
+}
+
 func TestSecurityHeaders(t *testing.T) {
 	t.Run("sets_basic_security_headers", func(t *testing.T) {
 		cfg := config.CSPConfig{Enabled: false}

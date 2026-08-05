@@ -13,7 +13,7 @@ on:
         type: string
   schedule:
     # 错开整点高峰，降低 GitHub Actions 定时任务延迟或漏触发的概率。
-    - cron: '7,37 * * * *'
+    - cron: '7 * * * *'
 
 concurrency:
   group: upstream-theme-sync
@@ -43,6 +43,8 @@ jobs:
         run: node scripts/verify-release-pipeline.mjs --root .
 
       - name: Prepare release source
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -67,12 +69,26 @@ jobs:
             RELEASE_SOURCE_SHA="${{ github.sha }}"
             RELEASE_KIND="repository"
             RELEASE_IMAGE_TAG="repository-${RELEASE_SOURCE_SHA:0:12}"
-            echo "检测到仓库推送，复用现有主题发布分支，不重复获取上游。"
+            UPSTREAM_RELEASE_TAG=""
+            echo "Repository push: reusing themed-release without fetching upstream."
           else
             git remote remove upstream 2>/dev/null || true
             git remote add upstream "$UPSTREAM_REPOSITORY"
-            fetch_upstream_with_retry
-            git worktree add --detach "$GENERATED_DIR" FETCH_HEAD
+            UPSTREAM_RELEASE_TAG=""
+            if [[ "${{ github.event_name }}" == "schedule" ]]; then
+              UPSTREAM_RELEASE_TAG="$(gh api repos/Wei-Shaw/sub2api/releases/latest --jq '.tag_name // ""' 2>/dev/null || true)"
+            fi
+
+            if [[ -n "$UPSTREAM_RELEASE_TAG" ]]; then
+              git fetch --depth=1 upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:refs/tags/${UPSTREAM_RELEASE_TAG}"
+              git worktree add --detach "$GENERATED_DIR" "refs/tags/${UPSTREAM_RELEASE_TAG}"
+              UPSTREAM_REF="$UPSTREAM_RELEASE_TAG"
+              echo "Using published Sub2API release: $UPSTREAM_RELEASE_TAG"
+            else
+              fetch_upstream_with_retry
+              git worktree add --detach "$GENERATED_DIR" FETCH_HEAD
+            fi
+
             UPSTREAM_SHA="$(git -C "$GENERATED_DIR" rev-parse HEAD)"
             RELEASE_SOURCE_SHA="$UPSTREAM_SHA"
             RELEASE_KIND="upstream"
@@ -80,6 +96,7 @@ jobs:
           fi
 
           echo "UPSTREAM_SHA=$UPSTREAM_SHA" >> "$GITHUB_ENV"
+          echo "UPSTREAM_RELEASE_TAG=$UPSTREAM_RELEASE_TAG" >> "$GITHUB_ENV"
           echo "RELEASE_SOURCE_SHA=$RELEASE_SOURCE_SHA" >> "$GITHUB_ENV"
           echo "RELEASE_KIND=$RELEASE_KIND" >> "$GITHUB_ENV"
           echo "RELEASE_IMAGE_TAG=$RELEASE_IMAGE_TAG" >> "$GITHUB_ENV"

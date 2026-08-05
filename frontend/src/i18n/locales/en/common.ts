@@ -219,7 +219,20 @@
     statusIdle: 'Waiting',
     statusConnecting: 'Connecting',
     statusReady: 'Connected',
-    statusError: 'Connection failed'
+    statusError: 'Connection failed',
+    connectCodex: 'Connect Codex',
+    codexHelpTitle: 'Connect Codex',
+    codexHelpDescription: 'Use the fixed entry and check the local Agent from this panel.',
+    fixedEntry: 'Fixed entry',
+    copyAgentCommand: 'Copy Agent command',
+    agentChecking: 'Checking local Agent',
+    agentAvailable: 'Agent connected',
+    agentUnavailable: 'Agent not detected',
+    checkAgentAgain: 'Check again',
+    downloadStartAgent: 'Download/start Agent',
+    downloadStartAgentDescription: 'Install Node.js, run the command above in a terminal, and keep the Agent running.',
+    closeCodexHelp: 'Close Connect Codex help',
+    noTokenInUrl: 'Tokens are not placed in public URLs; connection configuration uses the secure channel.',
   },
 
   // Auth

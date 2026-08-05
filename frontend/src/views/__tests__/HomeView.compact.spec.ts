@@ -86,6 +86,14 @@ describe('HomeView compact mode', () => {
     expect(wrapper.find('[data-testid="compact-home"]').exists()).toBe(false)
   })
 
+  it('shows the fixed Canvas workbench entry in compact mode', () => {
+    const wrapper = mountHome({ compact_home_enabled: true })
+    const link = wrapper.get('[data-test="compact-canvas-entry"]')
+
+    expect(link.text()).toContain('打开 Canvas')
+    expect(link.attributes('href')).toBe('https://api.kinght.top/canvas?mode=new')
+  })
+
   it('treats whitespace-only custom content as empty and selects compact mode', () => {
     const wrapper = mountHome({ compact_home_enabled: true, home_content: ' \n\t ' })
 

@@ -23,3 +23,39 @@ test('Infinite Canvas upstream updates are gated by adapter checks and pull requ
   assert.match(workflow, /gh pr checks \"\$PR_NUMBER\" --watch/)
   assert.match(workflow, /gh pr merge --squash \"\$PR_NUMBER\"/)
 })
+
+
+test('both upstream workflows inspect published release metadata before syncing', async () => {
+  const sub2Workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  const canvasWorkflow = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
+
+  assert.match(sub2Workflow, /repos\/Wei-Shaw\/sub2api\/releases\/latest/)
+  assert.match(sub2Workflow, /UPSTREAM_RELEASE_TAG/)
+  assert.match(canvasWorkflow, /CANVAS_REPOSITORY: basketikun\/infinite-canvas/)
+  assert.match(canvasWorkflow, /repos\/\$\{CANVAS_REPOSITORY\}\/releases\/latest/)
+  assert.match(canvasWorkflow, /INFINITE_CANVAS_RELEASE_TAG/)
+})
+
+test('the themed binary release verifies all requested platform artifacts before publishing', async () => {
+  const workflow = await readFile('.github/workflows/theme-binary-release.yml', 'utf8')
+  const goreleaser = await readFile('.goreleaser.theme.yaml', 'utf8')
+
+  assert.match(goreleaser, /goos: \[linux, windows, darwin\]/)
+  assert.match(goreleaser, /goarch: \[amd64, arm64\]/)
+  assert.match(workflow, /name: Verify GoReleaser artifacts/)
+  assert.match(workflow, /linux.*amd64/)
+  assert.match(workflow, /windows.*amd64/)
+  assert.match(workflow, /darwin.*arm64/)
+  assert.match(workflow, /dist\/checksums\.txt/)
+})
+
+
+test('the two upstream schedulers run hourly at distinct offsets', async () => {
+  const sub2Workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  const canvasWorkflow = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
+
+  assert.match(sub2Workflow, /cron:\s*'7 \* \* \* \*'/)
+  assert.match(canvasWorkflow, /cron:\s*'17 \* \* \* \*'/)
+  assert.doesNotMatch(sub2Workflow, /cron:\s*'7,37 \* \* \* \*'/)
+  assert.doesNotMatch(canvasWorkflow, /cron:\s*'17,47 \* \* \* \*'/)
+})

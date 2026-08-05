@@ -1,1 +1,2 @@
       class="app-main relative min-h-screen transition-all duration-300"
+      :class="[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-64', fullHeight ? 'app-main--full-height' : '']"

@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 
 export const RELEASE_PIPELINE_FILES = Object.freeze([
   '.github/workflows/upstream-theme-sync.yml',
+  '.github/workflows/infinite-canvas-upstream-sync.yml',
   '.github/workflows/theme-binary-release.yml',
   'backend/internal/service/update_service.go',
   'Dockerfile',
@@ -70,13 +71,14 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   const syncPath = '.github/workflows/upstream-theme-sync.yml'
   const sync = files.get(syncPath) || ''
   check('sync.push_main', syncPath, hasPattern(sync, /\n  push:\n    branches:\n      - main\n/), 'Sync must run for pushes to main.')
-  check('sync.schedule', syncPath, hasPattern(sync, /cron:\s*'7,37 \* \* \* \*'/), 'Sync must poll upstream every 30 minutes off the hourly load boundary.')
+  check('sync.schedule', syncPath, hasPattern(sync, /cron:\s*'7 \* \* \* \*'/), 'Sync must poll upstream hourly off the hourly load boundary.')
   check('sync.upstream', syncPath, sync.includes('https://github.com/Wei-Shaw/sub2api.git'), 'Sync must fetch the canonical upstream repository.')
+  check('sync.upstream_release_metadata', syncPath, sync.includes('repos/Wei-Shaw/sub2api/releases/latest') && sync.includes('UPSTREAM_RELEASE_TAG'), 'Scheduled Sub2API syncs must inspect the latest published release before fetching source.')
   check('sync.skip_unchanged', syncPath, hasPattern(sync, /github\.event_name[^\n]+schedule[^\n]+PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Scheduled runs must skip unchanged upstream revisions.')
   check('sync.theme_overlay', syncPath, sync.includes('node scripts/apply-theme.mjs --root .'), 'Sync must apply the Apophis overlay to fetched upstream source.')
   check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-release-notes.md'), 'Sync must persist upstream, repository, and release notes metadata.')
   check('sync.release_notes_encoding', syncPath, sync.includes('cat "$GENERATED_DIR/.apophis-upstream-release-notes.md"') && !/\?{4,}/.test(sync), 'Release notes must preserve readable text instead of emitting literal question-mark placeholders.')
-  check('sync.repository_source', syncPath, sync.includes('git worktree add --detach "$GENERATED_DIR" origin/themed-release') && sync.includes('RELEASE_KIND="repository"') && sync.includes('不重复获取上游'), 'Push releases must reuse themed-release without fetching upstream.')
+  check('sync.repository_source', syncPath, sync.includes('git worktree add --detach "$GENERATED_DIR" origin/themed-release') && sync.includes('RELEASE_KIND="repository"') && hasPattern(sync, /github\.event_name[^\n]+push/), 'Push releases must reuse themed-release without fetching upstream.')
   check('sync.repository_notes', syncPath, sync.includes('## \u4ed3\u5e93\u4fee\u590d') && sync.includes('Capture repository release notes'), 'Push releases must publish repository fix notes.')
   check('sync.release_version', syncPath, sync.includes('PREVIOUS_RELEASE_VERSION') && sync.includes('node scripts/next-release-version.mjs \"$PREVIOUS_RELEASE_VERSION\"'), 'Sync must migrate the next release to v0.1.200 and increment the persisted version.')
   check('sync.publish_order', syncPath, hasOrderedMarkers(sync, [
@@ -86,6 +88,12 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   ]), 'Immutable image, release branch, and latest image must publish in safe order.')
   check('sync.latest_image', syncPath, sync.includes('docker push "${IMAGE}:latest"'), 'Sync must publish the Docker latest tag.')
 
+  const canvasSyncPath = '.github/workflows/infinite-canvas-upstream-sync.yml'
+  const canvasSync = files.get(canvasSyncPath) || ''
+  check('canvas_sync.schedule', canvasSyncPath, hasPattern(canvasSync, /cron:\s*'17 \* \* \* \*'/), 'Infinite Canvas sync must poll published upstream changes hourly.')
+  check('canvas_sync.release_metadata', canvasSyncPath, canvasSync.includes('repos/${CANVAS_REPOSITORY}/releases/latest') && canvasSync.includes('INFINITE_CANVAS_RELEASE_TAG'), 'Infinite Canvas sync must inspect published release metadata before syncing.')
+  check('canvas_sync.adapter_gate', canvasSyncPath, canvasSync.includes('apply-infinite-canvas-patches.mjs') && canvasSync.includes('bun run typecheck') && canvasSync.includes('bun run build'), 'Infinite Canvas sync must gate the submodule update on adapter checks and a production build.')
+
   const binaryPath = '.github/workflows/theme-binary-release.yml'
   const binary = files.get(binaryPath) || ''
   check('binary.workflow_run', binaryPath, hasPattern(binary, /workflow_run:[\s\S]*workflows:[\s\S]*Sync Upstream With Apophis Theme[\s\S]*types:[\s\S]*completed/), 'Binary release must trigger after the sync workflow completes.')
@@ -94,6 +102,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('binary.version', binaryPath, binary.includes('cat backend/cmd/server/VERSION'), 'Binary release must reuse the generated version.')
   check('binary.publish', binaryPath, binary.includes('gh release create') && binary.includes('--target themed-release') && binary.includes('--latest'), 'Binary release must publish the themed branch as the latest GitHub Release.')
   check('binary.notes', binaryPath, binary.includes('.apophis-release-title') && binary.includes('.apophis-release-notes.md') && binary.includes('--notes-file'), 'Binary release must include the generated repository or upstream notes file.')
+  check('binary.artifacts', binaryPath, binary.includes('name: Verify GoReleaser artifacts') && binary.includes('linux_amd64.tar.gz') && binary.includes('linux_arm64.tar.gz') && binary.includes('windows_amd64.zip') && binary.includes('darwin_amd64.tar.gz') && binary.includes('darwin_arm64.tar.gz') && binary.includes('dist/checksums.txt'), 'Binary release must verify Linux, Windows, macOS, and checksum artifacts before publishing.')
 
   const overlayBinaryPath = 'theme/apophis/files/.github/workflows/theme-binary-release.yml'
   check('binary.overlay_copy', overlayBinaryPath, files.get(overlayBinaryPath) === binary, 'The permanent theme copy of the binary workflow must match the active workflow.')

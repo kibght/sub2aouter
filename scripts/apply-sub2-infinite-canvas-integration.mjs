@@ -162,7 +162,20 @@ export async function applySub2InfiniteCanvasIntegration({ root, check = false }
     statusIdle: '等待连接',
     statusConnecting: '连接中',
     statusReady: '已连接',
-    statusError: '连接失败'
+    statusError: '连接失败',
+    connectCodex: '连接 Codex',
+    codexHelpTitle: '连接 Codex',
+    codexHelpDescription: '固定入口和本地 Agent 检测都在这里完成。',
+    fixedEntry: '固定入口',
+    copyAgentCommand: '复制 Agent 命令',
+    agentChecking: '正在检测本地 Agent',
+    agentAvailable: 'Agent 已连接',
+    agentUnavailable: '未检测到 Agent',
+    checkAgentAgain: '重新检测',
+    downloadStartAgent: '下载/启动 Agent',
+    downloadStartAgentDescription: '安装 Node.js 后，在终端执行上面的命令，并保持 Agent 运行。',
+    closeCodexHelp: '关闭连接 Codex 帮助',
+    noTokenInUrl: '不把 token 放在公共 URL 中，连接配置只通过安全通道传递。',
   },
 
   // Auth
@@ -190,7 +203,20 @@ export async function applySub2InfiniteCanvasIntegration({ root, check = false }
     statusIdle: 'Waiting',
     statusConnecting: 'Connecting',
     statusReady: 'Connected',
-    statusError: 'Connection failed'
+    statusError: 'Connection failed',
+    connectCodex: 'Connect Codex',
+    codexHelpTitle: 'Connect Codex',
+    codexHelpDescription: 'Use the fixed entry and check the local Agent from this panel.',
+    fixedEntry: 'Fixed entry',
+    copyAgentCommand: 'Copy Agent command',
+    agentChecking: 'Checking local Agent',
+    agentAvailable: 'Agent connected',
+    agentUnavailable: 'Agent not detected',
+    checkAgentAgain: 'Check again',
+    downloadStartAgent: 'Download/start Agent',
+    downloadStartAgentDescription: 'Install Node.js, run the command above in a terminal, and keep the Agent running.',
+    closeCodexHelp: 'Close Connect Codex help',
+    noTokenInUrl: 'Tokens are not placed in public URLs; connection configuration uses the secure channel.',
   },
 
   // Auth
@@ -252,8 +278,9 @@ export async function applySub2InfiniteCanvasIntegration({ root, check = false }
 \tvalue     string
 }{
 \t{"frame-src", "'self'"},
+\t{"connect-src", "http://127.0.0.1:17371"},
 `,
-    `{"frame-src", "'self'"}`,
+    `{"connect-src", "http://127.0.0.1:17371"}`,
     check
   )
   await ensureReplace(

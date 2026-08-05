@@ -1,13 +1,17 @@
-﻿import { flushPromises, mount } from '@vue/test-utils'
+﻿import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import InfiniteCanvasView from '../InfiniteCanvasView.vue'
 import { CANVAS_CONFIGURED_MESSAGE, CANVAS_INIT_MESSAGE, CANVAS_READY_MESSAGE } from '@/features/infiniteCanvas/bridge'
 
-const { listKeys, showError } = vi.hoisted(() => ({
+const { listKeys, showError, fetchAgentConfig, writeClipboard } = vi.hoisted(() => ({
   listKeys: vi.fn(),
   showError: vi.fn(),
+  fetchAgentConfig: vi.fn(),
+  writeClipboard: vi.fn(),
 }))
 
 vi.mock('@/api/keys', () => ({
@@ -66,7 +70,59 @@ describe('InfiniteCanvasView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    fetchAgentConfig.mockRejectedValue(new TypeError('Agent unavailable'))
+    vi.stubGlobal('fetch', fetchAgentConfig)
+    writeClipboard.mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: writeClipboard },
+    })
     listKeys.mockResolvedValue({ items: [activeKey], total: 1, page: 1, page_size: 100, pages: 1 })
+  })
+
+  it('provides first-stage Codex Agent guidance and reports a local Agent check failure', async () => {
+    const wrapper = mount(InfiniteCanvasView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          RouterLink: { template: '<a><slot /></a>' },
+          Icon: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(fetchAgentConfig).toHaveBeenCalledWith(
+      'http://127.0.0.1:17371/config',
+      expect.objectContaining({ credentials: 'omit', cache: 'no-store' }),
+    )
+
+    await wrapper.get('[data-test="codex-agent-toggle"]').trigger('click')
+    const card = wrapper.get('[data-test="codex-agent-card"]')
+    const link = card.get('[data-test="codex-agent-entry"]')
+
+    expect(card.text()).toContain('infiniteCanvas.connectCodex')
+    expect(card.text()).toContain('npx -y @basketikun/canvas-agent')
+    expect(card.text()).toContain('infiniteCanvas.downloadStartAgent')
+    expect(link.attributes('href')).toBe('https://api.kinght.top/canvas?mode=new')
+    expect(link.attributes('href')).not.toMatch(/token|api[_-]?key|secret/i)
+
+    await card.get('[data-test="codex-agent-copy"]').trigger('click')
+    expect(writeClipboard).toHaveBeenCalledWith('npx -y @basketikun/canvas-agent')
+  })
+
+  it('keeps the AppLayout-to-iframe height chain shrinkable on desktop and mobile', async () => {
+    const [viewSource, layoutSource] = await Promise.all([
+      readFile(resolve('src/views/user/InfiniteCanvasView.vue'), 'utf8'),
+      readFile(resolve('src/components/layout/AppLayout.vue'), 'utf8'),
+    ])
+
+    expect(viewSource).toContain('<AppLayout full-height>')
+    expect(viewSource).toContain('flex: 1 1 auto;')
+    expect(viewSource).toContain('min-height: 0;')
+    expect(viewSource).not.toContain('min-height: 34rem;')
+    expect(layoutSource).toContain('app-content--full-height')
+    expect(layoutSource).toContain('app-shell--full-height')
   })
 
   it('never places the API key in the iframe URL and sends it only after a trusted ready event', async () => {

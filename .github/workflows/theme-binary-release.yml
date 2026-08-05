@@ -93,6 +93,21 @@ jobs:
           version: '~> v2'
           args: release --clean --skip=publish --skip=validate --config=.goreleaser.theme.yaml
 
+      - name: Verify GoReleaser artifacts
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for artifact in \
+            "dist/sub2api_${RELEASE_VERSION}_linux_amd64.tar.gz" \
+            "dist/sub2api_${RELEASE_VERSION}_linux_arm64.tar.gz" \
+            "dist/sub2api_${RELEASE_VERSION}_windows_amd64.zip" \
+            "dist/sub2api_${RELEASE_VERSION}_darwin_amd64.tar.gz" \
+            "dist/sub2api_${RELEASE_VERSION}_darwin_arm64.tar.gz"; do
+            test -s "$artifact" || { echo "Missing release artifact: $artifact" >&2; exit 1; }
+          done
+          test -s dist/checksums.txt
+
       - name: Publish GitHub binary release
         if: env.SHOULD_PUBLISH == 'true'
         env:
