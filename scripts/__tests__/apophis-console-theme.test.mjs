@@ -43,6 +43,10 @@ test('theme overlay persists authenticated console changes across upstream syncs
   assert.match(appLayoutStatePatch, /const authStore = useAuthStore\(\)/)
   assert.match(appLayoutStatePatch, /const fullHeight = computed/)
 
+  const appLayoutMainPatch = (manifest.patches || []).find((entry) => entry.source === 'patches/app-layout-main.txt')
+  assert.ok(appLayoutMainPatch)
+  assert.match(appLayoutMainPatch.marker, /:class=\"\[sidebarCollapsed/)
+
   assert.ok(patchTargets.has('frontend/src/components/layout/AppLayout.vue'))
   assert.ok(patchTargets.has('frontend/src/components/layout/AppHeader.vue'))
   assert.ok(fileTargets.has('frontend/src/styles/apophis-theme.css'))

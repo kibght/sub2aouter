@@ -235,9 +235,9 @@
     {
       "target": "frontend/src/components/layout/AppLayout.vue",
       "operation": "replace",
-      "marker": "      class=\"relative min-h-screen transition-all duration-300\"",
+      "marker": "      class=\"relative min-h-screen transition-all duration-300\"\n      :class=\"[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-64']\"",
       "source": "patches/app-layout-main.txt",
-      "sentinel": "class=\"app-main "
+      "sentinel": "app-main--full-height"
     },
     {
       "target": "frontend/src/components/layout/AppLayout.vue",
