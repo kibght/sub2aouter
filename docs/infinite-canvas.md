@@ -37,7 +37,7 @@ GET /canvas-app/version.txt
 
 ## 第一阶段 Codex Agent 连接
 
-- 固定入口：`https://api.kinght.top/canvas?mode=new`
+- 固定入口：`https://api.kinght.top/canvas-app/?mode=new`
 - 页面里增加“连接 Codex”帮助卡片。
 - 复制命令：`npx -y @basketikun/canvas-agent`
 - 自动检测：`http://127.0.0.1:17371/config`

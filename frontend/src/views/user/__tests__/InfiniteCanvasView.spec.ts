@@ -104,7 +104,7 @@ describe('InfiniteCanvasView', () => {
     expect(card.text()).toContain('infiniteCanvas.connectCodex')
     expect(card.text()).toContain('npx -y @basketikun/canvas-agent')
     expect(card.text()).toContain('infiniteCanvas.downloadStartAgent')
-    expect(link.attributes('href')).toBe('https://api.kinght.top/canvas?mode=new')
+    expect(link.attributes('href')).toBe('https://api.kinght.top/canvas-app/?mode=new')
     expect(link.attributes('href')).not.toMatch(/token|api[_-]?key|secret/i)
 
     await card.get('[data-test="codex-agent-copy"]').trigger('click')

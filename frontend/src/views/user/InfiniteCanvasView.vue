@@ -200,7 +200,7 @@ import { maskApiKey } from '@/utils/maskApiKey'
 const STORAGE_KEY = 'sub2:infinite-canvas:key-id'
 const CONNECT_TIMEOUT_MS = 15_000
 const AGENT_CHECK_TIMEOUT_MS = 1_800
-const CANVAS_ENTRY_URL = 'https://api.kinght.top/canvas?mode=new'
+const CANVAS_ENTRY_URL = 'https://api.kinght.top/canvas-app/?mode=new'
 const AGENT_CONFIG_URL = 'http://127.0.0.1:17371/config'
 const AGENT_COMMAND = 'npx -y @basketikun/canvas-agent'
 

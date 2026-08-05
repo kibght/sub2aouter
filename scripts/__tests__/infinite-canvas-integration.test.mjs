@@ -47,7 +47,7 @@ test('infinite canvas adapter applies cleanly and remains idempotent', async () 
     assert.doesNotMatch(historyTest, /\uFFFD/)
     assert.match(historyTest, /\\uFFFD\\uFFFD/)
     assert.match(bridge, /event\.origin !== window\.location\.origin/)
-    assert.match(sub2CanvasView, /CANVAS_ENTRY_URL = 'https:\/\/api\.kinght\.top\/canvas\?mode=new'/)
+    assert.match(sub2CanvasView, /CANVAS_ENTRY_URL = 'https:\/\/api\.kinght\.top\/canvas-app\/\?mode=new'/)
     assert.equal((init.match(/installSub2Bridge/g) || []).length, 2)
   } finally {
     await rm(root, { recursive: true, force: true })
