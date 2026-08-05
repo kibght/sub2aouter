@@ -38,6 +38,11 @@ test('theme overlay persists authenticated console changes across upstream syncs
   const patchTargets = new Set((manifest.patches || []).map((entry) => entry.target))
   const fileTargets = new Set((manifest.files || []).map((entry) => entry.target))
 
+  const appLayoutStatePatch = await read('theme/apophis/patches/app-layout-full-height-state.txt')
+  assert.match(appLayoutStatePatch, /const appStore = useAppStore\(\)/)
+  assert.match(appLayoutStatePatch, /const authStore = useAuthStore\(\)/)
+  assert.match(appLayoutStatePatch, /const fullHeight = computed/)
+
   assert.ok(patchTargets.has('frontend/src/components/layout/AppLayout.vue'))
   assert.ok(patchTargets.has('frontend/src/components/layout/AppHeader.vue'))
   assert.ok(fileTargets.has('frontend/src/styles/apophis-theme.css'))
