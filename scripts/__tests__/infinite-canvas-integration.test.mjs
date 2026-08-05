@@ -73,11 +73,13 @@ test('infinite canvas adapter accepts the translated v0.14 home button', async (
 
     const homePath = path.join(root, 'web/src/pages/home/index.tsx')
     const home = await readFile(homePath, 'utf8')
-    const translatedHome = home.replace(
-      /(<Button size="large" onClick=\{\(\) => navigate\("\/canvas"\)\}>\r?\n)(\s*)[^\r\n]+(\r?\n\s*<\/Button>)/,
-      (_, opening, indentation, closing) => `${opening}${indentation}{t("home.openCanvas")}${closing}`,
-    )
-    assert.notEqual(translatedHome, home, 'fixture must model the v0.14 translated home button')
+    const translatedHome = home.includes('{t("home.openCanvas")}')
+      ? home
+      : home.replace(
+          /(<Button size="large" onClick=\{\(\) => navigate\("\/canvas"\)\}>\r?\n)(\s*)[^\r\n]+(\r?\n\s*<\/Button>)/,
+          (_, opening, indentation, closing) => `${opening}${indentation}{t("home.openCanvas")}${closing}`,
+        )
+    assert.match(translatedHome, /\{t\("home\.openCanvas"\)\}/, 'fixture must model the v0.14 translated home button')
     await writeFile(homePath, translatedHome, 'utf8')
 
     await applyInfiniteCanvasPatches({ root })
