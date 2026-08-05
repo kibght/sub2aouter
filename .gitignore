@@ -142,6 +142,7 @@ docs/*
 !docs/ASYNC_IMAGE_TASKS.md
 !docs/legal/
 !docs/legal/*.md
+!docs/infinite-canvas.md
 .serena/
 .codex/
 frontend/coverage/

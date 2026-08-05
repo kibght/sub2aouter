@@ -34,6 +34,7 @@ var requiredCSPDirectiveValues = []struct {
 	directive string
 	value     string
 }{
+	{"frame-src", "'self'"},
 	{"script-src", CloudflareInsightsDomain},
 	{"script-src", StripeDomain},
 	{"frame-src", StripeDomain},
@@ -83,6 +84,10 @@ func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string) g
 
 	return func(c *gin.Context) {
 		finalPolicy := policy
+		canvasAppRoute := isCanvasAppRoutePath(c)
+		if canvasAppRoute {
+			finalPolicy = replaceDirective(finalPolicy, "frame-ancestors", "'self'")
+		}
 		if getFrameSrcOrigins != nil {
 			for _, origin := range getFrameSrcOrigins() {
 				if origin != "" {
@@ -92,7 +97,11 @@ func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string) g
 		}
 
 		c.Header("X-Content-Type-Options", "nosniff")
-		c.Header("X-Frame-Options", "DENY")
+		if canvasAppRoute {
+			c.Header("X-Frame-Options", "SAMEORIGIN")
+		} else {
+			c.Header("X-Frame-Options", "DENY")
+		}
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		if isAPIRoutePath(c) {
 			c.Next()
@@ -113,6 +122,14 @@ func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string) g
 		}
 		c.Next()
 	}
+}
+
+func isCanvasAppRoutePath(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	requestPath := c.Request.URL.Path
+	return requestPath == "/canvas-app" || strings.HasPrefix(requestPath, "/canvas-app/")
 }
 
 func isAPIRoutePath(c *gin.Context) bool {
@@ -158,6 +175,23 @@ func directiveHasValue(policy, directive, value string) bool {
 		return false
 	}
 	return false
+}
+
+func replaceDirective(policy, directive, value string) string {
+	parts := strings.Split(policy, ";")
+	replaced := false
+	for index, rawDirective := range parts {
+		fields := strings.Fields(strings.TrimSpace(rawDirective))
+		if len(fields) == 0 || fields[0] != directive {
+			continue
+		}
+		parts[index] = " " + directive + " " + value
+		replaced = true
+	}
+	if !replaced {
+		return addToDirective(policy, directive, value)
+	}
+	return strings.TrimSpace(strings.Join(parts, ";"))
 }
 
 // addToDirective adds a value to a specific CSP directive.

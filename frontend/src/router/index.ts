@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Vue Router configuration for Sub2API frontend
  * Defines all application routes with lazy loading and navigation guards
  */
@@ -213,6 +213,18 @@ const routes: RouteRecordRaw[] = [
       title: 'API Keys',
       titleKey: 'keys.title',
       descriptionKey: 'keys.description'
+    }
+  },
+  {
+    path: '/workspace/canvas',
+    name: 'InfiniteCanvas',
+    component: () => import('@/views/user/InfiniteCanvasView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Infinite Canvas',
+      titleKey: 'infiniteCanvas.title',
+      descriptionKey: 'infiniteCanvas.description'
     }
   },
   {

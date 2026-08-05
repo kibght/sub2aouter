@@ -97,6 +97,23 @@ func TestSecurityHeaders(t *testing.T) {
 		assert.Equal(t, "strict-origin-when-cross-origin", w.Header().Get("Referrer-Policy"))
 	})
 
+	t.Run("allows_same_origin_canvas_embedding", func(t *testing.T) {
+		cfg := config.CSPConfig{Enabled: true, Policy: config.DefaultCSPPolicy}
+		middleware := SecurityHeaders(cfg, nil)
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/canvas-app/", nil)
+
+		middleware(c)
+
+		assert.Equal(t, "SAMEORIGIN", w.Header().Get("X-Frame-Options"))
+		csp := w.Header().Get("Content-Security-Policy")
+		assert.Contains(t, csp, "frame-ancestors 'self'")
+		assert.True(t, directiveHasValue(csp, "frame-src", "'self'"))
+		assert.NotContains(t, csp, "frame-ancestors 'none'")
+	})
+
 	t.Run("csp_disabled_no_csp_header", func(t *testing.T) {
 		cfg := config.CSPConfig{Enabled: false}
 		middleware := SecurityHeaders(cfg, nil)

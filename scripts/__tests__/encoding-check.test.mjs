@@ -22,3 +22,18 @@ test('detects replacement characters and common mojibake while preserving valid 
   assert.equal(issues[0].file, 'src/bad.ts')
   assert.deepEqual(issues[0].markers.sort(), ['U+FFFD', mojibakeMarker].sort())
 })
+
+test('skips nested Git worktrees such as submodules', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'encoding-check-submodule-'))
+  const submodule = path.join(root, 'integrations/infinite-canvas')
+  await mkdir(submodule, { recursive: true })
+  await writeFile(path.join(submodule, '.git'), 'gitdir: ../../.git/modules/integrations/infinite-canvas\n')
+  await writeFile(
+    path.join(submodule, 'intentional-corruption-fixture.ts'),
+    `export const fixture = '${String.fromCodePoint(0xfffd)}'\n`
+  )
+
+  const issues = await scanTextFiles(root)
+
+  assert.deepEqual(issues, [])
+})

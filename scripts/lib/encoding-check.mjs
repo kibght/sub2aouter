@@ -1,4 +1,4 @@
-import { readdir, readFile } from 'node:fs/promises'
+import { access, readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { TextDecoder } from 'node:util'
 
@@ -27,7 +27,13 @@ export async function scanTextFiles(root) {
   async function visit(directory) {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       if (entry.isDirectory()) {
-        if (!ignoredDirectories.has(entry.name)) await visit(path.join(directory, entry.name))
+        const child = path.join(directory, entry.name)
+        let nestedGitWorktree = false
+        try {
+          await access(path.join(child, '.git'))
+          nestedGitWorktree = true
+        } catch {}
+        if (!ignoredDirectories.has(entry.name) && !nestedGitWorktree) await visit(child)
         continue
       }
       if (!entry.isFile() || !isTextFile(entry.name)) continue

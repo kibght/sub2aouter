@@ -7,10 +7,27 @@
 # =============================================================================
 
 ARG NODE_IMAGE=node:24-alpine
+ARG BUN_IMAGE=oven/bun:1.3.13
 ARG GOLANG_IMAGE=golang:1.26.5-alpine
 ARG ALPINE_IMAGE=alpine:3.20
 ARG GOPROXY=https://goproxy.cn,direct
 ARG GOSUMDB=sum.golang.google.cn
+
+# -----------------------------------------------------------------------------
+# Stage 0: Infinite Canvas Builder
+# -----------------------------------------------------------------------------
+FROM --platform=${BUILDPLATFORM} ${BUN_IMAGE} AS canvas-builder
+
+WORKDIR /app
+COPY integrations/infinite-canvas ./infinite-canvas
+COPY scripts/apply-infinite-canvas-patches.mjs ./scripts/apply-infinite-canvas-patches.mjs
+COPY scripts/infinite-canvas-integration ./scripts/infinite-canvas-integration
+RUN bun ./scripts/apply-infinite-canvas-patches.mjs --root /app/infinite-canvas
+
+WORKDIR /app/infinite-canvas/web
+RUN --mount=type=cache,id=infinite-canvas-bun,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile --cache-dir=/root/.bun/install/cache
+RUN VITE_BASE=/canvas-app/ bun run typecheck && VITE_BASE=/canvas-app/ bun run build && cp ../VERSION dist/version.txt
 
 # -----------------------------------------------------------------------------
 # Stage 1: Frontend Builder
@@ -36,6 +53,7 @@ RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
 COPY docs/legal/ /app/docs/legal/
 RUN pnpm run build
+COPY --from=canvas-builder /app/infinite-canvas/web/dist /app/backend/internal/web/dist/canvas-app
 
 # -----------------------------------------------------------------------------
 # Stage 2: Backend Builder
