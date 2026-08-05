@@ -1,6 +1,6 @@
 ﻿import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cp, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -49,6 +49,43 @@ test('infinite canvas adapter applies cleanly and remains idempotent', async () 
     assert.match(bridge, /event\.origin !== window\.location\.origin/)
     assert.match(sub2CanvasView, /CANVAS_ENTRY_URL = 'https:\/\/api\.kinght\.top\/canvas-app\/\?mode=new'/)
     assert.equal((init.match(/installSub2Bridge/g) || []).length, 2)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('infinite canvas adapter accepts the translated v0.14 home button', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'infinite-canvas-adapter-i18n-'))
+  try {
+    for (const relative of [
+      'web/index.html',
+      'web/src/router.tsx',
+      'web/src/components/layout/client-root-init.tsx',
+      'web/src/layouts/user-layout.tsx',
+      'web/src/components/agent/agent-chat.tsx',
+      'web/src/pages/home/index.tsx',
+      'canvas-agent/src/agent/codex-history.test.ts',
+    ]) {
+      const target = path.join(root, relative)
+      await mkdir(path.dirname(target), { recursive: true })
+      await cp(path.join('integrations/infinite-canvas', relative), target, { recursive: true })
+    }
+
+    const homePath = path.join(root, 'web/src/pages/home/index.tsx')
+    const home = await readFile(homePath, 'utf8')
+    const translatedHome = home.replace(
+      /(<Button size="large" onClick=\{\(\) => navigate\("\/canvas"\)\}>\r?\n)(\s*)[^\r\n]+(\r?\n\s*<\/Button>)/,
+      (_, opening, indentation, closing) => `${opening}${indentation}{t("home.openCanvas")}${closing}`,
+    )
+    assert.notEqual(translatedHome, home, 'fixture must model the v0.14 translated home button')
+    await writeFile(homePath, translatedHome, 'utf8')
+
+    await applyInfiniteCanvasPatches({ root })
+    await applyInfiniteCanvasPatches({ root })
+
+    const patchedHome = await readFile(homePath, 'utf8')
+    assert.match(patchedHome, /navigate\("\/image"\)/)
+    assert.equal((patchedHome.match(/navigate\("\/image"\)/g) || []).length, 1)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

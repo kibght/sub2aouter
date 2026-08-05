@@ -24,6 +24,86 @@ async function replaceOnce(file, marker, replacement, sentinel) {
   return true
 }
 
+function findJsxOpeningTagEnd(content, start) {
+  let quote = null
+  let escaped = false
+  let braceDepth = 0
+
+  for (let index = start; index < content.length; index += 1) {
+    const character = content[index]
+
+    if (quote) {
+      if (escaped) {
+        escaped = false
+      } else if (character === '\\') {
+        escaped = true
+      } else if (character === quote) {
+        quote = null
+      }
+      continue
+    }
+
+    if (character === '"' || character === "'" || character === '`') {
+      quote = character
+    } else if (character === '{') {
+      braceDepth += 1
+    } else if (character === '}') {
+      braceDepth = Math.max(0, braceDepth - 1)
+    } else if (character === '>' && braceDepth === 0) {
+      return index
+    }
+  }
+
+  return -1
+}
+
+async function insertImageWorkspaceButton(file) {
+  let content = await readFile(file, 'utf8')
+  if (/navigate\s*\(\s*["']\/image["']\s*\)/.test(content)) return false
+
+  const routePattern = /navigate\s*\(\s*["']\/canvas["']\s*\)/g
+  const candidates = new Map()
+
+  for (const routeMatch of content.matchAll(routePattern)) {
+    const buttonStart = content.lastIndexOf('<Button', routeMatch.index)
+    if (buttonStart < 0) continue
+
+    const openingEnd = findJsxOpeningTagEnd(content, buttonStart)
+    if (openingEnd < routeMatch.index) continue
+
+    const previousClosing = content.lastIndexOf('</Button>', routeMatch.index)
+    if (previousClosing > buttonStart) continue
+
+    const closingStart = content.indexOf('</Button>', openingEnd + 1)
+    if (closingStart < 0) continue
+
+    candidates.set(buttonStart, { buttonStart, closingStart })
+  }
+
+  if (candidates.size !== 1) {
+    throw new Error(`Infinite Canvas adapter expected one /canvas Button in ${file}, found ${candidates.size}`)
+  }
+
+  const [{ buttonStart, closingStart }] = candidates.values()
+  const lineStart = content.lastIndexOf('\n', buttonStart - 1) + 1
+  const indentation = content.slice(lineStart, buttonStart)
+  if (!/^[\t ]*$/.test(indentation)) {
+    throw new Error(`Infinite Canvas adapter could not determine Button indentation in ${file}`)
+  }
+
+  const newline = content.includes('\r\n') ? '\r\n' : '\n'
+  const insertion = [
+    `${indentation}<Button type="primary" size="large" onClick={() => navigate("/image")}>`,
+    `${indentation}    \u8fdb\u5165\u751f\u56fe\u5de5\u4f5c\u53f0`,
+    `${indentation}</Button>`,
+  ].join(newline)
+  const closingEnd = closingStart + '</Button>'.length
+
+  content = `${content.slice(0, closingEnd)}${newline}${insertion}${content.slice(closingEnd)}`
+  await writeFile(file, content, 'utf8')
+  return true
+}
+
 async function copyTemplate(root, relative) {
   const source = path.join(templateRoot, relative)
   const target = path.join(root, relative)
@@ -92,12 +172,7 @@ export async function applyInfiniteCanvasPatches({ root }) {
     await writeFile(historyTestPath, historyTest.replaceAll('\uFFFD', '\\uFFFD'), 'utf8')
   }
 
-  await replaceOnce(
-    homePath,
-    '                        <Button size="large" onClick={() => navigate("/canvas")}>\n                            \u6253\u5f00\u753b\u5e03\n                        </Button>\n',
-    '                        <Button size="large" onClick={() => navigate("/canvas")}>\n                            \u6253\u5f00\u753b\u5e03\n                        </Button>\n                        <Button type="primary" size="large" onClick={() => navigate("/image")}>\n                            \u8fdb\u5165\u751f\u56fe\u5de5\u4f5c\u53f0\n                        </Button>\n',
-    'navigate("/image")'
-  )
+  await insertImageWorkspaceButton(homePath)
 
   await replaceOnce(
     agentChatPath,
