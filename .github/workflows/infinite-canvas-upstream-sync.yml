@@ -77,12 +77,12 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/apply-infinite-canvas-patches.mjs --root integrations/infinite-canvas
-          cd integrations/infinite-canvas/web
+          pushd integrations/infinite-canvas/web
           bun install --frozen-lockfile
           VITE_BASE=/canvas-app/ bun run typecheck
           VITE_BASE=/canvas-app/ bun run build
           cp ../VERSION dist/version.txt
-          cd ../..
+          popd
           git -C integrations/infinite-canvas reset --hard "${{ steps.upstream.outputs.latest_sha }}"
           git -C integrations/infinite-canvas clean -f -- web/src/lib/sub2-bridge.ts
           test -z "$(git -C integrations/infinite-canvas status --short)"
