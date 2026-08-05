@@ -48,3 +48,14 @@ test('scheduled upstream sync avoids hourly load boundaries and retries transien
   assert.match(workflow, /fetch_upstream_with_retry\(\)/)
   assert.match(workflow, /git fetch --depth=1 upstream "\$UPSTREAM_REF"/)
 })
+
+test('scheduled upstream sync deduplicates by release identity before falling back to SHA', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  assert.match(workflow, /UPSTREAM_RELEASE_ID/)
+  assert.match(workflow, /\.apophis-upstream-release-id/)
+  assert.match(workflow, /PREVIOUS_UPSTREAM_RELEASE_ID/)
+  assert.match(workflow, /PREVIOUS_UPSTREAM_RELEASE_TAG/)
+  assert.match(workflow, /RELEASE_KIND.*upstream.*github\.event_name.*schedule/)
+  assert.match(workflow, /PREVIOUS_UPSTREAM_RELEASE_ID.*UPSTREAM_RELEASE_ID/)
+  assert.match(workflow, /PREVIOUS_UPSTREAM_RELEASE_TAG.*UPSTREAM_RELEASE_TAG/)
+})

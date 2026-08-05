@@ -70,13 +70,18 @@ jobs:
             RELEASE_KIND="repository"
             RELEASE_IMAGE_TAG="repository-${RELEASE_SOURCE_SHA:0:12}"
             UPSTREAM_RELEASE_TAG=""
+            UPSTREAM_RELEASE_ID=""
             echo "Repository push: reusing themed-release without fetching upstream."
           else
             git remote remove upstream 2>/dev/null || true
             git remote add upstream "$UPSTREAM_REPOSITORY"
             UPSTREAM_RELEASE_TAG=""
+            UPSTREAM_RELEASE_ID=""
             if [[ "${{ github.event_name }}" == "schedule" ]]; then
               UPSTREAM_RELEASE_TAG="$(gh api repos/Wei-Shaw/sub2api/releases/latest --jq '.tag_name // ""' 2>/dev/null || true)"
+              if [[ -n "$UPSTREAM_RELEASE_TAG" ]]; then
+                UPSTREAM_RELEASE_ID="$(gh api repos/Wei-Shaw/sub2api/releases/latest --jq '.id // ""' 2>/dev/null || true)"
+              fi
             fi
 
             if [[ -n "$UPSTREAM_RELEASE_TAG" ]]; then
@@ -97,6 +102,7 @@ jobs:
 
           echo "UPSTREAM_SHA=$UPSTREAM_SHA" >> "$GITHUB_ENV"
           echo "UPSTREAM_RELEASE_TAG=$UPSTREAM_RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "UPSTREAM_RELEASE_ID=$UPSTREAM_RELEASE_ID" >> "$GITHUB_ENV"
           echo "RELEASE_SOURCE_SHA=$RELEASE_SOURCE_SHA" >> "$GITHUB_ENV"
           echo "RELEASE_KIND=$RELEASE_KIND" >> "$GITHUB_ENV"
           echo "RELEASE_IMAGE_TAG=$RELEASE_IMAGE_TAG" >> "$GITHUB_ENV"
@@ -111,6 +117,18 @@ jobs:
           fi
           echo "PREVIOUS_UPSTREAM_SHA=$PREVIOUS_UPSTREAM_SHA" >> "$GITHUB_ENV"
 
+          PREVIOUS_UPSTREAM_RELEASE_ID=""
+          if git show origin/themed-release:.apophis-upstream-release-id > /tmp/apophis-upstream-release-id 2>/dev/null; then
+            PREVIOUS_UPSTREAM_RELEASE_ID="$(tr -d '[:space:]' < /tmp/apophis-upstream-release-id)"
+          fi
+          echo "PREVIOUS_UPSTREAM_RELEASE_ID=$PREVIOUS_UPSTREAM_RELEASE_ID" >> "$GITHUB_ENV"
+
+          PREVIOUS_UPSTREAM_RELEASE_TAG=""
+          if git show origin/themed-release:.apophis-upstream-release-tag > /tmp/apophis-upstream-release-tag 2>/dev/null; then
+            PREVIOUS_UPSTREAM_RELEASE_TAG="$(tr -d '[:space:]' < /tmp/apophis-upstream-release-tag)"
+          fi
+          echo "PREVIOUS_UPSTREAM_RELEASE_TAG=$PREVIOUS_UPSTREAM_RELEASE_TAG" >> "$GITHUB_ENV"
+
           PREVIOUS_REPOSITORY_SHA=""
           if git show origin/themed-release:.apophis-repository-sha > /tmp/apophis-repository-sha 2>/dev/null; then
             PREVIOUS_REPOSITORY_SHA="$(tr -d '[:space:]' < /tmp/apophis-repository-sha)"
@@ -123,10 +141,22 @@ jobs:
           fi
           echo "PREVIOUS_RELEASE_VERSION=$PREVIOUS_RELEASE_VERSION" >> "$GITHUB_ENV"
 
-          if [[ "$RELEASE_KIND" == "upstream" && "${{ github.event_name }}" == "schedule" && "$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA" ]]; then
-            echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
-            echo "上游版本未变化：$UPSTREAM_SHA，跳过本次定时构建和发布。"
-            exit 0
+          if [[ "$RELEASE_KIND" == "upstream" && "${{ github.event_name }}" == "schedule" ]]; then
+            if [[ -n "$UPSTREAM_RELEASE_ID" && "$PREVIOUS_UPSTREAM_RELEASE_ID" == "$UPSTREAM_RELEASE_ID" ]]; then
+              echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
+              echo "Upstream Release $UPSTREAM_RELEASE_ID is already synchronized; skipping scheduled publication."
+              exit 0
+            fi
+            if [[ -n "$UPSTREAM_RELEASE_TAG" && "$PREVIOUS_UPSTREAM_RELEASE_TAG" == "$UPSTREAM_RELEASE_TAG" ]]; then
+              echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
+              echo "Upstream release tag $UPSTREAM_RELEASE_TAG is already synchronized; skipping scheduled publication."
+              exit 0
+            fi
+            if [[ -z "$UPSTREAM_RELEASE_ID" && "$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA" ]]; then
+              echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
+              echo "上游版本未变化：$UPSTREAM_SHA，跳过本次定时构建和发布。"
+              exit 0
+            fi
           fi
 
           if [[ "$RELEASE_KIND" == "repository" && "$PREVIOUS_REPOSITORY_SHA" == "$RELEASE_SOURCE_SHA" ]]; then
@@ -182,6 +212,9 @@ jobs:
           printf '%s\n' "$RELEASE_VERSION" > backend/cmd/server/VERSION
           printf '%s\n' "$UPSTREAM_SHA" > .apophis-upstream-sha
           printf '%s\n' "$RELEASE_KIND" > .apophis-release-kind
+          if [[ -n "${UPSTREAM_RELEASE_ID:-}" ]]; then
+            printf '%s\n' "$UPSTREAM_RELEASE_ID" > .apophis-upstream-release-id
+          fi
           if [[ "$RELEASE_KIND" == "repository" ]]; then
             printf '%s\n' "$RELEASE_SOURCE_SHA" > .apophis-repository-sha
           elif [[ -n "$PREVIOUS_REPOSITORY_SHA" ]]; then
@@ -232,6 +265,7 @@ jobs:
           TAG_FILE="$GENERATED_DIR/.apophis-upstream-release-tag"
           NAME_FILE="$GENERATED_DIR/.apophis-upstream-release-name"
           URL_FILE="$GENERATED_DIR/.apophis-upstream-release-url"
+          ID_FILE="$GENERATED_DIR/.apophis-upstream-release-id"
 
           write_fallback_notes() {
             local short_sha="${UPSTREAM_SHA:0:12}"
@@ -287,9 +321,15 @@ jobs:
             exit 0
           fi
 
+          if [[ -z "${UPSTREAM_RELEASE_ID:-}" ]]; then
+            UPSTREAM_RELEASE_ID="$(gh api "$RELEASE_ENDPOINT" --jq '.id // ""')"
+          fi
           printf '%s\n' "$UPSTREAM_RELEASE_TAG" > "$TAG_FILE"
           printf '%s\n' "$UPSTREAM_RELEASE_NAME" > "$NAME_FILE"
           printf '%s\n' "$UPSTREAM_RELEASE_URL" > "$URL_FILE"
+          if [[ -n "$UPSTREAM_RELEASE_ID" ]]; then
+            printf '%s\n' "$UPSTREAM_RELEASE_ID" > "$ID_FILE"
+          fi
           if ! gh api "$RELEASE_ENDPOINT" --jq '.body // ""' > "$NOTES_FILE"; then
             echo "无法读取上游发布说明，改用提交摘要。"
             write_fallback_notes

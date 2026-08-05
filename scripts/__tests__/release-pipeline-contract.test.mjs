@@ -106,3 +106,13 @@ test('contract rejects a return to calendar release versions', async () => {
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
   assert.ok(violations.some((violation) => violation.code === 'sync.release_version'))
 })
+
+test('contract requires stable upstream release identity deduplication', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  const workflow = files.get(path)
+  files.set(path, workflow.replaceAll('UPSTREAM_RELEASE_ID', 'REMOVED_UPSTREAM_RELEASE_ID'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.upstream_release_identity'))
+})
