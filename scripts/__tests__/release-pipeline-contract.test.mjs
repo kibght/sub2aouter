@@ -116,3 +116,39 @@ test('contract requires stable upstream release identity deduplication', async (
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
   assert.ok(violations.some((violation) => violation.code === 'sync.upstream_release_identity'))
 })
+
+test('contract requires Canvas sync to dispatch the themed release workflow', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/infinite-canvas-upstream-sync.yml'
+  files.set(path, files.get(path).replace('gh workflow run upstream-theme-sync.yml', 'echo downstream-release-disabled'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'canvas_sync.release_dispatch'))
+})
+
+test('contract requires scheduled recovery for repository and Canvas drift', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(path, files.get(path).replaceAll('PREVIOUS_CANVAS_SHA', 'DISABLED_CANVAS_BASELINE'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.repository_recovery'))
+})
+
+test('contract rejects binary publication without repository and Canvas source guards', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/theme-binary-release.yml'
+  files.set(path, files.get(path).replaceAll('MAIN_CANVAS_SHA', 'DISABLED_CANVAS_HEAD'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'binary.source_guard'))
+})
+
+test('contract blocks publication when main is behind the latest Canvas release', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(path, files.get(path).replaceAll('LATEST_CANVAS_SHA', 'DISABLED_LATEST_CANVAS_HEAD'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.canvas_freshness'))
+})

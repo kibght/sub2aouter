@@ -22,9 +22,10 @@ test('Infinite Canvas upstream updates are gated by adapter checks and pull requ
   assert.match(workflow, /popd/)
   assert.doesNotMatch(workflow, /cd \.\.\/\.\./)
   assert.match(workflow, /gh pr create/)
-  assert.match(workflow, /gh pr merge --auto --squash/)
-  assert.match(workflow, /gh pr checks \"\$PR_NUMBER\" --watch/)
+  assert.match(workflow, /actions:\s*write/)
   assert.match(workflow, /gh pr merge --squash \"\$PR_NUMBER\"/)
+  assert.match(workflow, /gh workflow run upstream-theme-sync\.yml/)
+  assert.match(workflow, /repository_release=true/)
   const patchScript = await readFile('scripts/apply-infinite-canvas-patches.mjs', 'utf8')
   const integrationScript = await readFile('scripts/apply-sub2-infinite-canvas-integration.mjs', 'utf8')
   assert.match(integrationScript, /reconcileInfiniteCanvasLocaleBlock/)
@@ -42,6 +43,24 @@ test('both upstream workflows inspect published release metadata before syncing'
   assert.match(canvasWorkflow, /CANVAS_REPOSITORY: basketikun\/infinite-canvas/)
   assert.match(canvasWorkflow, /repos\/\$\{CANVAS_REPOSITORY\}\/releases\/latest/)
   assert.match(canvasWorkflow, /INFINITE_CANVAS_RELEASE_TAG/)
+})
+
+test('repository and canvas drift are recovered before release publication', async () => {
+  const syncWorkflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  const binaryWorkflow = await readFile('.github/workflows/theme-binary-release.yml', 'utf8')
+
+  assert.match(syncWorkflow, /repository_release:/)
+  assert.match(syncWorkflow, /CURRENT_REPOSITORY_SHA/)
+  assert.match(syncWorkflow, /PREVIOUS_CANVAS_SHA/)
+  assert.match(syncWorkflow, /PREVIOUS_REPOSITORY_SHA.*PREVIOUS_CANVAS_SHA/)
+  assert.match(syncWorkflow, /\.apophis-canvas-sha/)
+  assert.match(syncWorkflow, /name: Verify Infinite Canvas dependency is current/)
+  assert.match(syncWorkflow, /LATEST_CANVAS_SHA/)
+  assert.match(binaryWorkflow, /name: Verify themed release matches main repository and canvas/)
+  assert.match(binaryWorkflow, /RELEASE_REPOSITORY_SHA/)
+  assert.match(binaryWorkflow, /MAIN_CANVAS_SHA/)
+  assert.match(binaryWorkflow, /RELEASE_CANVAS_SHA/)
+  assert.match(binaryWorkflow, /LATEST_CANVAS_SHA/)
 })
 
 test('the themed binary release verifies all requested platform artifacts before publishing', async () => {

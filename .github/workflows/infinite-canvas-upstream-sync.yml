@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -123,8 +124,20 @@ jobs:
               --body "自动更新 Infinite Canvas 子模块。适配补丁、TypeScript 检查和生产构建已通过；合并仍受仓库完整 CI 门禁保护。"
             PR_NUMBER="$(gh pr list --head "$UPDATE_BRANCH" --base main --state open --json number --jq '.[0].number')"
           fi
-          if ! gh pr merge --auto --squash "$PR_NUMBER"; then
-            echo "Auto-merge is unavailable; waiting for pull request checks before squash merge."
-            gh pr checks "$PR_NUMBER" --watch --interval 20
-            gh pr merge --squash "$PR_NUMBER"
+          gh pr merge --squash "$PR_NUMBER"
+          PR_STATE="$(gh pr view "$PR_NUMBER" --json state --jq '.state')"
+          if [[ "$PR_STATE" != "MERGED" ]]; then
+            echo "Infinite Canvas update pull request was not merged: $PR_STATE" >&2
+            exit 1
           fi
+
+      - name: Trigger themed release sync
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run upstream-theme-sync.yml \
+            --ref main \
+            -f repository_release=true
