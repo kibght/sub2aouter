@@ -407,17 +407,6 @@ jobs:
             printf 'Apophis 主题版本 %s，生成自上游提交 `%s`。\n' "$RELEASE_VERSION" "$UPSTREAM_SHA"
           } > "$GENERATED_DIR/.apophis-release-notes.md"
 
-      - name: Verify theme overlay and UTF-8
-        if: env.SHOULD_PUBLISH == 'true'
-        shell: bash
-        working-directory: ${{ env.GENERATED_DIR }}
-        run: |
-          set -euo pipefail
-          node scripts/apply-theme.mjs --root . --check
-          node scripts/apply-sub2-infinite-canvas-integration.mjs --root . --check
-          node scripts/check-encoding.mjs .
-          node --test scripts/__tests__/*.test.mjs
-
       - name: Setup pnpm
         if: env.SHOULD_PUBLISH == 'true'
         uses: pnpm/action-setup@v6
@@ -434,6 +423,17 @@ jobs:
         if: env.SHOULD_PUBLISH == 'true'
         run: pnpm install --lockfile-only --no-frozen-lockfile
         working-directory: ${{ env.GENERATED_DIR }}/frontend
+
+      - name: Verify theme overlay and UTF-8
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        working-directory: ${{ env.GENERATED_DIR }}
+        run: |
+          set -euo pipefail
+          node scripts/apply-theme.mjs --root . --check
+          node scripts/apply-sub2-infinite-canvas-integration.mjs --root . --check
+          node scripts/check-encoding.mjs .
+          node --test scripts/__tests__/*.test.mjs
 
       - name: Install frontend dependencies
         if: env.SHOULD_PUBLISH == 'true'
