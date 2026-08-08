@@ -1,0 +1,163 @@
+name: Publish Themed Binary Release
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Sync Upstream With Apophis Theme
+    types:
+      - completed
+
+concurrency:
+  group: themed-binary-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  binary-release:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: themed-release
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Verify themed release matches main repository and canvas
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin main
+          MAIN_REPOSITORY_SHA="$(git rev-parse FETCH_HEAD)"
+          RELEASE_REPOSITORY_SHA="$(tr -d '[:space:]' < .apophis-repository-sha)"
+          MAIN_CANVAS_SHA="$(git rev-parse "${MAIN_REPOSITORY_SHA}:integrations/infinite-canvas")"
+          RELEASE_CANVAS_SHA="$(git rev-parse HEAD:integrations/infinite-canvas)"
+          CANVAS_RELEASE_TAG="$(gh api repos/basketikun/infinite-canvas/releases/latest --jq '.tag_name // ""')"
+          test -n "$CANVAS_RELEASE_TAG"
+          git -C integrations/infinite-canvas fetch --depth=1 origin "refs/tags/${CANVAS_RELEASE_TAG}:refs/tags/${CANVAS_RELEASE_TAG}"
+          LATEST_CANVAS_SHA="$(git -C integrations/infinite-canvas rev-list -n 1 "refs/tags/${CANVAS_RELEASE_TAG}")"
+          if [[ "$RELEASE_CANVAS_SHA" != "$LATEST_CANVAS_SHA" ]]; then
+            echo "Themed release Canvas SHA is behind the latest upstream release: $RELEASE_CANVAS_SHA != $LATEST_CANVAS_SHA ($CANVAS_RELEASE_TAG)" >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_REPOSITORY_SHA" != "$MAIN_REPOSITORY_SHA" ]]; then
+            echo "Themed release repository SHA is stale: $RELEASE_REPOSITORY_SHA != $MAIN_REPOSITORY_SHA" >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_CANVAS_SHA" != "$MAIN_CANVAS_SHA" ]]; then
+            echo "Themed release Canvas SHA is stale: $RELEASE_CANVAS_SHA != $MAIN_CANVAS_SHA" >&2
+            exit 1
+          fi
+
+      - name: Read release version and skip duplicates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_VERSION="$(cat backend/cmd/server/VERSION | tr -d '[:space:]')"
+          if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid themed release version: $RELEASE_VERSION" >&2
+            exit 1
+          fi
+          RELEASE_TAG="v${RELEASE_VERSION}"
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
+            echo "Release $RELEASE_TAG already exists; nothing to publish."
+            exit 0
+          fi
+          echo "SHOULD_PUBLISH=true" >> "$GITHUB_ENV"
+          git tag -f "$RELEASE_TAG"
+
+      - uses: pnpm/action-setup@v6
+        if: env.SHOULD_PUBLISH == 'true'
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v6
+        if: env.SHOULD_PUBLISH == 'true'
+        with:
+          node-version: '20'
+
+      - uses: oven-sh/setup-bun@v2
+        if: env.SHOULD_PUBLISH == 'true'
+        with:
+          bun-version: 1.3.13
+
+      - run: pnpm install --frozen-lockfile
+        if: env.SHOULD_PUBLISH == 'true'
+        working-directory: frontend
+
+      - run: pnpm run build
+        if: env.SHOULD_PUBLISH == 'true'
+        working-directory: frontend
+
+      - name: Build Infinite Canvas
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/apply-infinite-canvas-patches.mjs --root integrations/infinite-canvas
+          cd integrations/infinite-canvas/web
+          bun install --frozen-lockfile
+          VITE_BASE=/canvas-app/ bun run typecheck
+          VITE_BASE=/canvas-app/ bun run build
+          cp ../VERSION dist/version.txt
+          cd ../../..
+          mkdir -p backend/internal/web/dist/canvas-app
+          cp -a integrations/infinite-canvas/web/dist/. backend/internal/web/dist/canvas-app/
+
+      - uses: actions/setup-go@v6
+        if: env.SHOULD_PUBLISH == 'true'
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+
+      - uses: goreleaser/goreleaser-action@v7
+        if: env.SHOULD_PUBLISH == 'true'
+        with:
+          version: '~> v2'
+          args: release --clean --skip=publish --skip=validate --config=.goreleaser.theme.yaml
+
+      - name: Verify GoReleaser artifacts
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for artifact in \
+            "dist/sub2api_${RELEASE_VERSION}_linux_amd64.tar.gz" \
+            "dist/sub2api_${RELEASE_VERSION}_linux_arm64.tar.gz" \
+            "dist/sub2api_${RELEASE_VERSION}_windows_amd64.zip" \
+            "dist/sub2api_${RELEASE_VERSION}_darwin_amd64.tar.gz" \
+            "dist/sub2api_${RELEASE_VERSION}_darwin_arm64.tar.gz"; do
+            test -s "$artifact" || { echo "Missing release artifact: $artifact" >&2; exit 1; }
+          done
+          test -s dist/checksums.txt
+
+      - name: Publish GitHub binary release
+        if: env.SHOULD_PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_TITLE="$(cat .apophis-release-title)"
+          if [[ -z "$RELEASE_TITLE" || ! -s .apophis-release-notes.md ]]; then
+            echo "Generated release title or notes are missing." >&2
+            exit 1
+          fi
+
+          gh release create "$RELEASE_TAG" \
+            dist/*.tar.gz dist/*.zip dist/checksums.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target themed-release \
+            --title "$RELEASE_TITLE" \
+            --notes-file .apophis-release-notes.md \
+            --latest
