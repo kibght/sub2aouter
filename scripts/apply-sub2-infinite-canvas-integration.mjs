@@ -34,6 +34,39 @@ export async function reconcileInfiniteCanvasLocaleBlock(file, block, check = fa
   return true
 }
 
+export async function patchCanvasDefaultCSP(file, check = false) {
+  const content = await readFile(file, 'utf8')
+  const match = /const DefaultCSPPolicy = "([^"\r\n]*)"/.exec(content)
+  if (!match) throw new Error(`Infinite Canvas default CSP marker missing in ${file}`)
+
+  let policy = match[1]
+  let patched = policy
+  const hasDirectiveValue = (directive, value) => patched.split(';').some((rawDirective) => {
+    const fields = rawDirective.trim().split(/\s+/)
+    return fields[0] === directive && fields.slice(1).includes(value)
+  })
+
+  const connectMarker = "connect-src 'self'"
+  const canvasAgentSource = 'http://127.0.0.1:17371'
+  if (!hasDirectiveValue('connect-src', canvasAgentSource)) {
+    if (!patched.includes(connectMarker)) throw new Error(`Infinite Canvas connect-src marker missing in ${file}`)
+    patched = patched.replace(connectMarker, `${connectMarker} ${canvasAgentSource}`)
+  }
+
+  const frameMarker = 'frame-src '
+  if (!hasDirectiveValue('frame-src', "'self'")) {
+    if (!patched.includes(frameMarker)) throw new Error(`Infinite Canvas frame-src marker missing in ${file}`)
+    patched = patched.replace(frameMarker, "frame-src 'self' ")
+  }
+
+  if (patched === policy) return false
+  if (check) throw new Error(`Infinite Canvas default CSP drift in ${file}`)
+
+  const replacement = match[0].replace(policy, patched)
+  await writeFile(file, `${content.slice(0, match.index)}${replacement}${content.slice(match.index + match[0].length)}`, 'utf8')
+  return true
+}
+
 const newFiles = [
   'frontend/src/features/infiniteCanvas/bridge.ts',
   'frontend/src/features/infiniteCanvas/__tests__/bridge.spec.ts',
@@ -287,6 +320,8 @@ export async function applySub2InfiniteCanvasIntegration({ root, check = false }
     'Expire deterministically because coarse clock resolution can make a nanosecond TTL flaky.',
     check
   )
+
+  await patchCanvasDefaultCSP(path.join(resolvedRoot, 'backend/internal/config/config.go'), check)
 
   const securityHeadersFile = path.join(resolvedRoot, 'backend/internal/server/middleware/security_headers.go')
   await ensureReplace(
