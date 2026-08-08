@@ -54,13 +54,13 @@ printf '?????????'
   assert.ok(violations.some((violation) => violation.code === 'sync.release_notes_encoding'))
 })
 
-test('contract rejects a sync workflow that moves off the hourly schedule', async () => {
+test('contract rejects a coordinator that moves off the hourly schedule', async () => {
   const files = await loadContractFiles()
-  const path = '.github/workflows/upstream-theme-sync.yml'
+  const path = '.github/workflows/infinite-canvas-upstream-sync.yml'
   files.set(path, files.get(path).replace("cron: '7 * * * *'", "cron: '0 * * * *'"))
 
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
-  assert.ok(violations.some((violation) => violation.code === 'sync.schedule'))
+  assert.ok(violations.some((violation) => violation.code === 'canvas_sync.schedule'))
 })
 
 test('contract rejects binary publishing without a successful sync guard', async () => {
@@ -121,6 +121,15 @@ test('contract requires Canvas sync to dispatch the themed release workflow', as
   const files = await loadContractFiles()
   const path = '.github/workflows/infinite-canvas-upstream-sync.yml'
   files.set(path, files.get(path).replace('gh workflow run upstream-theme-sync.yml', 'echo downstream-release-disabled'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'canvas_sync.release_dispatch'))
+})
+
+test('contract requires the coordinated dispatch to fetch the current Sub2API release', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/infinite-canvas-upstream-sync.yml'
+  files.set(path, files.get(path).replace('-f scheduled_round=true', '-f scheduled_round=false'))
 
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
   assert.ok(violations.some((violation) => violation.code === 'canvas_sync.release_dispatch'))

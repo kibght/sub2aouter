@@ -71,11 +71,11 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   const syncPath = '.github/workflows/upstream-theme-sync.yml'
   const sync = files.get(syncPath) || ''
   check('sync.push_main', syncPath, hasPattern(sync, /\n  push:\n    branches:\n      - main\n/), 'Sync must run for pushes to main.')
-  check('sync.schedule', syncPath, hasPattern(sync, /cron:\s*'7 \* \* \* \*'/), 'Sync must poll upstream hourly off the hourly load boundary.')
+  check('sync.coordinated_round', syncPath, !sync.includes('  schedule:') && sync.includes('scheduled_round:') && sync.includes('SCHEDULED_ROUND'), 'Theme sync must be dispatched by the single hourly coordinator.')
   check('sync.upstream', syncPath, sync.includes('https://github.com/Wei-Shaw/sub2api.git'), 'Sync must fetch the canonical upstream repository.')
   check('sync.upstream_release_metadata', syncPath, sync.includes('repos/Wei-Shaw/sub2api/releases/latest') && sync.includes('UPSTREAM_RELEASE_TAG'), 'Scheduled Sub2API syncs must inspect the latest published release before fetching source.')
   check('sync.upstream_release_identity', syncPath, sync.includes('UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_TAG') && sync.includes('.apophis-upstream-release-id'), 'Scheduled Sub2API syncs must deduplicate by upstream Release identity before falling back to tag and SHA.')
-  check('sync.skip_unchanged', syncPath, hasPattern(sync, /github\.event_name[^\n]+schedule[\s\S]+PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Scheduled runs must skip unchanged upstream revisions.')
+  check('sync.skip_unchanged', syncPath, sync.includes('SCHEDULED_ROUND') && hasPattern(sync, /PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Coordinated hourly runs must skip unchanged upstream revisions.')
   check('sync.theme_overlay', syncPath, sync.includes('node scripts/apply-theme.mjs --root .'), 'Sync must apply the Apophis overlay to fetched upstream source.')
   check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-canvas-sha') && sync.includes('.apophis-release-notes.md'), 'Sync must persist upstream, repository, Canvas, and release notes metadata.')
   check('sync.repository_recovery', syncPath, sync.includes('repository_release:') && sync.includes('CURRENT_REPOSITORY_SHA') && sync.includes('PREVIOUS_CANVAS_SHA') && sync.includes('UPSTREAM_ALREADY_SYNCHRONIZED'), 'Scheduled and dispatched syncs must recover repository or Canvas drift even when upstream is unchanged.')
@@ -93,10 +93,11 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
 
   const canvasSyncPath = '.github/workflows/infinite-canvas-upstream-sync.yml'
   const canvasSync = files.get(canvasSyncPath) || ''
-  check('canvas_sync.schedule', canvasSyncPath, hasPattern(canvasSync, /cron:\s*'17 \* \* \* \*'/), 'Infinite Canvas sync must poll published upstream changes hourly.')
+  check('canvas_sync.schedule', canvasSyncPath, hasPattern(canvasSync, /cron:\s*'7 \* \* \* \*'/), 'The unified upstream coordinator must run hourly off the load boundary.')
   check('canvas_sync.release_metadata', canvasSyncPath, canvasSync.includes('repos/${CANVAS_REPOSITORY}/releases/latest') && canvasSync.includes('INFINITE_CANVAS_RELEASE_TAG'), 'Infinite Canvas sync must inspect published release metadata before syncing.')
   check('canvas_sync.adapter_gate', canvasSyncPath, canvasSync.includes('apply-infinite-canvas-patches.mjs') && canvasSync.includes('bun run typecheck') && canvasSync.includes('bun run build'), 'Infinite Canvas sync must gate the submodule update on adapter checks and a production build.')
-  check('canvas_sync.release_dispatch', canvasSyncPath, canvasSync.includes('actions: write') && canvasSync.includes('gh workflow run upstream-theme-sync.yml') && canvasSync.includes('repository_release=true'), 'Infinite Canvas sync must explicitly dispatch a repository release after its bot-authored merge.')
+  check('canvas_sync.release_dispatch', canvasSyncPath, canvasSync.includes('actions: write') && canvasSync.includes('gh workflow run upstream-theme-sync.yml') && canvasSync.includes('repository_release=false') && canvasSync.includes('scheduled_round=true') && canvasSync.includes("steps.upstream.outputs.changed != ''"), 'The coordinator must dispatch one combined Canvas and Sub2API release round after every successful check.')
+  check('sync.canvas_push_guard', syncPath, sync.includes("github.event_name != 'push'") && sync.includes("head_commit.message, 'Infinite Canvas'"), 'Automated Canvas merge pushes must not create a second repository-only release.')
 
   const binaryPath = '.github/workflows/theme-binary-release.yml'
   const binary = files.get(binaryPath) || ''

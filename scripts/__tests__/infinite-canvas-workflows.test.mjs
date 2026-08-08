@@ -1,4 +1,4 @@
-﻿import test from 'node:test'
+import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
@@ -25,7 +25,9 @@ test('Infinite Canvas upstream updates are gated by adapter checks and pull requ
   assert.match(workflow, /actions:\s*write/)
   assert.match(workflow, /gh pr merge --squash \"\$PR_NUMBER\"/)
   assert.match(workflow, /gh workflow run upstream-theme-sync\.yml/)
-  assert.match(workflow, /repository_release=true/)
+  assert.match(workflow, /repository_release=false/)
+  assert.match(workflow, /scheduled_round=true/)
+  assert.match(workflow, /steps\.upstream\.outputs\.changed != ''/)
   const patchScript = await readFile('scripts/apply-infinite-canvas-patches.mjs', 'utf8')
   const integrationScript = await readFile('scripts/apply-sub2-infinite-canvas-integration.mjs', 'utf8')
   assert.match(integrationScript, /reconcileInfiniteCanvasLocaleBlock/)
@@ -77,12 +79,15 @@ test('the themed binary release verifies all requested platform artifacts before
 })
 
 
-test('the two upstream schedulers run hourly at distinct offsets', async () => {
+test('the Canvas workflow is the single hourly upstream coordinator', async () => {
   const sub2Workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
   const canvasWorkflow = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
 
-  assert.match(sub2Workflow, /cron:\s*'7 \* \* \* \*'/)
-  assert.match(canvasWorkflow, /cron:\s*'17 \* \* \* \*'/)
-  assert.doesNotMatch(sub2Workflow, /cron:\s*'7,37 \* \* \* \*'/)
-  assert.doesNotMatch(canvasWorkflow, /cron:\s*'17,47 \* \* \* \*'/)
+  assert.match(canvasWorkflow, /cron:\s*'7 \* \* \* \*'/)
+  assert.doesNotMatch(sub2Workflow, /schedule:/)
+  assert.match(canvasWorkflow, /steps\.upstream\.outputs\.changed != ''/)
+  assert.match(canvasWorkflow, /gh workflow run upstream-theme-sync\.yml[\s\S]*repository_release=false/)
+  assert.doesNotMatch(canvasWorkflow, /repository_release=true/)
+  assert.match(sub2Workflow, /workflow_dispatch:/)
+  assert.match(sub2Workflow, /github\.event_name != 'push' \|\| !contains\(github\.event\.head_commit\.message, 'Infinite Canvas'\)/)
 })

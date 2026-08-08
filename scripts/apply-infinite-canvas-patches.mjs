@@ -24,6 +24,21 @@ async function replaceOnce(file, marker, replacement, sentinel) {
   return true
 }
 
+export async function patchCanvasGenerationHelpers(file) {
+  let content
+  try {
+    content = await readFile(file, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
+  }
+  if (content.includes('node.metadata?.images')) return false
+  if (!content.includes('node.metadata.images')) return false
+  content = content.replaceAll('node.metadata.images', 'node.metadata?.images')
+  await writeFile(file, content, 'utf8')
+  return true
+}
+
 function findJsxOpeningTagEnd(content, start) {
   let quote = null
   let escaped = false
@@ -122,6 +137,7 @@ export async function applyInfiniteCanvasPatches({ root }) {
   const historyTestPath = path.join(resolvedRoot, 'canvas-agent/src/agent/codex-history.test.ts')
 
   await copyTemplate(resolvedRoot, 'web/src/lib/sub2-bridge.ts')
+  await patchCanvasGenerationHelpers(path.join(resolvedRoot, 'web/src/lib/canvas/canvas-generation-helpers.ts'))
 
   await replaceOnce(
     indexPath,

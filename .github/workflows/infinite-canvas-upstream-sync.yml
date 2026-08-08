@@ -3,7 +3,7 @@
 on:
   workflow_dispatch:
   schedule:
-    - cron: '17 * * * *'
+    - cron: '7 * * * *'
 
 concurrency:
   group: infinite-canvas-upstream-sync
@@ -131,8 +131,8 @@ jobs:
             exit 1
           fi
 
-      - name: Trigger themed release sync
-        if: steps.upstream.outputs.changed == 'true'
+      - name: Trigger unified upstream release sync
+        if: steps.upstream.outputs.changed != ''
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -140,4 +140,5 @@ jobs:
           set -euo pipefail
           gh workflow run upstream-theme-sync.yml \
             --ref main \
-            -f repository_release=true
+            -f repository_release=false \
+            -f scheduled_round=true

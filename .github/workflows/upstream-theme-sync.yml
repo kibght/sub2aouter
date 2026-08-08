@@ -16,10 +16,11 @@ on:
         required: false
         default: false
         type: boolean
-  schedule:
-    # 错开整点高峰，降低 GitHub Actions 定时任务延迟或漏触发的概率。
-    - cron: '7 * * * *'
-
+      scheduled_round:
+        description: Treat this dispatch as the unified hourly upstream check
+        required: false
+        default: false
+        type: boolean
 concurrency:
   group: upstream-theme-sync
   cancel-in-progress: false
@@ -30,11 +31,13 @@ permissions:
 
 jobs:
   sync-build-publish:
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'Infinite Canvas') }}
     runs-on: ubuntu-latest
     env:
       UPSTREAM_REPOSITORY: https://github.com/Wei-Shaw/sub2api.git
       UPSTREAM_REF: ${{ inputs.upstream_ref || 'main' }}
       REPOSITORY_RELEASE: ${{ inputs.repository_release || false }}
+      SCHEDULED_ROUND: ${{ inputs.scheduled_round || false }}
       GENERATED_DIR: ${{ github.workspace }}/../sub2api-themed-release
 
     steps:
@@ -99,7 +102,7 @@ jobs:
             git remote add upstream "$UPSTREAM_REPOSITORY"
             UPSTREAM_RELEASE_TAG=""
             UPSTREAM_RELEASE_ID=""
-            if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            if [[ "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ]]; then
               UPSTREAM_RELEASE_TAG="$(gh api repos/Wei-Shaw/sub2api/releases/latest --jq '.tag_name // ""' 2>/dev/null || true)"
               if [[ -n "$UPSTREAM_RELEASE_TAG" ]]; then
                 UPSTREAM_RELEASE_ID="$(gh api repos/Wei-Shaw/sub2api/releases/latest --jq '.id // ""' 2>/dev/null || true)"
@@ -171,7 +174,7 @@ jobs:
           echo "PREVIOUS_CANVAS_SHA=$PREVIOUS_CANVAS_SHA" >> "$GITHUB_ENV"
 
           UPSTREAM_ALREADY_SYNCHRONIZED=false
-          if [[ "$RELEASE_KIND" == "upstream" && "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "$RELEASE_KIND" == "upstream" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) ]]; then
             if [[ -n "$UPSTREAM_RELEASE_ID" && "$PREVIOUS_UPSTREAM_RELEASE_ID" == "$UPSTREAM_RELEASE_ID" ]]; then
               UPSTREAM_ALREADY_SYNCHRONIZED=true
             elif [[ -n "$UPSTREAM_RELEASE_TAG" && "$PREVIOUS_UPSTREAM_RELEASE_TAG" == "$UPSTREAM_RELEASE_TAG" ]]; then
@@ -192,7 +195,7 @@ jobs:
             echo "Upstream is unchanged, but repository or Canvas metadata drifted; publishing repository state."
           fi
 
-          if [[ "$RELEASE_KIND" == "upstream" && "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "$RELEASE_KIND" == "upstream" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) ]]; then
             if [[ -n "$UPSTREAM_RELEASE_ID" && "$PREVIOUS_UPSTREAM_RELEASE_ID" == "$UPSTREAM_RELEASE_ID" ]]; then
               echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
               echo "Upstream Release $UPSTREAM_RELEASE_ID is already synchronized; skipping scheduled publication."
