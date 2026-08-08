@@ -36,3 +36,22 @@ test('theme overlay preserves package manager and Docker pins', async () => {
   assert.ok(packagePatch)
   assert.ok(dockerPatch)
 })
+
+test('frontend security override pins the patched nanoid release across upstream syncs', async () => {
+  const packageJson = JSON.parse(await readFile('frontend/package.json', 'utf8'))
+  const lockfile = await readFile('frontend/pnpm-lock.yaml', 'utf8')
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  const manifest = JSON.parse(await readFile('theme/apophis/manifest.json', 'utf8'))
+
+  assert.equal(packageJson.pnpm?.overrides?.['nanoid@<3.3.17'], '3.3.17')
+  assert.match(lockfile, /nanoid@3\.3\.17/)
+  assert.doesNotMatch(lockfile, /nanoid@3\.3\.16/)
+  assert.ok((manifest.patches || []).some((entry) =>
+    entry.target === 'frontend/package.json' &&
+    entry.source === 'patches/frontend-nanoid-override.txt' &&
+    entry.sentinel === '      "nanoid@<3.3.17": "3.3.17",'
+  ))
+  const reconcile = workflow.indexOf('pnpm install --lockfile-only --no-frozen-lockfile')
+  const frozenInstall = workflow.indexOf('pnpm install --frozen-lockfile')
+  assert.ok(reconcile >= 0 && reconcile < frozenInstall)
+})

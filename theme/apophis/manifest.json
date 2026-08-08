@@ -184,6 +184,13 @@
       "sentinel": "  \"packageManager\": \"pnpm@9.15.9\","
     },
     {
+      "target": "frontend/package.json",
+      "marker": "    \"overrides\": {",
+      "position": "after",
+      "source": "patches/frontend-nanoid-override.txt",
+      "sentinel": "      \"nanoid@<3.3.17\": \"3.3.17\","
+    },
+    {
       "target": "Dockerfile",
       "operation": "replace",
       "marker": "RUN corepack enable && corepack prepare pnpm@9 --activate",

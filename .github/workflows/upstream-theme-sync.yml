@@ -430,6 +430,11 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Reconcile frontend security overrides
+        if: env.SHOULD_PUBLISH == 'true'
+        run: pnpm install --lockfile-only --no-frozen-lockfile
+        working-directory: ${{ env.GENERATED_DIR }}/frontend
+
       - name: Install frontend dependencies
         if: env.SHOULD_PUBLISH == 'true'
         run: pnpm install --frozen-lockfile
