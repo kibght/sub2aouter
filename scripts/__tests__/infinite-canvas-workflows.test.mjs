@@ -87,6 +87,7 @@ test('successful theme sync explicitly dispatches serialized binary publication'
 
   assert.match(syncWorkflow, /name: Trigger themed binary publication/)
   assert.match(syncWorkflow, /gh workflow run theme-binary-release\.yml/)
+  assert.match(syncWorkflow, /permissions:\n\s+actions:\s+write/)
   assert.match(binaryWorkflow, /workflow_dispatch:/)
   assert.match(binaryWorkflow, /group: themed-binary-release/)
   assert.match(binaryWorkflow, /github\.event_name == 'workflow_dispatch' \|\| github\.event\.workflow_run\.conclusion == 'success'/)
