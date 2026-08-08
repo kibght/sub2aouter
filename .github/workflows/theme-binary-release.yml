@@ -68,11 +68,47 @@ jobs:
           RELEASE_TAG="v${RELEASE_VERSION}"
           echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
-            echo "Release $RELEASE_TAG already exists; nothing to publish."
-            exit 0
+          REQUIRED_ASSETS=(
+            "sub2api_${RELEASE_VERSION}_linux_amd64.tar.gz"
+            "sub2api_${RELEASE_VERSION}_linux_arm64.tar.gz"
+            "sub2api_${RELEASE_VERSION}_windows_amd64.zip"
+            "sub2api_${RELEASE_VERSION}_darwin_amd64.tar.gz"
+            "sub2api_${RELEASE_VERSION}_darwin_arm64.tar.gz"
+            "checksums.txt"
+          )
+          RELEASE_EXISTS=false
+          RELEASE_JSON_FILE=/tmp/apophis-release.json
+          RELEASE_ERROR_FILE=/tmp/apophis-release-error.log
+          set +e
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets,targetCommitish > "$RELEASE_JSON_FILE" 2> "$RELEASE_ERROR_FILE"
+          RELEASE_STATUS=$?
+          set -e
+          if [[ "$RELEASE_STATUS" -eq 0 ]]; then
+            RELEASE_EXISTS=true
+            RELEASE_DRAFT="$(jq -r '.isDraft' "$RELEASE_JSON_FILE")"
+            RELEASE_PRERELEASE="$(jq -r '.isPrerelease' "$RELEASE_JSON_FILE")"
+            RELEASE_TARGET="$(jq -r '.targetCommitish' "$RELEASE_JSON_FILE")"
+            RELEASE_ASSETS="$(jq -r '.assets[].name' "$RELEASE_JSON_FILE")"
+            MISSING_ASSETS=()
+            for asset in "${REQUIRED_ASSETS[@]}"; do
+              if ! grep -Fqx -- "$asset" <<< "$RELEASE_ASSETS"; then
+                MISSING_ASSETS+=("$asset")
+              fi
+            done
+            if [[ "$RELEASE_DRAFT" == "false" && "$RELEASE_PRERELEASE" == "false" && "$RELEASE_TARGET" == "themed-release" && "${#MISSING_ASSETS[@]}" -eq 0 ]]; then
+              echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
+              echo "RELEASE_EXISTS=true" >> "$GITHUB_ENV"
+              echo "Release $RELEASE_TAG already exists with all required assets; nothing to publish."
+              exit 0
+            fi
+            echo "Existing release ${RELEASE_TAG} needs repair (draft=${RELEASE_DRAFT}, prerelease=${RELEASE_PRERELEASE}, target=${RELEASE_TARGET}, missing=${MISSING_ASSETS[*]:-none})."
+          elif grep -Eiq '404|not found' "$RELEASE_ERROR_FILE"; then
+            echo "Release $RELEASE_TAG does not exist; creating it."
+          else
+            cat "$RELEASE_ERROR_FILE" >&2
+            exit "$RELEASE_STATUS"
           fi
+          echo "RELEASE_EXISTS=$RELEASE_EXISTS" >> "$GITHUB_ENV"
           echo "SHOULD_PUBLISH=true" >> "$GITHUB_ENV"
           git tag -f "$RELEASE_TAG"
 
@@ -154,10 +190,62 @@ jobs:
             exit 1
           fi
 
-          gh release create "$RELEASE_TAG" \
-            dist/*.tar.gz dist/*.zip dist/checksums.txt \
-            --repo "$GITHUB_REPOSITORY" \
-            --target themed-release \
-            --title "$RELEASE_TITLE" \
-            --notes-file .apophis-release-notes.md \
-            --latest
+          if [[ "$RELEASE_EXISTS" == "true" ]]; then
+            gh release upload "$RELEASE_TAG" \
+              dist/*.tar.gz dist/*.zip dist/checksums.txt \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target themed-release \
+              --title "$RELEASE_TITLE" \
+              --notes-file .apophis-release-notes.md \
+              --latest \
+              --draft=false \
+              --prerelease=false
+          else
+            gh release create "$RELEASE_TAG" \
+              dist/*.tar.gz dist/*.zip dist/checksums.txt \
+              --repo "$GITHUB_REPOSITORY" \
+              --target themed-release \
+              --title "$RELEASE_TITLE" \
+              --notes-file .apophis-release-notes.md \
+              --latest
+          fi
+
+      - name: Verify published GitHub release
+        if: env.SHOULD_PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_JSON_FILE=/tmp/apophis-published-release.json
+          for attempt in 1 2 3 4 5; do
+            if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets,targetCommitish > "$RELEASE_JSON_FILE"; then
+              break
+            fi
+            if [[ "$attempt" -eq 5 ]]; then
+              echo "Unable to read published release ${RELEASE_TAG}." >&2
+              exit 1
+            fi
+            sleep $((attempt * 2))
+          done
+          test "$(jq -r '.isDraft' "$RELEASE_JSON_FILE")" = "false"
+          test "$(jq -r '.isPrerelease' "$RELEASE_JSON_FILE")" = "false"
+          test "$(jq -r '.targetCommitish' "$RELEASE_JSON_FILE")" = "themed-release"
+          PUBLISHED_ASSETS="$(jq -r '.assets[].name' "$RELEASE_JSON_FILE")"
+          REQUIRED_ASSETS=(
+            "sub2api_${RELEASE_VERSION}_linux_amd64.tar.gz"
+            "sub2api_${RELEASE_VERSION}_linux_arm64.tar.gz"
+            "sub2api_${RELEASE_VERSION}_windows_amd64.zip"
+            "sub2api_${RELEASE_VERSION}_darwin_amd64.tar.gz"
+            "sub2api_${RELEASE_VERSION}_darwin_arm64.tar.gz"
+            "checksums.txt"
+          )
+          for asset in "${REQUIRED_ASSETS[@]}"; do
+            grep -Fqx -- "$asset" <<< "$PUBLISHED_ASSETS" || {
+              echo "Missing published release asset: $asset" >&2
+              exit 1
+            }
+          done

@@ -134,6 +134,8 @@ jobs:
           echo "RELEASE_IMAGE_TAG=$RELEASE_IMAGE_TAG" >> "$GITHUB_ENV"
 
       - name: Decide whether a release is needed
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -167,6 +169,51 @@ jobs:
           fi
           echo "PREVIOUS_RELEASE_VERSION=$PREVIOUS_RELEASE_VERSION" >> "$GITHUB_ENV"
 
+          NEEDS_BINARY_RELEASE=false
+          if [[ -n "$PREVIOUS_RELEASE_VERSION" ]]; then
+            PREVIOUS_RELEASE_TAG="v${PREVIOUS_RELEASE_VERSION}"
+            RELEASE_JSON_FILE=/tmp/apophis-release.json
+            RELEASE_ERROR_FILE=/tmp/apophis-release-error.log
+            set +e
+            gh release view "$PREVIOUS_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets,targetCommitish > "$RELEASE_JSON_FILE" 2> "$RELEASE_ERROR_FILE"
+            RELEASE_STATUS=$?
+            set -e
+            if [[ "$RELEASE_STATUS" -eq 0 ]]; then
+              RELEASE_DRAFT="$(jq -r '.isDraft' "$RELEASE_JSON_FILE")"
+              RELEASE_PRERELEASE="$(jq -r '.isPrerelease' "$RELEASE_JSON_FILE")"
+              RELEASE_TARGET="$(jq -r '.targetCommitish' "$RELEASE_JSON_FILE")"
+              RELEASE_ASSETS="$(jq -r '.assets[].name' "$RELEASE_JSON_FILE")"
+              REQUIRED_ASSETS=(
+                "sub2api_${PREVIOUS_RELEASE_VERSION}_linux_amd64.tar.gz"
+                "sub2api_${PREVIOUS_RELEASE_VERSION}_linux_arm64.tar.gz"
+                "sub2api_${PREVIOUS_RELEASE_VERSION}_windows_amd64.zip"
+                "sub2api_${PREVIOUS_RELEASE_VERSION}_darwin_amd64.tar.gz"
+                "sub2api_${PREVIOUS_RELEASE_VERSION}_darwin_arm64.tar.gz"
+                "checksums.txt"
+              )
+              MISSING_ASSETS=()
+              for asset in "${REQUIRED_ASSETS[@]}"; do
+                if ! grep -Fqx -- "$asset" <<< "$RELEASE_ASSETS"; then
+                  MISSING_ASSETS+=("$asset")
+                fi
+              done
+              if [[ "$RELEASE_DRAFT" == "true" || "$RELEASE_PRERELEASE" == "true" || "$RELEASE_TARGET" != "themed-release" || "${#MISSING_ASSETS[@]}" -gt 0 ]]; then
+                NEEDS_BINARY_RELEASE=true
+                echo "Existing release needs repair (draft=${RELEASE_DRAFT}, prerelease=${RELEASE_PRERELEASE}, target=${RELEASE_TARGET}, missing=${MISSING_ASSETS[*]:-none})."
+              fi
+            elif grep -Eiq '404|not found' "$RELEASE_ERROR_FILE"; then
+              NEEDS_BINARY_RELEASE=true
+              echo "Previous release is missing; binary publication must recreate it."
+            else
+              cat "$RELEASE_ERROR_FILE" >&2
+              exit "$RELEASE_STATUS"
+            fi
+          else
+            NEEDS_BINARY_RELEASE=true
+            echo "No previous release version metadata found; binary publication must run."
+          fi
+          echo "NEEDS_BINARY_RELEASE=$NEEDS_BINARY_RELEASE" >> "$GITHUB_ENV"
+
           CURRENT_REPOSITORY_SHA="$(git rev-parse HEAD)"
           CURRENT_CANVAS_SHA="$(git rev-parse HEAD:integrations/infinite-canvas)"
           PREVIOUS_CANVAS_SHA="$(git rev-parse origin/themed-release:integrations/infinite-canvas 2>/dev/null || true)"
@@ -196,6 +243,13 @@ jobs:
             echo "Upstream is unchanged, but repository or Canvas metadata drifted; publishing repository state."
           fi
 
+          if [[ "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$NEEDS_BINARY_RELEASE" == "true" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) ]]; then
+            echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
+            echo "NEEDS_BINARY_RELEASE=true" >> "$GITHUB_ENV"
+            echo "Upstream source is synchronized, but its binary release needs repair."
+            exit 0
+          fi
+
           if [[ "$RELEASE_KIND" == "upstream" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) ]]; then
             if [[ -n "$UPSTREAM_RELEASE_ID" && "$PREVIOUS_UPSTREAM_RELEASE_ID" == "$UPSTREAM_RELEASE_ID" ]]; then
               echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
@@ -215,6 +269,12 @@ jobs:
           fi
 
           if [[ "$RELEASE_KIND" == "repository" && "$PREVIOUS_REPOSITORY_SHA" == "$RELEASE_SOURCE_SHA" && "$PREVIOUS_CANVAS_SHA" == "$CURRENT_CANVAS_SHA" ]]; then
+            if [[ "$NEEDS_BINARY_RELEASE" == "true" ]]; then
+              echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
+              echo "NEEDS_BINARY_RELEASE=true" >> "$GITHUB_ENV"
+              echo "Repository source is synchronized, but its binary release needs repair."
+              exit 0
+            fi
             echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
             echo "仓库提交 $RELEASE_SOURCE_SHA 已经发布，跳过重复发布。"
             exit 0
@@ -536,7 +596,7 @@ jobs:
           docker push "${IMAGE}:latest"
 
       - name: Trigger themed binary publication
-        if: env.SHOULD_PUBLISH == 'true'
+        if: env.SHOULD_PUBLISH == 'true' || env.NEEDS_BINARY_RELEASE == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash

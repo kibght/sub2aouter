@@ -94,6 +94,40 @@ test('successful theme sync explicitly dispatches serialized binary publication'
 })
 
 
+test('hourly sync recovers missing or incomplete binary releases without minting another version', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+
+  assert.match(workflow, /NEEDS_BINARY_RELEASE/)
+  assert.match(workflow, /gh release view "\$PREVIOUS_RELEASE_TAG"/)
+  assert.match(workflow, /targetCommitish/)
+  assert.match(workflow, /\.assets\[\]\.name/)
+  assert.match(workflow, /sub2api_\$\{PREVIOUS_RELEASE_VERSION\}_linux_amd64\.tar\.gz/)
+  assert.match(workflow, /env\.SHOULD_PUBLISH == 'true' \|\| env\.NEEDS_BINARY_RELEASE == 'true'/)
+})
+
+test('binary release repairs incomplete assets and verifies the published result', async () => {
+  const workflow = await readFile('.github/workflows/theme-binary-release.yml', 'utf8')
+
+  assert.match(workflow, /RELEASE_EXISTS/)
+  assert.match(workflow, /gh release upload "\$RELEASE_TAG"[\s\S]*--clobber/)
+  assert.match(workflow, /gh release edit "\$RELEASE_TAG"/)
+  assert.match(workflow, /name: Verify published GitHub release/)
+  assert.match(workflow, /Missing published release asset/)
+  assert.match(workflow, /grep -Fqx/)
+})
+
+test('new upstream releases are not mistaken for binary-only repairs', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+
+  const identityIndex = workflow.indexOf('UPSTREAM_ALREADY_SYNCHRONIZED=false')
+  const repairIndex = workflow.indexOf('Upstream source is synchronized, but its binary release needs repair.')
+  const nextVersionIndex = workflow.indexOf('node scripts/next-release-version.mjs')
+  assert.ok(identityIndex >= 0)
+  assert.ok(repairIndex > identityIndex)
+  assert.ok(nextVersionIndex > repairIndex)
+  assert.match(workflow, /\$UPSTREAM_ALREADY_SYNCHRONIZED" == "true"/)
+})
+
 test('the Canvas workflow is the single hourly upstream coordinator', async () => {
   const sub2Workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
   const canvasWorkflow = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
