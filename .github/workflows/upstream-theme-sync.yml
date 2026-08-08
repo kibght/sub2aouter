@@ -298,6 +298,7 @@ jobs:
           cp THEME.md "$GENERATED_DIR/THEME.md"
           cp .github/workflows/upstream-theme-sync.yml "$GENERATED_DIR/.github/workflows/upstream-theme-sync.yml"
           cp .github/workflows/infinite-canvas-upstream-sync.yml "$GENERATED_DIR/.github/workflows/infinite-canvas-upstream-sync.yml"
+          cp .github/workflows/backend-ci.yml "$GENERATED_DIR/.github/workflows/backend-ci.yml"
 
       - name: Apply theme overlay
         if: env.SHOULD_PUBLISH == 'true'
@@ -602,4 +603,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh workflow run theme-binary-release.yml --ref main
+          gh workflow run theme-binary-release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main

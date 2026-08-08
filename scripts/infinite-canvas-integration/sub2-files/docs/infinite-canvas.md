@@ -1,4 +1,4 @@
-﻿# Infinite Canvas 集成与运维
+# Infinite Canvas 集成与运维
 
 Sub2Aouter 将 `basketikun/infinite-canvas` 构建为同源子应用 `/canvas-app/`，用户入口是 `/workspace/canvas`。Canvas 产物直接嵌入 Sub2Aouter 发布镜像和二进制，不需要额外容器、子域名或跨域配置。
 
@@ -63,8 +63,9 @@ node scripts/apply-sub2-infinite-canvas-integration.mjs --root <generated-root>
 1. 更新 Git submodule 指针。
 2. 应用 `scripts/apply-infinite-canvas-patches.mjs`。
 3. 运行 Canvas typecheck 和生产构建。
-4. 创建 PR，并在仓库允许时启用 auto-merge。
-5. 交给完整 CI 继续验证 Sub2 前后端。
+4. 创建或复用 PR，并记录自动分支提交 SHA。
+5. 通过 `.github/workflows/backend-ci.yml` 对该提交运行完整 CI。
+6. 完整 CI 通过后合并 PR，再触发统一发布工作流。
 
 补丁不直接写进上游子模块，避免后续升级时产生长期分叉。
 
