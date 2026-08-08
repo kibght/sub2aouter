@@ -173,3 +173,50 @@ test('contract requires binary release recovery and post-publication verificatio
   assert.ok(violations.some((violation) => violation.code === 'sync.binary_recovery'))
   assert.ok(violations.some((violation) => violation.code === 'binary.release_recovery'))
 })
+
+test('contract requires explicit repository selection for binary workflow dispatch', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  const workflow = files.get(path)
+  const dispatchStart = workflow.indexOf('gh workflow run theme-binary-release.yml')
+  assert.notEqual(dispatchStart, -1)
+  const dispatch = workflow.slice(dispatchStart)
+  files.set(
+    path,
+    `${workflow.slice(0, dispatchStart)}${dispatch.replace('--repo "$GITHUB_REPOSITORY"', '--repo "Wei-Shaw/sub2api"', 1)}`,
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.binary_dispatch_repository'))
+})
+
+test('contract requires reusable CI to verify an immutable Canvas update ref', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/backend-ci.yml'
+  const workflow = await readFile(path, 'utf8')
+  files.set(path, workflow.replace('workflow_call:', 'disabled_workflow_call:'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'ci.reusable_ref'))
+})
+
+test('contract requires complete CI before merging a Canvas update', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/infinite-canvas-upstream-sync.yml'
+  files.set(
+    path,
+    files.get(path).replace('uses: ./.github/workflows/backend-ci.yml', 'uses: ./.github/workflows/disabled-ci.yml'),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'canvas_sync.full_ci_gate'))
+})
+
+test('contract requires explicit repository selection for Canvas automation commands', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/infinite-canvas-upstream-sync.yml'
+  files.set(path, files.get(path).replaceAll('--repo "$GITHUB_REPOSITORY"', '--repo "Wei-Shaw/sub2api"'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'canvas_sync.repository_selection'))
+})

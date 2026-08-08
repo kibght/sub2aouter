@@ -91,7 +91,7 @@ themed-release   GHCR 镜像
 
 `.github/workflows/upstream-theme-sync.yml` 会：
 
-1. 在 `main` 推送、手动触发或每 30 分钟定时触发；定时触发且上游 SHA 未变化时直接结束。
+1. 由 `.github/workflows/infinite-canvas-upstream-sync.yml` 每小时统一协调；上游 Release、仓库提交和 Canvas SHA 均未变化且二进制 Release 完整时直接结束。
 2. 拉取 `Wei-Shaw/sub2api` 最新上游源码。
 3. 复制永久主题和工具文件。
 4. 应用 `theme/apophis/manifest.json`。
@@ -101,8 +101,8 @@ themed-release   GHCR 镜像
 8. 构建并推送不可变 GHCR 镜像。
 9. 更新 `themed-release`。
 10. 最后更新 `latest` 镜像。
-11. Docker 镜像和二进制 Release 使用同一个 `2026.<月>.<运行编号>` 版本号。
-12. 管理后台版本卡片每 30 分钟检查 `kibght/sub2aouter`，发现新版本后显示黄色提醒。
+11. Docker 镜像和二进制 Release 使用同一个 `0.1.x` 递增版本号。
+12. 管理后台版本卡片加载时使用缓存检查 `kibght/sub2aouter`，手动刷新时强制查询最新 Release。
 13. Docker 构建只显示 Compose 更新命令，不在容器内部替换二进制。
 14. 同步时继承当前源码已包含的上游 Release 标题、链接和完整更新日志。
 15. 找不到匹配的上游 Release 时，自动回退为上游提交摘要。
