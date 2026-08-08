@@ -1,4 +1,4 @@
-﻿name: Sync Infinite Canvas Upstream
+name: Sync Infinite Canvas Upstream
 
 on:
   workflow_dispatch:
@@ -17,6 +17,10 @@ permissions:
 jobs:
   update:
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.upstream.outputs.changed }}
+      update_sha: ${{ steps.update_branch.outputs.update_sha }}
+      pr_number: ${{ steps.pull_request.outputs.pr_number }}
     env:
       UPDATE_BRANCH: automation/infinite-canvas-upstream
       CANVAS_REPOSITORY: basketikun/infinite-canvas
@@ -97,6 +101,7 @@ jobs:
           node --test scripts/__tests__/infinite-canvas-integration.test.mjs scripts/__tests__/infinite-canvas-workflows.test.mjs
 
       - name: Create update branch
+        id: update_branch
         if: steps.upstream.outputs.changed == 'true'
         shell: bash
         run: |
@@ -106,39 +111,71 @@ jobs:
           git checkout -B "$UPDATE_BRANCH"
           git add integrations/infinite-canvas
           git commit -m "chore: update Infinite Canvas upstream to ${{ steps.upstream.outputs.latest_sha }}"
+          UPDATE_SHA="$(git rev-parse HEAD)"
           git push --force origin "$UPDATE_BRANCH"
+          echo "update_sha=$UPDATE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Create or update pull request
+        id: pull_request
         if: steps.upstream.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          PR_NUMBER="$(gh pr list --head "$UPDATE_BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          PR_NUMBER="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$UPDATE_BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
           if [[ -z "$PR_NUMBER" ]]; then
             gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
               --base main \
               --head "$UPDATE_BRANCH" \
               --title "chore: 自动同步 Infinite Canvas 上游" \
               --body "自动更新 Infinite Canvas 子模块。适配补丁、TypeScript 检查和生产构建已通过；合并仍受仓库完整 CI 门禁保护。"
-            PR_NUMBER="$(gh pr list --head "$UPDATE_BRANCH" --base main --state open --json number --jq '.[0].number')"
+            PR_NUMBER="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$UPDATE_BRANCH" --base main --state open --json number --jq '.[0].number')"
           fi
-          gh pr merge --squash "$PR_NUMBER"
-          PR_STATE="$(gh pr view "$PR_NUMBER" --json state --jq '.state')"
+          test -n "$PR_NUMBER"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+  full-ci:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    uses: ./.github/workflows/backend-ci.yml
+    with:
+      ref: ${{ needs.update.outputs.update_sha }}
+
+  merge:
+    needs: [update, full-ci]
+    if: needs.update.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge verified Infinite Canvas update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.update.outputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PR_NUMBER"
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash
+          PR_STATE="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state --jq '.state')"
           if [[ "$PR_STATE" != "MERGED" ]]; then
             echo "Infinite Canvas update pull request was not merged: $PR_STATE" >&2
             exit 1
           fi
 
+  dispatch-release:
+    needs: [update, full-ci, merge]
+    if: ${{ always() && needs.update.result == 'success' && (needs.update.outputs.changed == 'false' || (needs.update.outputs.changed == 'true' && needs.full-ci.result == 'success' && needs.merge.result == 'success')) }}
+    runs-on: ubuntu-latest
+    steps:
       - name: Trigger unified upstream release sync
-        if: steps.upstream.outputs.changed != ''
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           gh workflow run upstream-theme-sync.yml \
+            --repo "$GITHUB_REPOSITORY" \
             --ref main \
             -f repository_release=false \
             -f scheduled_round=true

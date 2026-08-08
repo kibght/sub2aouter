@@ -9,6 +9,7 @@ test('Sub2 upstream releases carry and verify the Infinite Canvas integration', 
   assert.match(workflow, /apply-sub2-infinite-canvas-integration\.mjs --root \. --check/)
   assert.match(workflow, /submodule update --init --depth=1/)
   assert.match(workflow, /cp \.github\/workflows\/infinite-canvas-upstream-sync\.yml/)
+  assert.match(workflow, /cp \.github\/workflows\/backend-ci\.yml/)
   assert.match(workflow, /apply-infinite-canvas-patches\.mjs --root \"\$GENERATED_DIR\/integrations\/infinite-canvas\"/)
 })
 
@@ -23,11 +24,11 @@ test('Infinite Canvas upstream updates are gated by adapter checks and pull requ
   assert.doesNotMatch(workflow, /cd \.\.\/\.\./)
   assert.match(workflow, /gh pr create/)
   assert.match(workflow, /actions:\s*write/)
-  assert.match(workflow, /gh pr merge --squash \"\$PR_NUMBER\"/)
+  assert.match(workflow, /gh pr merge "\$PR_NUMBER" --repo "\$GITHUB_REPOSITORY" --squash/)
   assert.match(workflow, /gh workflow run upstream-theme-sync\.yml/)
   assert.match(workflow, /repository_release=false/)
   assert.match(workflow, /scheduled_round=true/)
-  assert.match(workflow, /steps\.upstream\.outputs\.changed != ''/)
+  assert.match(workflow, /needs\.update\.outputs\.changed/)
   const patchScript = await readFile('scripts/apply-infinite-canvas-patches.mjs', 'utf8')
   const integrationScript = await readFile('scripts/apply-sub2-infinite-canvas-integration.mjs', 'utf8')
   assert.match(integrationScript, /reconcileInfiniteCanvasLocaleBlock/)
@@ -87,6 +88,7 @@ test('successful theme sync explicitly dispatches serialized binary publication'
 
   assert.match(syncWorkflow, /name: Trigger themed binary publication/)
   assert.match(syncWorkflow, /gh workflow run theme-binary-release\.yml/)
+  assert.match(syncWorkflow, /gh workflow run theme-binary-release\.yml[^\n]*\n\s+--repo "\$GITHUB_REPOSITORY"/)
   assert.match(syncWorkflow, /permissions:\n\s+actions:\s+write/)
   assert.match(binaryWorkflow, /workflow_dispatch:/)
   assert.match(binaryWorkflow, /group: themed-binary-release/)
@@ -134,9 +136,44 @@ test('the Canvas workflow is the single hourly upstream coordinator', async () =
 
   assert.match(canvasWorkflow, /cron:\s*'7 \* \* \* \*'/)
   assert.doesNotMatch(sub2Workflow, /schedule:/)
-  assert.match(canvasWorkflow, /steps\.upstream\.outputs\.changed != ''/)
+  assert.match(canvasWorkflow, /needs\.update\.outputs\.changed/)
   assert.match(canvasWorkflow, /gh workflow run upstream-theme-sync\.yml[\s\S]*repository_release=false/)
   assert.doesNotMatch(canvasWorkflow, /repository_release=true/)
   assert.match(sub2Workflow, /workflow_dispatch:/)
   assert.match(sub2Workflow, /github\.event_name != 'push' \|\| !contains\(github\.event\.head_commit\.message, 'Infinite Canvas'\)/)
+})
+
+test('Infinite Canvas merge waits for reusable full CI at the update commit', async () => {
+  const [workflow, ciWorkflow] = await Promise.all([
+    readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8'),
+    readFile('.github/workflows/backend-ci.yml', 'utf8'),
+  ])
+
+  assert.match(ciWorkflow, /workflow_call:/)
+  assert.match(ciWorkflow, /ref:\n\s+description: Commit, branch, or tag to verify/)
+  assert.equal(
+    (ciWorkflow.match(/ref: \$\{\{ inputs\.ref \|\| github\.sha \}\}/g) || []).length,
+    5,
+  )
+  assert.match(workflow, /full-ci:\n[\s\S]*uses: \.\/\.github\/workflows\/backend-ci\.yml/)
+  assert.match(workflow, /ref: \$\{\{ needs\.update\.outputs\.update_sha \}\}/)
+  assert.match(workflow, /merge:\n[\s\S]*needs: \[update, full-ci\]/)
+  assert.match(workflow, /gh pr merge[^\n]*--repo "\$GITHUB_REPOSITORY"/)
+  assert.match(workflow, /gh workflow run upstream-theme-sync\.yml[^\n]*\n\s+--repo "\$GITHUB_REPOSITORY"/)
+
+  const reusableGate = workflow.indexOf('uses: ./.github/workflows/backend-ci.yml')
+  const merge = workflow.indexOf('gh pr merge')
+  assert.ok(reusableGate >= 0 && merge > reusableGate)
+})
+
+test('Infinite Canvas documentation describes the reusable CI merge gate', async () => {
+  const docs = await Promise.all([
+    readFile('docs/infinite-canvas.md', 'utf8'),
+    readFile('scripts/infinite-canvas-integration/sub2-files/docs/infinite-canvas.md', 'utf8'),
+  ])
+
+  for (const document of docs) {
+    assert.match(document, /backend-ci\.yml/)
+    assert.doesNotMatch(document, /auto-merge/)
+  }
 })

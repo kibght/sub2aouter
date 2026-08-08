@@ -5,6 +5,7 @@ export const RELEASE_PIPELINE_FILES = Object.freeze([
   '.github/workflows/upstream-theme-sync.yml',
   '.github/workflows/infinite-canvas-upstream-sync.yml',
   '.github/workflows/theme-binary-release.yml',
+  '.github/workflows/backend-ci.yml',
   'backend/internal/service/update_service.go',
   'Dockerfile',
   'frontend/src/components/common/VersionBadge.vue',
@@ -91,13 +92,34 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   ]), 'Immutable image, release branch, and latest image must publish in safe order.')
   check('sync.latest_image', syncPath, sync.includes('docker push "${IMAGE}:latest"'), 'Sync must publish the Docker latest tag.')
   check('sync.binary_recovery', syncPath, sync.includes('NEEDS_BINARY_RELEASE') && sync.includes('gh release view "$PREVIOUS_RELEASE_TAG"') && sync.includes('targetCommitish') && sync.includes("env.SHOULD_PUBLISH == 'true' || env.NEEDS_BINARY_RELEASE == 'true'"), 'Sync must recover a missing, incomplete, draft, prerelease, or mis-targeted binary release without minting another version.')
+  check('sync.binary_dispatch_repository', syncPath, hasPattern(sync, /gh workflow run theme-binary-release\.yml[^\n]*\n\s+--repo "\$GITHUB_REPOSITORY"/), 'Binary workflow dispatch must explicitly target the current repository instead of allowing gh to infer the upstream remote.')
+
+  const ciPath = '.github/workflows/backend-ci.yml'
+  const ci = files.get(ciPath) || ''
+  const reusableCheckoutRefs = ci.match(/ref: \$\{\{ inputs\.ref \|\| github\.sha \}\}/g) || []
+  check('ci.reusable_ref', ciPath, hasPattern(ci, /\n  workflow_call:\n/) && ci.includes('description: Commit, branch, or tag to verify') && ci.includes('type: string') && reusableCheckoutRefs.length === 5, 'CI must be reusable and every checkout must verify the requested immutable ref.')
 
   const canvasSyncPath = '.github/workflows/infinite-canvas-upstream-sync.yml'
   const canvasSync = files.get(canvasSyncPath) || ''
   check('canvas_sync.schedule', canvasSyncPath, hasPattern(canvasSync, /cron:\s*'7 \* \* \* \*'/), 'The unified upstream coordinator must run hourly off the load boundary.')
   check('canvas_sync.release_metadata', canvasSyncPath, canvasSync.includes('repos/${CANVAS_REPOSITORY}/releases/latest') && canvasSync.includes('INFINITE_CANVAS_RELEASE_TAG'), 'Infinite Canvas sync must inspect published release metadata before syncing.')
   check('canvas_sync.adapter_gate', canvasSyncPath, canvasSync.includes('apply-infinite-canvas-patches.mjs') && canvasSync.includes('bun run typecheck') && canvasSync.includes('bun run build'), 'Infinite Canvas sync must gate the submodule update on adapter checks and a production build.')
-  check('canvas_sync.release_dispatch', canvasSyncPath, canvasSync.includes('actions: write') && canvasSync.includes('gh workflow run upstream-theme-sync.yml') && canvasSync.includes('repository_release=false') && canvasSync.includes('scheduled_round=true') && canvasSync.includes("steps.upstream.outputs.changed != ''"), 'The coordinator must dispatch one combined Canvas and Sub2API release round after every successful check.')
+  check('canvas_sync.full_ci_gate', canvasSyncPath,
+    canvasSync.includes('uses: ./.github/workflows/backend-ci.yml') &&
+    canvasSync.includes('ref: ${{ needs.update.outputs.update_sha }}') &&
+    canvasSync.includes('needs: [update, full-ci]') &&
+    hasOrderedMarkers(canvasSync, ['uses: ./.github/workflows/backend-ci.yml', 'gh pr merge']) &&
+    canvasSync.includes("needs.full-ci.result == 'success'") &&
+    canvasSync.includes("needs.merge.result == 'success'"),
+    'Canvas updates must run the complete CI workflow at the pushed update SHA before merge and release dispatch.')
+  check('canvas_sync.repository_selection', canvasSyncPath,
+    hasPattern(canvasSync, /gh pr list --repo "\$GITHUB_REPOSITORY"/) &&
+    hasPattern(canvasSync, /gh pr create[^\n]*\n\s+--repo "\$GITHUB_REPOSITORY"/) &&
+    hasPattern(canvasSync, /gh pr merge[^\n]*--repo "\$GITHUB_REPOSITORY"/) &&
+    hasPattern(canvasSync, /gh pr view[^\n]*--repo "\$GITHUB_REPOSITORY"/) &&
+    hasPattern(canvasSync, /gh workflow run upstream-theme-sync\.yml[^\n]*\n\s+--repo "\$GITHUB_REPOSITORY"/),
+    'Canvas automation must explicitly target the current repository for PR and workflow commands.')
+  check('canvas_sync.release_dispatch', canvasSyncPath, canvasSync.includes('actions: write') && canvasSync.includes('gh workflow run upstream-theme-sync.yml') && canvasSync.includes('repository_release=false') && canvasSync.includes('scheduled_round=true') && canvasSync.includes('needs.update.outputs.changed') && canvasSync.includes('always()'), 'The coordinator must dispatch one combined Canvas and Sub2API release round after every successful check.')
   check('sync.canvas_push_guard', syncPath, sync.includes("github.event_name != 'push'") && sync.includes("head_commit.message, 'Infinite Canvas'"), 'Automated Canvas merge pushes must not create a second repository-only release.')
 
   const binaryPath = '.github/workflows/theme-binary-release.yml'
