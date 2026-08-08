@@ -533,3 +533,12 @@ jobs:
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
           docker tag "${IMAGE}:${RELEASE_VERSION}" "${IMAGE}:latest"
           docker push "${IMAGE}:latest"
+
+      - name: Trigger themed binary publication
+        if: env.SHOULD_PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run theme-binary-release.yml --ref main

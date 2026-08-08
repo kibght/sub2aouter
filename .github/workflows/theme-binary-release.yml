@@ -1,18 +1,23 @@
 name: Publish Themed Binary Release
 
 on:
+  workflow_dispatch:
   workflow_run:
     workflows:
       - Sync Upstream With Apophis Theme
     types:
       - completed
 
+concurrency:
+  group: themed-binary-release
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
 jobs:
   binary-release:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

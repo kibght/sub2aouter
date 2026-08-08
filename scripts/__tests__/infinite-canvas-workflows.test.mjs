@@ -79,6 +79,20 @@ test('the themed binary release verifies all requested platform artifacts before
 })
 
 
+test('successful theme sync explicitly dispatches serialized binary publication', async () => {
+  const [syncWorkflow, binaryWorkflow] = await Promise.all([
+    readFile('.github/workflows/upstream-theme-sync.yml', 'utf8'),
+    readFile('.github/workflows/theme-binary-release.yml', 'utf8'),
+  ])
+
+  assert.match(syncWorkflow, /name: Trigger themed binary publication/)
+  assert.match(syncWorkflow, /gh workflow run theme-binary-release\.yml/)
+  assert.match(binaryWorkflow, /workflow_dispatch:/)
+  assert.match(binaryWorkflow, /group: themed-binary-release/)
+  assert.match(binaryWorkflow, /github\.event_name == 'workflow_dispatch' \|\| github\.event\.workflow_run\.conclusion == 'success'/)
+})
+
+
 test('the Canvas workflow is the single hourly upstream coordinator', async () => {
   const sub2Workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
   const canvasWorkflow = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
