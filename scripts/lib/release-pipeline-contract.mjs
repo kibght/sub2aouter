@@ -90,6 +90,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     'name: Publish latest image after release branch succeeds',
   ]), 'Immutable image, release branch, and latest image must publish in safe order.')
   check('sync.latest_image', syncPath, sync.includes('docker push "${IMAGE}:latest"'), 'Sync must publish the Docker latest tag.')
+  check('sync.binary_recovery', syncPath, sync.includes('NEEDS_BINARY_RELEASE') && sync.includes('gh release view "$PREVIOUS_RELEASE_TAG"') && sync.includes('targetCommitish') && sync.includes("env.SHOULD_PUBLISH == 'true' || env.NEEDS_BINARY_RELEASE == 'true'"), 'Sync must recover a missing, incomplete, draft, prerelease, or mis-targeted binary release without minting another version.')
 
   const canvasSyncPath = '.github/workflows/infinite-canvas-upstream-sync.yml'
   const canvasSync = files.get(canvasSyncPath) || ''
@@ -110,6 +111,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('binary.publish', binaryPath, binary.includes('gh release create') && binary.includes('--target themed-release') && binary.includes('--latest'), 'Binary release must publish the themed branch as the latest GitHub Release.')
   check('binary.notes', binaryPath, binary.includes('.apophis-release-title') && binary.includes('.apophis-release-notes.md') && binary.includes('--notes-file'), 'Binary release must include the generated repository or upstream notes file.')
   check('binary.artifacts', binaryPath, binary.includes('name: Verify GoReleaser artifacts') && binary.includes('linux_amd64.tar.gz') && binary.includes('linux_arm64.tar.gz') && binary.includes('windows_amd64.zip') && binary.includes('darwin_amd64.tar.gz') && binary.includes('darwin_arm64.tar.gz') && binary.includes('dist/checksums.txt'), 'Binary release must verify Linux, Windows, macOS, and checksum artifacts before publishing.')
+  check('binary.release_recovery', binaryPath, binary.includes('RELEASE_EXISTS') && binary.includes('gh release upload "$RELEASE_TAG"') && binary.includes('--clobber') && binary.includes('gh release edit "$RELEASE_TAG"') && binary.includes('name: Verify published GitHub release') && binary.includes('Missing published release asset'), 'Binary publication must repair incomplete releases and verify the final GitHub Release state.')
 
   const overlayBinaryPath = 'theme/apophis/files/.github/workflows/theme-binary-release.yml'
   check('binary.overlay_copy', overlayBinaryPath, files.get(overlayBinaryPath) === binary, 'The permanent theme copy of the binary workflow must match the active workflow.')

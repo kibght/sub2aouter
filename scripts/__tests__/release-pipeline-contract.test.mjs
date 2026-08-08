@@ -161,3 +161,15 @@ test('contract blocks publication when main is behind the latest Canvas release'
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
   assert.ok(violations.some((violation) => violation.code === 'sync.canvas_freshness'))
 })
+
+test('contract requires binary release recovery and post-publication verification', async () => {
+  const files = await loadContractFiles()
+  const syncPath = '.github/workflows/upstream-theme-sync.yml'
+  const binaryPath = '.github/workflows/theme-binary-release.yml'
+  files.set(syncPath, files.get(syncPath).replaceAll('NEEDS_BINARY_RELEASE', 'DISABLED_BINARY_RELEASE'))
+  files.set(binaryPath, files.get(binaryPath).replace('Verify published GitHub release', 'disabled verification'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.binary_recovery'))
+  assert.ok(violations.some((violation) => violation.code === 'binary.release_recovery'))
+})
