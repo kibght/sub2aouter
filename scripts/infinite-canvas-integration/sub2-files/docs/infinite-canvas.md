@@ -48,24 +48,25 @@ GET /canvas-app/version.txt
 
 ### Sub2API
 
-`.github/workflows/upstream-theme-sync.yml` 定时同步 `Wei-Shaw/sub2api`。主题应用完成后会运行：
+每小时 / The hourly `infinite-canvas-upstream-sync.yml` coordinator dispatches `upstream-theme-sync.yml` for Canvas and `Wei-Shaw/sub2api`. After theme application it runs:
 
 ```bash
 node scripts/apply-sub2-infinite-canvas-integration.mjs --root <generated-root>
 ```
 
-如果上游结构变化导致 marker 无法匹配，工作流立即失败，不会发布 `latest`。
+A marker mismatch fails the workflow before the generated snapshot or `latest` can move. Release discovery is read once and fails closed; only an explicit missing Release may fall back to `main`.
 
 ### Infinite Canvas
 
-`.github/workflows/infinite-canvas-upstream-sync.yml` 每小时检查 `basketikun/infinite-canvas` 已发布版本，没有 Release 时回退检查 `main`。检测到更新后会：
+The hourly Canvas coordinator checks the published `basketikun/infinite-canvas` Release. An explicit missing Release may fall back to `main`; API failures stop the run.
 
 1. 更新 Git submodule 指针。
 2. 应用 `scripts/apply-infinite-canvas-patches.mjs`。
 3. 运行 Canvas typecheck 和生产构建。
 4. 创建或复用 PR，并记录自动分支提交 SHA。
 5. 通过 `.github/workflows/backend-ci.yml` 对该提交运行完整 CI。
-6. 完整 CI 通过后合并 PR，再触发统一发布工作流。
+6. Merge only with `--match-head-commit` for the exact SHA that passed full CI, then dispatch the unified release workflow.
+7. Await binary publication for the immutable generated commit and promote `latest` only after every asset is verified.
 
 补丁不直接写进上游子模块，避免后续升级时产生长期分叉。
 

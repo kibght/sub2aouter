@@ -91,7 +91,7 @@ themed-release   GHCR 镜像
 
 `.github/workflows/upstream-theme-sync.yml` 会：
 
-1. 由 `.github/workflows/infinite-canvas-upstream-sync.yml` 每小时统一协调；上游 Release、仓库提交和 Canvas SHA 均未变化且二进制 Release 完整时直接结束。
+1. 每小时 / The hourly `infinite-canvas-upstream-sync.yml` coordinator reads each Release descriptor once and fails closed on API errors; it skips only when upstream, repository, Canvas, and binary assets are already current.
 2. 拉取 `Wei-Shaw/sub2api` 最新上游源码。
 3. 复制永久主题和工具文件。
 4. 应用 `theme/apophis/manifest.json`。
@@ -99,17 +99,18 @@ themed-release   GHCR 镜像
 6. 运行前端 lint、typecheck、回归测试和生产构建。
 7. 运行后端单元测试。
 8. 构建并推送不可变 GHCR 镜像。
-9. 更新 `themed-release`。
-10. 最后更新 `latest` 镜像。
-11. Docker 镜像和二进制 Release 使用同一个 `0.1.x` 递增版本号。
-12. 管理后台版本卡片加载时使用缓存检查 `kibght/sub2aouter`，手动刷新时强制查询最新 Release。
-13. Docker 构建只显示 Compose 更新命令，不在容器内部替换二进制。
-14. 同步时继承当前源码已包含的上游 Release 标题、链接和完整更新日志。
-15. 找不到匹配的上游 Release 时，自动回退为上游提交摘要。
-16. `themed-release` 作为无父快照推送，避免携带上游 Git 历史导致远端解包失败。
+9. Compare the generated critical workflows byte-for-byte with the verified source and re-run the release contract before snapshotting.
+10. Push the immutable `themed-release` snapshot and pass its exact commit to the reusable binary workflow.
+11. Wait for every binary asset and checksum to be published and verified.
+12. Promote the same immutable image version to `latest` only after binary publication succeeds.
+13. Docker images and binary Releases share one monotonically increasing `0.1.x` version.
+14. The admin version card checks `kibght/sub2aouter`; manual refresh bypasses its cache.
+15. Release notes preserve the matched upstream Release metadata and full changelog.
+16. Fallback to a commit summary is allowed only when the upstream explicitly has no Release; other API failures stop the run.
+17. `themed-release` remains a parentless snapshot so upstream Git history is not pushed.
 
 
-任何检查失败时，不更新 `themed-release` 和 `latest`，现有部署继续使用上一个通过验证的版本。
+If any check, binary build, or asset verification fails, `latest` is not promoted; snapshot failures also leave `themed-release` unchanged.
 
 ## Docker 部署
 

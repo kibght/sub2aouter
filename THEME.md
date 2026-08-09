@@ -61,22 +61,23 @@ docker compose up -d --no-deps sub2api
 不再需要额外的 `docker-compose.theme.yml` 覆盖文件。
 ## 自动更新
 
-`.github/workflows/upstream-theme-sync.yml` 每 30 分钟检查一次 `Wei-Shaw/sub2api`；上游 SHA 未变化时跳过构建和发布：
+每小时 / The hourly `infinite-canvas-upstream-sync.yml` coordinator checks Canvas and `Wei-Shaw/sub2api`; unchanged source, repository, Canvas, and complete binary assets skip publication.
 
 1. 获取最新上游源码。
 2. 覆盖 `theme/apophis` 中的首页主题。
 3. 检查 UTF-8 编码和主题漂移。
 4. 运行前端测试、构建和后端单元测试。
-5. 更新 `themed-release` 分支。
-6. 使用统一版本号发布 `ghcr.io/kibght/sub2aouter:<version>`、`latest` 和二进制 Release。
-7. 管理后台每 30 分钟检查自有仓库 Release，发现新版本后显示提醒。
-8. Docker 构建只展示 Compose 更新命令，裸机 Release 构建保留二进制更新。
-9. 自有 Release 自动继承当前源码已包含的上游 Release 完整更新日志。
-10. 上游未发布对应 Release 或 API 不可用时，回退为提交摘要。
-11. `themed-release` 使用无父快照和自包含 pack 推送，降低远端 `index-pack` 失败风险。
+5. Compare critical generated workflows byte-for-byte and re-run the release contract before snapshot creation.
+6. Push an immutable `themed-release` commit and await the reusable binary Release workflow at that exact ref.
+7. Promote the versioned image to `latest` only after all binary assets pass verification.
+8. The admin version card uses cached Release checks on load and a forced query on manual refresh.
+9. Docker builds show Compose update commands while bare-metal Releases keep binary update support.
+10. Release notes preserve the upstream title, link, and changelog already contained in the source.
+11. Commit-summary fallback is allowed only for an explicit missing Release; API failures are fail-closed.
+12. `themed-release` uses a parentless snapshot and self-contained pack.
 
 
-上游更新不会直接修改 `theme/apophis`，因此不会覆盖自定义模板。同步失败时不会更新 `themed-release` 和 `latest` 镜像。
+Upstream updates do not modify `theme/apophis`. Sync or binary failures do not promote `latest`, and snapshot failures do not move `themed-release`.
 
 ## 回滚
 
