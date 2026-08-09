@@ -260,3 +260,83 @@ test('applies AppLayout migration patches to a fresh upstream layout', async () 
   assert.equal(first.changed, true)
   assert.equal(second.changed, false)
 })
+
+test('migrates AppLayout patches from the existing themed release', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-legacy-app-layout-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-legacy-app-layout-overlay-'))
+  const target = 'frontend/src/components/layout/AppLayout.vue'
+  await mkdir(path.join(root, 'frontend/src/components/layout'), { recursive: true })
+  await mkdir(path.join(overlay, 'patches'), { recursive: true })
+  await writeFile(path.join(root, target), [
+    '<template>',
+    `<div class="app-shell min-h-screen bg-gray-50 dark:bg-dark-950" :class="fullHeight ? 'app-shell--full-height' : ''">`,
+    '    <div',
+    '      class="app-main relative min-h-screen transition-all duration-300"',
+    `      :class="[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-64', fullHeight ? 'app-main--full-height' : '']"`,
+    '    >',
+    `      <main class="app-content p-4 md:p-6 lg:p-8" :class="fullHeight ? 'app-content--full-height' : ''">`,
+    '        <slot />',
+    '      </main>',
+    '    </div>',
+    '  </div>',
+    '</template>',
+    '',
+    '<script setup lang="ts">',
+    'const appStore = useAppStore()',
+    'const authStore = useAuthStore()',
+    'const layoutProps = withDefaults(defineProps<{ fullHeight?: boolean }>(), { fullHeight: false })',
+    'const fullHeight = computed(() => layoutProps.fullHeight)',
+    'const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)',
+    '</script>',
+    '',
+  ].join('\n'))
+
+  const manifest = JSON.parse(await readFile('theme/apophis/manifest.json', 'utf8'))
+  const layoutPatches = manifest.patches.filter((entry) => entry.target === target)
+  for (const patch of layoutPatches) {
+    await writeFile(
+      path.join(overlay, patch.source),
+      await readFile(path.join('theme/apophis', patch.source), 'utf8'),
+    )
+  }
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({ patches: layoutPatches }))
+
+  const first = await applyTheme({ root, overlay })
+  const second = await applyTheme({ root, overlay })
+  const layout = await readFile(path.join(root, target), 'utf8')
+
+  assert.match(layout, /^  <div class="app-shell .*app-shell--full-height/m)
+  assert.equal(first.changed, true)
+  assert.equal(second.changed, false)
+})
+
+test('check mode rejects drift when the primary marker remains with a sentinel', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-primary-marker-drift-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-primary-marker-drift-overlay-'))
+  await mkdir(path.join(root, 'frontend'), { recursive: true })
+  await mkdir(path.join(overlay, 'patches'), { recursive: true })
+  await writeFile(
+    path.join(root, 'frontend/theme.js'),
+    'const theme = {\n  primary: "teal",\n  accent: "blue",\n}\n// primary: "neutral"\n',
+  )
+  await writeFile(
+    path.join(overlay, 'patches/theme.txt'),
+    'const theme = {\n  primary: "neutral",\n  accent: "gray",\n}',
+  )
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    patches: [
+      {
+        target: 'frontend/theme.js',
+        operation: 'replace',
+        marker: 'const theme = {\n  primary: "teal",\n  accent: "blue",\n}',
+        source: 'patches/theme.txt',
+        sentinel: 'primary: "neutral"',
+      },
+    ],
+  }))
+
+  await assert.rejects(
+    checkTheme({ root, overlay }),
+    /Theme patch drift.*frontend\/theme\.js/,
+  )
+})

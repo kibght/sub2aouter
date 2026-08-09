@@ -27,25 +27,33 @@ async function currentBuffer(target) {
 function applyPatch(text, patch, patchText) {
   const targetEol = text.includes('\r\n') ? '\r\n' : '\n'
   const normalize = (value) => String(value || '').replace(/\r\n?/g, '\n').replace(/\n/g, targetEol)
-  const normalizedMarker = normalize(patch.marker)
+  const normalizedMarkers = [patch.marker, ...(patch.markers ?? [])]
+    .map(normalize)
+    .filter(Boolean)
   const normalizedPatchText = normalize(patchText)
   const normalizedSentinel = normalize(patch.sentinel)
 
   if (normalizedPatchText && text.includes(normalizedPatchText)) return text
 
-  const index = text.indexOf(normalizedMarker)
-  if (!normalizedPatchText && index < 0 && normalizedSentinel && text.includes(normalizedSentinel)) {
-    return text
+  const matchedMarker = normalizedMarkers
+    .map((marker, index) => ({ marker, index: text.indexOf(marker), legacy: index > 0 }))
+    .find(({ index }) => index >= 0)
+  if (matchedMarker && normalizedPatchText && normalizedSentinel && text.includes(normalizedSentinel) && !matchedMarker.legacy) {
+    throw new Error(`Theme patch drift in ${patch.target}: sentinel exists without the exact replacement`)
   }
+  if (matchedMarker) {
+    const { marker, index } = matchedMarker
+    if (patch.operation === 'replace') {
+      return `${text.slice(0, index)}${normalizedPatchText}${text.slice(index + marker.length)}`
+    }
+    const insertionIndex = patch.position === 'after' ? index + marker.length : index
+    return `${text.slice(0, insertionIndex)}${normalizedPatchText}${text.slice(insertionIndex)}`
+  }
+  if (!normalizedPatchText && normalizedSentinel && text.includes(normalizedSentinel)) return text
   if (normalizedPatchText && normalizedSentinel && text.includes(normalizedSentinel)) {
     throw new Error(`Theme patch drift in ${patch.target}: sentinel exists without the exact replacement`)
   }
-  if (index < 0) throw new Error(`Patch marker not found in ${patch.target}: ${patch.marker}`)
-  if (patch.operation === 'replace') {
-    return `${text.slice(0, index)}${normalizedPatchText}${text.slice(index + normalizedMarker.length)}`
-  }
-  const insertionIndex = patch.position === 'after' ? index + normalizedMarker.length : index
-  return `${text.slice(0, insertionIndex)}${normalizedPatchText}${text.slice(insertionIndex)}`
+  throw new Error(`Patch marker not found in ${patch.target}: ${patch.marker}`)
 }
 
 async function expectedTargets({ root, overlay }) {
