@@ -87,6 +87,8 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.canvas_freshness', syncPath, sync.includes('name: Verify Infinite Canvas dependency is current') && sync.includes('LATEST_CANVAS_SHA') && sync.includes('infinite-canvas/releases/latest'), 'Theme publication must stop when main is behind the latest published Infinite Canvas release.')
   check('sync.release_notes_encoding', syncPath, sync.includes('cat "$GENERATED_DIR/.apophis-upstream-release-notes.md"') && !/\?{4,}/.test(sync), 'Release notes must preserve readable text instead of emitting literal question-mark placeholders.')
   check('sync.repository_source', syncPath, sync.includes('git worktree add --detach "$GENERATED_DIR" origin/themed-release') && sync.includes('RELEASE_KIND="repository"') && hasPattern(sync, /github\.event_name[^\n]+push/), 'Push releases must reuse themed-release without fetching upstream.')
+  check('sync.push_checkout', syncPath, sync.includes("ref: ${{ github.event_name == 'push' && github.sha || 'main' }}"), 'Push publication must checkout the immutable event SHA instead of a moving main branch.')
+  check('sync.repository_source_sha', syncPath, sync.includes('RELEASE_SOURCE_SHA="$(git rev-parse HEAD)"') && !sync.includes('RELEASE_SOURCE_SHA="${{ github.sha }}"'), 'Repository release metadata must come from the commit actually checked out and built.')
   check('sync.repository_notes', syncPath, sync.includes('## \u4ed3\u5e93\u4fee\u590d') && sync.includes('Capture repository release notes'), 'Push releases must publish repository fix notes.')
   check('sync.release_version', syncPath, sync.includes('PREVIOUS_RELEASE_VERSION') && sync.includes('node scripts/next-release-version.mjs \"$PREVIOUS_RELEASE_VERSION\"'), 'Sync must migrate the next release to v0.1.200 and increment the persisted version.')
   const binaryJobIndex = sync.indexOf('\n  binary-release:\n')
@@ -118,6 +120,24 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     latestPushIndex > promoteLatestIndex &&
     !sourceJob.includes('docker push "${IMAGE}:latest"'),
   'The latest image must be promoted only after the reusable binary publication succeeds.')
+
+  const releaseBranchIndex = sync.indexOf('name: Update generated release branch')
+  const releaseTreeIndex = sync.indexOf('RELEASE_TREE="$(git write-tree)"', releaseBranchIndex)
+  const finalContractIndex = sync.indexOf('node scripts/verify-release-pipeline.mjs --root .', releaseBranchIndex)
+  const workflowComparisonIndexes = [
+    'cmp "$GITHUB_WORKSPACE/.github/workflows/upstream-theme-sync.yml" .github/workflows/upstream-theme-sync.yml',
+    'cmp "$GITHUB_WORKSPACE/.github/workflows/infinite-canvas-upstream-sync.yml" .github/workflows/infinite-canvas-upstream-sync.yml',
+    'cmp "$GITHUB_WORKSPACE/.github/workflows/backend-ci.yml" .github/workflows/backend-ci.yml',
+    'cmp "$GITHUB_WORKSPACE/.github/workflows/theme-binary-release.yml" .github/workflows/theme-binary-release.yml',
+  ].map((marker) => sync.indexOf(marker, releaseBranchIndex))
+  check('sync.verified_workflow_snapshot', syncPath,
+    releaseBranchIndex >= 0 &&
+    !sync.includes('rm -rf "$GENERATED_DIR/.github/workflows"') &&
+    !sync.includes('git checkout origin/themed-release -- .github/workflows') &&
+    workflowComparisonIndexes.every((index) => index > releaseBranchIndex) &&
+    finalContractIndex > Math.max(...workflowComparisonIndexes) &&
+    releaseTreeIndex > finalContractIndex,
+  'Generated workflows must remain current and pass byte comparison plus the release contract before snapshot creation.')
 
   const ciPath = '.github/workflows/backend-ci.yml'
   const ci = files.get(ciPath) || ''

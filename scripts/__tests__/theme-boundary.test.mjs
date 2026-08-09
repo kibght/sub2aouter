@@ -190,11 +190,24 @@ test('generated release branch is pushed as a self-contained root snapshot', asy
   assert.match(workflow, /git push --no-thin/)
   assert.doesNotMatch(workflow, /git switch -C themed-release/)
 })
-test('generated snapshot preserves the existing remote workflow directory', async () => {
+test('generated snapshot keeps and verifies the freshly generated workflow directory', async () => {
   const workflow = await read('.github/workflows/upstream-theme-sync.yml')
-  const restoreIndex = workflow.indexOf('git checkout origin/themed-release -- .github/workflows')
-  const snapshotIndex = workflow.indexOf('RELEASE_TREE="$(git write-tree)"')
-  assert.match(workflow, /rm -rf "\$GENERATED_DIR\/\.github\/workflows"/)
-  assert.ok(restoreIndex >= 0, 'remote workflow directory must be restored')
-  assert.ok(snapshotIndex > restoreIndex, 'workflow restoration must happen before snapshot creation')
+  const updateStep = workflow.indexOf('name: Update generated release branch')
+  const snapshotIndex = workflow.indexOf('RELEASE_TREE="$(git write-tree)"', updateStep)
+  const finalContractIndex = workflow.indexOf('node scripts/verify-release-pipeline.mjs --root .', updateStep)
+  const workflowComparisons = [
+    'cmp "$GITHUB_WORKSPACE/.github/workflows/upstream-theme-sync.yml" .github/workflows/upstream-theme-sync.yml',
+    'cmp "$GITHUB_WORKSPACE/.github/workflows/infinite-canvas-upstream-sync.yml" .github/workflows/infinite-canvas-upstream-sync.yml',
+    'cmp "$GITHUB_WORKSPACE/.github/workflows/backend-ci.yml" .github/workflows/backend-ci.yml',
+    'cmp "$GITHUB_WORKSPACE/.github/workflows/theme-binary-release.yml" .github/workflows/theme-binary-release.yml',
+  ]
+
+  assert.doesNotMatch(workflow, /rm -rf "\$GENERATED_DIR\/\.github\/workflows"/)
+  assert.doesNotMatch(workflow, /git checkout origin\/themed-release -- \.github\/workflows/)
+  for (const comparison of workflowComparisons) {
+    const comparisonIndex = workflow.indexOf(comparison, updateStep)
+    assert.ok(comparisonIndex > updateStep, `${comparison} must run in the final snapshot step`)
+    assert.ok(finalContractIndex > comparisonIndex, 'the final contract check must follow workflow comparison')
+  }
+  assert.ok(snapshotIndex > finalContractIndex, 'snapshot creation must follow final workflow verification')
 })

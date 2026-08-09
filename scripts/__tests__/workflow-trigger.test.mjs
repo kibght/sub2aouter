@@ -7,6 +7,13 @@ test('upstream theme workflow runs when main is pushed', async () => {
   assert.match(workflow, /\non:\n(?:.|\n)*?  push:\n    branches:\n      - main\n/)
 })
 
+test('push publication checks out and records the same immutable event head', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  assert.match(workflow, /ref: \$\{\{ github\.event_name == 'push' && github\.sha \|\| 'main' \}\}/)
+  assert.match(workflow, /RELEASE_SOURCE_SHA="\$\(git rev-parse HEAD\)"/)
+  assert.doesNotMatch(workflow, /RELEASE_SOURCE_SHA="\$\{\{ github\.sha \}\}"/)
+})
+
 test('upstream theme workflow runs the full regression suite before publishing latest', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
   assert.match(workflow, /pnpm run test:run/)

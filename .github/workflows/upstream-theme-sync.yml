@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: main
+          ref: ${{ github.event_name == 'push' && github.sha || 'main' }}
           submodules: recursive
 
       - name: Verify Infinite Canvas dependency is current
@@ -98,7 +98,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "push" || "$REPOSITORY_RELEASE" == "true" ]]; then
             git worktree add --detach "$GENERATED_DIR" origin/themed-release
             UPSTREAM_SHA="$(tr -d '[:space:]' < "$GENERATED_DIR/.apophis-upstream-sha")"
-            RELEASE_SOURCE_SHA="${{ github.sha }}"
+            RELEASE_SOURCE_SHA="$(git rev-parse HEAD)"
             RELEASE_KIND="repository"
             RELEASE_IMAGE_TAG="repository-${RELEASE_SOURCE_SHA:0:12}"
             UPSTREAM_RELEASE_TAG=""
@@ -581,11 +581,11 @@ jobs:
         working-directory: ${{ env.GENERATED_DIR }}
         run: |
           set -euo pipefail
-          rm -rf "$GENERATED_DIR/.github/workflows"
-          if git cat-file -e origin/themed-release:.github/workflows 2>/dev/null; then
-            git checkout origin/themed-release -- .github/workflows
-          fi
-
+          cmp "$GITHUB_WORKSPACE/.github/workflows/upstream-theme-sync.yml" .github/workflows/upstream-theme-sync.yml
+          cmp "$GITHUB_WORKSPACE/.github/workflows/infinite-canvas-upstream-sync.yml" .github/workflows/infinite-canvas-upstream-sync.yml
+          cmp "$GITHUB_WORKSPACE/.github/workflows/backend-ci.yml" .github/workflows/backend-ci.yml
+          cmp "$GITHUB_WORKSPACE/.github/workflows/theme-binary-release.yml" .github/workflows/theme-binary-release.yml
+          node scripts/verify-release-pipeline.mjs --root .
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add --all

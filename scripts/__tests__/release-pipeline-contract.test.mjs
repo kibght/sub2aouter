@@ -191,6 +191,37 @@ test('contract requires awaited binary publication and final latest promotion', 
   assert.ok(violations.some((violation) => violation.code === 'sync.latest_promotion'))
 })
 
+test('contract binds push checkout and repository metadata to the same immutable head', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(
+    path,
+    files.get(path)
+      .replace("ref: ${{ github.event_name == 'push' && github.sha || 'main' }}", 'ref: main')
+      .replace('RELEASE_SOURCE_SHA="$(git rev-parse HEAD)"', 'RELEASE_SOURCE_SHA="${{ github.sha }}"'),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.push_checkout'))
+  assert.ok(violations.some((violation) => violation.code === 'sync.repository_source_sha'))
+})
+
+test('contract requires generated workflows to pass a final snapshot gate', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(
+    path,
+    files.get(path)
+      .replace('cmp "$GITHUB_WORKSPACE/.github/workflows/theme-binary-release.yml" .github/workflows/theme-binary-release.yml', 'true # disabled binary workflow comparison')
+      .replace(`node scripts/verify-release-pipeline.mjs --root .
+          git config user.name`, `true # disabled final contract
+          git config user.name`),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.verified_workflow_snapshot'))
+})
+
 test('contract requires reusable CI to verify an immutable Canvas update ref', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/backend-ci.yml'
