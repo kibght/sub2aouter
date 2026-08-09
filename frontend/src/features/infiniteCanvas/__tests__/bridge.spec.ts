@@ -3,6 +3,7 @@ import {
   CANVAS_CONFIGURED_MESSAGE,
   CANVAS_INIT_MESSAGE,
   CANVAS_READY_MESSAGE,
+  buildCanvasEntryUrl,
   buildCanvasInitMessage,
   buildGatewayBaseUrl,
   isTrustedCanvasConfiguredMessage,
@@ -19,8 +20,19 @@ describe('infinite canvas bridge', () => {
     )
   })
 
-  it('builds the same-origin OpenAI compatible gateway base URL', () => {
-    expect(buildGatewayBaseUrl('https://sub.example.com/')).toBe('https://sub.example.com/v1')
+  it('builds self-hosted Canvas and OpenAI-compatible gateway URLs', () => {
+    expect(buildCanvasEntryUrl('https://sub.example.com/')).toBe(
+      'https://sub.example.com/canvas-app/canvas?mode=new'
+    )
+    expect(buildCanvasEntryUrl('https://sub.example.com/', '/custom-canvas')).toBe(
+      'https://sub.example.com/custom-canvas/canvas?mode=new'
+    )
+    expect(buildGatewayBaseUrl('https://gateway.example.com/')).toBe(
+      'https://gateway.example.com/v1'
+    )
+    expect(buildGatewayBaseUrl('https://gateway.example.com/v1/')).toBe(
+      'https://gateway.example.com/v1'
+    )
   })
 
   it('creates a versioned init message', () => {

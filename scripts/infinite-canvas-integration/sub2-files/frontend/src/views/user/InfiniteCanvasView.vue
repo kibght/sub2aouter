@@ -132,13 +132,13 @@
           <a
             data-test="codex-agent-entry"
             class="canvas-agent-entry"
-            :href="CANVAS_ENTRY_URL"
+            :href="canvasEntryUrl"
             target="_blank"
             rel="noopener noreferrer"
           >
             <span class="min-w-0">
               <span class="block text-xs text-gray-500 dark:text-dark-300">{{ t('infiniteCanvas.fixedEntry') }}</span>
-              <span class="block truncate">{{ CANVAS_ENTRY_URL }}</span>
+              <span class="block truncate">{{ canvasEntryUrl }}</span>
             </span>
             <Icon name="externalLink" size="sm" />
           </a>
@@ -186,6 +186,7 @@ import { keysAPI } from '@/api/keys'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import {
+  buildCanvasEntryUrl,
   buildCanvasInitMessage,
   buildGatewayBaseUrl,
   isTrustedCanvasConfiguredMessage,
@@ -200,7 +201,6 @@ import { maskApiKey } from '@/utils/maskApiKey'
 const STORAGE_KEY = 'sub2:infinite-canvas:key-id'
 const CONNECT_TIMEOUT_MS = 15_000
 const AGENT_CHECK_TIMEOUT_MS = 1_800
-const CANVAS_ENTRY_URL = 'https://api.kinght.top/canvas-app/?mode=new'
 const AGENT_CONFIG_URL = 'http://127.0.0.1:17371/config'
 const AGENT_COMMAND = 'npx -y @basketikun/canvas-agent'
 
@@ -219,6 +219,7 @@ const showAgentGuide = ref(false)
 const agentStatus = ref<AgentStatus>('checking')
 const agentCommandCopied = ref(false)
 const canvasUrl = normalizeCanvasAppPath()
+const canvasEntryUrl = buildCanvasEntryUrl(window.location.origin)
 let agentCheckController: AbortController | null = null
 let agentCheckTimer: ReturnType<typeof setTimeout> | null = null
 let agentCopyTimer: ReturnType<typeof setTimeout> | null = null
@@ -259,7 +260,9 @@ function sendCanvasConfig() {
 
   target.postMessage(
     buildCanvasInitMessage({
-      baseUrl: buildGatewayBaseUrl(window.location.origin),
+      baseUrl: buildGatewayBaseUrl(
+        appStore.cachedPublicSettings?.api_base_url || window.location.origin
+      ),
       apiKey: key.key,
       theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
       locale: getLocale() === 'zh' ? 'zh-CN' : 'en-US',
@@ -294,7 +297,7 @@ function reloadCanvas() {
 }
 
 function openStandalone() {
-  window.open(CANVAS_ENTRY_URL, '_blank', 'noopener,noreferrer')
+  window.open(canvasEntryUrl, '_blank', 'noopener,noreferrer')
 }
 
 async function checkAgent() {

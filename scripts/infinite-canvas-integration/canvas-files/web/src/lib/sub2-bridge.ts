@@ -1,4 +1,5 @@
-﻿import { createModelChannel, useConfigStore } from "@/stores/use-config-store";
+﻿import { changeAppLocale, type AppLocale } from "@/i18n";
+import { createModelChannel, useConfigStore } from "@/stores/use-config-store";
 import { useThemeStore, type ThemeName } from "@/stores/use-theme-store";
 
 const READY_MESSAGE = "INFINITE_CANVAS_READY";
@@ -41,7 +42,7 @@ export function installSub2Bridge() {
     const handleMessage = (event: MessageEvent) => {
         if (event.origin !== window.location.origin || event.source !== parent || !isInitMessage(event.data)) return;
 
-        const { baseUrl, apiKey, theme } = event.data.payload;
+        const { baseUrl, apiKey, theme, locale } = event.data.payload;
         const state = useConfigStore.getState();
         const firstChannel = state.config.channels[0];
         state.updateConfig(
@@ -56,6 +57,7 @@ export function installSub2Bridge() {
         state.updateConfig("apiKey", apiKey.trim());
         state.openConfigDialog(false);
         if (theme === "light" || theme === "dark") useThemeStore.getState().setTheme(theme);
+        if (locale === "zh-CN" || locale === "en-US") void changeAppLocale(locale as AppLocale);
 
         parent.postMessage({ type: CONFIGURED_MESSAGE, version: BRIDGE_VERSION }, targetOrigin);
     };
