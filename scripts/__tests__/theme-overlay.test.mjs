@@ -180,3 +180,32 @@ test('repository pointer patches preserve the official update flow', async () =>
   assert.match(migratedBadge, /const isReleaseBuild = computed\(\(\) => buildType\.value === 'release'\)/)
   assert.match(migratedBadge, /appStore\.fetchVersion\(false\)/)
 })
+
+
+test('check mode rejects partial replacement drift when the sentinel remains', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-partial-drift-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-partial-drift-overlay-'))
+  await mkdir(path.join(root, 'frontend'), { recursive: true })
+  await mkdir(path.join(overlay, 'patches'), { recursive: true })
+  await writeFile(path.join(root, 'frontend/theme.js'), 'const theme = {\n  primary: "teal",\n  accent: "blue",\n}\n')
+  await writeFile(path.join(overlay, 'patches/theme.txt'), 'const theme = {\n  primary: "neutral",\n  accent: "gray",\n}')
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    patches: [
+      {
+        target: 'frontend/theme.js',
+        operation: 'replace',
+        marker: 'const theme = {\n  primary: "teal",\n  accent: "blue",\n}',
+        source: 'patches/theme.txt',
+        sentinel: 'primary: "neutral"',
+      },
+    ],
+  }))
+
+  await applyTheme({ root, overlay })
+  await writeFile(path.join(root, 'frontend/theme.js'), 'const theme = {\n  primary: "neutral",\n  accent: "broken",\n}\n')
+
+  await assert.rejects(
+    checkTheme({ root, overlay }),
+    /Theme patch drift.*frontend\/theme\.js/,
+  )
+})

@@ -25,15 +25,26 @@ async function currentBuffer(target) {
 }
 
 function applyPatch(text, patch, patchText) {
-  if (text.includes(patch.sentinel)) return text
-  const index = text.indexOf(patch.marker)
-  if (index < 0) throw new Error(`Patch marker not found in ${patch.target}: ${patch.marker}`)
   const targetEol = text.includes('\r\n') ? '\r\n' : '\n'
-  const normalizedPatchText = patchText.replace(/\r\n?/g, '\n').replace(/\n/g, targetEol)
-  if (patch.operation === 'replace') {
-    return `${text.slice(0, index)}${normalizedPatchText}${text.slice(index + patch.marker.length)}`
+  const normalize = (value) => String(value || '').replace(/\r\n?/g, '\n').replace(/\n/g, targetEol)
+  const normalizedMarker = normalize(patch.marker)
+  const normalizedPatchText = normalize(patchText)
+  const normalizedSentinel = normalize(patch.sentinel)
+
+  if (normalizedPatchText && text.includes(normalizedPatchText)) return text
+
+  const index = text.indexOf(normalizedMarker)
+  if (!normalizedPatchText && index < 0 && normalizedSentinel && text.includes(normalizedSentinel)) {
+    return text
   }
-  const insertionIndex = patch.position === 'after' ? index + patch.marker.length : index
+  if (normalizedPatchText && normalizedSentinel && text.includes(normalizedSentinel)) {
+    throw new Error(`Theme patch drift in ${patch.target}: sentinel exists without the exact replacement`)
+  }
+  if (index < 0) throw new Error(`Patch marker not found in ${patch.target}: ${patch.marker}`)
+  if (patch.operation === 'replace') {
+    return `${text.slice(0, index)}${normalizedPatchText}${text.slice(index + normalizedMarker.length)}`
+  }
+  const insertionIndex = patch.position === 'after' ? index + normalizedMarker.length : index
   return `${text.slice(0, insertionIndex)}${normalizedPatchText}${text.slice(insertionIndex)}`
 }
 

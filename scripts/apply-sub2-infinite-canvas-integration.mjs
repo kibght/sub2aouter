@@ -82,13 +82,17 @@ function withDetectedLineEndings(content, value) {
   return content.includes('\r\n') ? value.replaceAll('\n', '\r\n') : value
 }
 
-async function ensureReplace(file, marker, replacement, sentinel, check) {
+export async function ensureReplace(file, marker, replacement, sentinel, check) {
   const content = await readFile(file, 'utf8')
-  if (content.includes(sentinel)) return
-  if (check) throw new Error(`Infinite Canvas integration sentinel missing in ${file}: ${sentinel}`)
-
   const effectiveMarker = withDetectedLineEndings(content, marker)
   const effectiveReplacement = withDetectedLineEndings(content, replacement)
+  const effectiveSentinel = withDetectedLineEndings(content, sentinel)
+  if (content.includes(effectiveReplacement)) return false
+  if (effectiveSentinel && content.includes(effectiveSentinel)) {
+    throw new Error(`Infinite Canvas integration drift in ${file}: sentinel exists without the exact replacement`)
+  }
+  if (check) throw new Error(`Infinite Canvas integration sentinel missing in ${file}: ${sentinel}`)
+
   const index = content.indexOf(effectiveMarker)
   if (index < 0) throw new Error(`Infinite Canvas integration marker not found in ${file}: ${marker.slice(0, 100)}`)
   await writeFile(
@@ -96,6 +100,7 @@ async function ensureReplace(file, marker, replacement, sentinel, check) {
     `${content.slice(0, index)}${effectiveReplacement}${content.slice(index + effectiveMarker.length)}`,
     'utf8'
   )
+  return true
 }
 
 async function ensureNewFiles(root, check) {
