@@ -236,6 +236,11 @@
       "target": "frontend/src/components/layout/AppLayout.vue",
       "operation": "replace",
       "marker": "  <div class=\"min-h-screen bg-gray-50 dark:bg-dark-950\">",
+      "markers": [
+        "<div class=\"app-shell min-h-screen bg-gray-50 dark:bg-dark-950\" :class=\"fullHeight ? 'app-shell--full-height' : ''\">",
+        "  <div class=\"app-shell min-h-screen bg-gray-50 dark:bg-dark-950\">",
+        "<div class=\"app-shell min-h-screen bg-gray-50 dark:bg-dark-950\">"
+      ],
       "source": "patches/app-layout-shell.txt",
       "sentinel": "class=\"app-shell "
     },
