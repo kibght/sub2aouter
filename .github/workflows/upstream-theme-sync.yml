@@ -34,6 +34,11 @@ jobs:
   sync-build-publish:
     if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'Infinite Canvas') }}
     runs-on: ubuntu-latest
+    outputs:
+      run_binary: ${{ steps.release_outputs.outputs.run_binary }}
+      should_promote_latest: ${{ steps.release_outputs.outputs.should_promote_latest }}
+      release_ref: ${{ steps.release_outputs.outputs.release_ref }}
+      release_version: ${{ steps.release_outputs.outputs.release_version }}
     env:
       UPSTREAM_REPOSITORY: https://github.com/Wei-Shaw/sub2api.git
       UPSTREAM_REF: ${{ inputs.upstream_ref || 'main' }}
@@ -592,23 +597,68 @@ jobs:
           fi
           RELEASE_COMMIT="$(printf '%s\n' "$RELEASE_MESSAGE" | git commit-tree "$RELEASE_TREE")"
           git push --no-thin origin "${RELEASE_COMMIT}:refs/heads/themed-release" --force
+          echo "RELEASE_COMMIT=$RELEASE_COMMIT" >> "$GITHUB_ENV"
 
-      - name: Publish latest image after release branch succeeds
-        if: env.SHOULD_PUBLISH == 'true'
+      - name: Export release orchestration outputs
+        id: release_outputs
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_BINARY=false
+          SHOULD_PROMOTE_LATEST=false
+          EFFECTIVE_VERSION="${RELEASE_VERSION:-${PREVIOUS_RELEASE_VERSION:-}}"
+          RELEASE_REF=""
+
+          if [[ "${SHOULD_PUBLISH:-false}" == "true" ]]; then
+            RUN_BINARY=true
+            SHOULD_PROMOTE_LATEST=true
+            RELEASE_REF="${RELEASE_COMMIT:-}"
+          elif [[ "${NEEDS_BINARY_RELEASE:-false}" == "true" ]]; then
+            RUN_BINARY=true
+            RELEASE_REF="$(git rev-parse origin/themed-release)"
+          fi
+
+          if [[ "$RUN_BINARY" == "true" ]]; then
+            test -n "$RELEASE_REF"
+            test -n "$EFFECTIVE_VERSION"
+          fi
+
+          {
+            echo "run_binary=$RUN_BINARY"
+            echo "should_promote_latest=$SHOULD_PROMOTE_LATEST"
+            echo "release_ref=$RELEASE_REF"
+            echo "release_version=$EFFECTIVE_VERSION"
+            echo "effective_version=$EFFECTIVE_VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+  binary-release:
+    needs: sync-build-publish
+    if: ${{ needs.sync-build-publish.result == 'success' && needs.sync-build-publish.outputs.run_binary == 'true' }}
+    uses: ./.github/workflows/theme-binary-release.yml
+    with:
+      release_ref: ${{ needs.sync-build-publish.outputs.release_ref }}
+    secrets: inherit
+
+  promote-latest:
+    needs: [sync-build-publish, binary-release]
+    if: ${{ always() && needs.sync-build-publish.result == 'success' && needs.sync-build-publish.outputs.should_promote_latest == 'true' && needs.binary-release.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    env:
+      RELEASE_VERSION: ${{ needs.sync-build-publish.outputs.release_version }}
+    steps:
+      - name: Login to GitHub Container Registry
+        shell: bash
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Promote verified themed image to latest
         shell: bash
         run: |
           set -euo pipefail
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker pull "${IMAGE}:${RELEASE_VERSION}"
           docker tag "${IMAGE}:${RELEASE_VERSION}" "${IMAGE}:latest"
           docker push "${IMAGE}:latest"
-
-      - name: Trigger themed binary publication
-        if: env.SHOULD_PUBLISH == 'true' || env.NEEDS_BINARY_RELEASE == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh workflow run theme-binary-release.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref main

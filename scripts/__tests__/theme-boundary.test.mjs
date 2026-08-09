@@ -60,7 +60,8 @@ test('panel updater and binary release workflow use the custom repository', asyn
     read('theme/apophis/manifest.json'),
   ])
   assert.match(service, /githubRepo\s+= "kibght\/sub2aouter"/)
-  assert.match(workflow, /workflow_run:/)
+  assert.match(workflow, /workflow_call:/)
+  assert.doesNotMatch(workflow, /workflow_run:/)
   assert.match(workflow, /gh release create/)
   assert.match(workflow, /checksums\.txt/)
   const manifest = JSON.parse(manifestText)

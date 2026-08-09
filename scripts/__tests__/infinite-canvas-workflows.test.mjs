@@ -82,19 +82,27 @@ test('the themed binary release verifies all requested platform artifacts before
 })
 
 
-test('successful theme sync explicitly dispatches serialized binary publication', async () => {
+test('theme sync awaits one reusable binary publication before promoting latest', async () => {
   const [syncWorkflow, binaryWorkflow] = await Promise.all([
     readFile('.github/workflows/upstream-theme-sync.yml', 'utf8'),
     readFile('.github/workflows/theme-binary-release.yml', 'utf8'),
   ])
 
-  assert.match(syncWorkflow, /name: Trigger themed binary publication/)
-  assert.match(syncWorkflow, /gh workflow run theme-binary-release\.yml/)
-  assert.match(syncWorkflow, /gh workflow run theme-binary-release\.yml[^\n]*\n\s+--repo "\$GITHUB_REPOSITORY"/)
-  assert.match(syncWorkflow, /permissions:\n\s+actions:\s+write/)
-  assert.match(binaryWorkflow, /workflow_dispatch:/)
-  assert.match(binaryWorkflow, /group: themed-binary-release/)
-  assert.match(binaryWorkflow, /github\.event_name == 'workflow_dispatch' \|\| github\.event\.workflow_run\.conclusion == 'success'/)
+  assert.match(syncWorkflow, /outputs:[\s\S]*run_binary:[\s\S]*should_promote_latest:[\s\S]*release_ref:[\s\S]*release_version:/)
+  assert.match(syncWorkflow, /binary-release:\n\s+needs: sync-build-publish/)
+  assert.match(syncWorkflow, /uses: \.\/\.github\/workflows\/theme-binary-release\.yml/)
+  assert.match(syncWorkflow, /release_ref: \$\{\{ needs\.sync-build-publish\.outputs\.release_ref \}\}/)
+  assert.doesNotMatch(syncWorkflow, /gh workflow run theme-binary-release\.yml/)
+  assert.match(syncWorkflow, /promote-latest:\n\s+needs: \[sync-build-publish, binary-release\]/)
+  assert.match(syncWorkflow, /needs\.binary-release\.result == 'success'/)
+  assert.match(syncWorkflow, /docker pull "\$\{IMAGE\}:\$\{RELEASE_VERSION\}"/)
+  assert.match(syncWorkflow, /docker push "\$\{IMAGE\}:latest"/)
+
+  assert.match(binaryWorkflow, /workflow_call:[\s\S]*release_ref:/)
+  assert.match(binaryWorkflow, /workflow_dispatch:[\s\S]*release_ref:/)
+  assert.doesNotMatch(binaryWorkflow, /workflow_run:/)
+  assert.match(binaryWorkflow, /ref: \$\{\{ inputs\.release_ref \|\| 'themed-release' \}\}/)
+  assert.match(binaryWorkflow, /group: themed-binary-release-\$\{\{ inputs\.release_ref \|\| github\.run_id \}\}/)
 })
 
 
@@ -106,7 +114,8 @@ test('hourly sync recovers missing or incomplete binary releases without minting
   assert.match(workflow, /targetCommitish/)
   assert.match(workflow, /\.assets\[\]\.name/)
   assert.match(workflow, /sub2api_\$\{PREVIOUS_RELEASE_VERSION\}_linux_amd64\.tar\.gz/)
-  assert.match(workflow, /env\.SHOULD_PUBLISH == 'true' \|\| env\.NEEDS_BINARY_RELEASE == 'true'/)
+  assert.match(workflow, /run_binary=\$RUN_BINARY/)
+  assert.match(workflow, /effective_version=\$EFFECTIVE_VERSION/)
 })
 
 test('binary release repairs incomplete assets and verifies the published result', async () => {

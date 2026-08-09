@@ -89,14 +89,35 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.repository_source', syncPath, sync.includes('git worktree add --detach "$GENERATED_DIR" origin/themed-release') && sync.includes('RELEASE_KIND="repository"') && hasPattern(sync, /github\.event_name[^\n]+push/), 'Push releases must reuse themed-release without fetching upstream.')
   check('sync.repository_notes', syncPath, sync.includes('## \u4ed3\u5e93\u4fee\u590d') && sync.includes('Capture repository release notes'), 'Push releases must publish repository fix notes.')
   check('sync.release_version', syncPath, sync.includes('PREVIOUS_RELEASE_VERSION') && sync.includes('node scripts/next-release-version.mjs \"$PREVIOUS_RELEASE_VERSION\"'), 'Sync must migrate the next release to v0.1.200 and increment the persisted version.')
-  check('sync.publish_order', syncPath, hasOrderedMarkers(sync, [
-    'name: Push immutable themed image',
-    'name: Update generated release branch',
-    'name: Publish latest image after release branch succeeds',
-  ]), 'Immutable image, release branch, and latest image must publish in safe order.')
-  check('sync.latest_image', syncPath, sync.includes('docker push "${IMAGE}:latest"'), 'Sync must publish the Docker latest tag.')
-  check('sync.binary_recovery', syncPath, sync.includes('NEEDS_BINARY_RELEASE') && sync.includes('gh release view "$PREVIOUS_RELEASE_TAG"') && sync.includes('targetCommitish') && sync.includes("env.SHOULD_PUBLISH == 'true' || env.NEEDS_BINARY_RELEASE == 'true'"), 'Sync must recover a missing, incomplete, draft, prerelease, or mis-targeted binary release without minting another version.')
-  check('sync.binary_dispatch_repository', syncPath, hasPattern(sync, /gh workflow run theme-binary-release\.yml[^\n]*\n\s+--repo "\$GITHUB_REPOSITORY"/), 'Binary workflow dispatch must explicitly target the current repository instead of allowing gh to infer the upstream remote.')
+  const binaryJobIndex = sync.indexOf('\n  binary-release:\n')
+  const promoteLatestIndex = sync.indexOf('\n  promote-latest:\n')
+  const latestPushIndex = promoteLatestIndex >= 0 ? sync.indexOf('docker push "${IMAGE}:latest"', promoteLatestIndex) : -1
+  const sourceJob = binaryJobIndex >= 0 ? sync.slice(0, binaryJobIndex) : sync
+  check('sync.publish_order', syncPath,
+    hasOrderedMarkers(sync, [
+      'name: Push immutable themed image',
+      'name: Update generated release branch',
+      '\n  binary-release:\n',
+      '\n  promote-latest:\n',
+      'docker push "${IMAGE}:latest"',
+    ]) && !sourceJob.includes('docker push "${IMAGE}:latest"'),
+  'Immutable image and release branch must publish before awaited binaries and final latest promotion.')
+  check('sync.latest_image', syncPath, latestPushIndex > promoteLatestIndex && sync.includes('docker pull "${IMAGE}:${RELEASE_VERSION}"'), 'Sync must promote the immutable Docker version to latest only in the final job.')
+  check('sync.binary_recovery', syncPath, sync.includes('NEEDS_BINARY_RELEASE') && sync.includes('gh release view "$PREVIOUS_RELEASE_TAG"') && sync.includes('targetCommitish') && sync.includes('run_binary=$RUN_BINARY') && sync.includes('effective_version=$EFFECTIVE_VERSION'), 'Sync must recover a missing, incomplete, draft, prerelease, or mis-targeted binary release without minting another version.')
+  check('sync.binary_call', syncPath,
+    sync.includes('binary-release:') &&
+    sync.includes('uses: ./.github/workflows/theme-binary-release.yml') &&
+    sync.includes('release_ref: ${{ needs.sync-build-publish.outputs.release_ref }}') &&
+    !sync.includes('gh workflow run theme-binary-release.yml'),
+  'Source publication must await the local reusable binary workflow at the generated immutable commit.')
+  check('sync.latest_promotion', syncPath,
+    sync.includes('promote-latest:') &&
+    sync.includes('needs: [sync-build-publish, binary-release]') &&
+    sync.includes("needs.binary-release.result == 'success'") &&
+    sync.includes('needs.sync-build-publish.outputs.should_promote_latest') &&
+    latestPushIndex > promoteLatestIndex &&
+    !sourceJob.includes('docker push "${IMAGE}:latest"'),
+  'The latest image must be promoted only after the reusable binary publication succeeds.')
 
   const ciPath = '.github/workflows/backend-ci.yml'
   const ci = files.get(ciPath) || ''
@@ -130,11 +151,14 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
 
   const binaryPath = '.github/workflows/theme-binary-release.yml'
   const binary = files.get(binaryPath) || ''
-  check('binary.workflow_run', binaryPath, hasPattern(binary, /workflow_run:[\s\S]*workflows:[\s\S]*Sync Upstream With Apophis Theme[\s\S]*types:[\s\S]*completed/), 'Binary release must trigger after the sync workflow completes.')
-  check('binary.success_guard', binaryPath, binary.includes("github.event.workflow_run.conclusion == 'success'"), 'Binary release must require a successful sync conclusion.')
+  check('binary.reusable_entry', binaryPath,
+    hasPattern(binary, /\n  workflow_call:\n[\s\S]*release_ref:/) &&
+    hasPattern(binary, /\n  workflow_dispatch:\n[\s\S]*release_ref:/) &&
+    !binary.includes('workflow_run:'),
+  'Binary release must expose reusable and manual inputs without recursive workflow_run triggers.')
   check('binary.source_guard', binaryPath, binary.includes('name: Verify themed release matches main repository and canvas') && binary.includes('RELEASE_REPOSITORY_SHA') && binary.includes('MAIN_REPOSITORY_SHA') && binary.includes('MAIN_CANVAS_SHA') && binary.includes('RELEASE_CANVAS_SHA'), 'Binary release must reject a themed snapshot that does not match main repository and Canvas revisions.')
   check('binary.canvas_freshness', binaryPath, binary.includes('LATEST_CANVAS_SHA') && binary.includes('infinite-canvas/releases/latest'), 'Binary publication must stop when the themed Canvas is behind the latest published upstream release.')
-  check('binary.checkout', binaryPath, hasPattern(binary, /ref:\s*themed-release/), 'Binary release must build the generated themed-release branch.')
+  check('binary.checkout', binaryPath, binary.includes("ref: ${{ inputs.release_ref || 'themed-release' }}"), 'Binary release must build the requested immutable generated release ref.')
   check('binary.version', binaryPath, binary.includes('cat backend/cmd/server/VERSION'), 'Binary release must reuse the generated version.')
   check('binary.publish', binaryPath, binary.includes('gh release create') && binary.includes('--target themed-release') && binary.includes('--latest'), 'Binary release must publish the themed branch as the latest GitHub Release.')
   check('binary.notes', binaryPath, binary.includes('.apophis-release-title') && binary.includes('.apophis-release-notes.md') && binary.includes('--notes-file'), 'Binary release must include the generated repository or upstream notes file.')
