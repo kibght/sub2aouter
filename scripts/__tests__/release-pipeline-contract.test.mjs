@@ -220,3 +220,52 @@ test('contract requires explicit repository selection for Canvas automation comm
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
   assert.ok(violations.some((violation) => violation.code === 'canvas_sync.repository_selection'))
 })
+
+
+test('contract requires fail-closed release discovery and a private upstream release ref', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(
+    path,
+    files.get(path)
+      .replaceAll('UPSTREAM_RELEASE_ERROR_FILE', 'DISABLED_RELEASE_ERROR_FILE')
+      .replaceAll('refs/apophis/upstream-release', 'refs/tags/${UPSTREAM_RELEASE_TAG}'),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.release_fail_closed'))
+  assert.ok(violations.some((violation) => violation.code === 'sync.upstream_release_ref'))
+})
+
+test('contract requires monotonic upstream source and identity plus SHA deduplication', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(
+    path,
+    files.get(path)
+      .replace(
+        'merge-base --is-ancestor "$PREVIOUS_UPSTREAM_SHA" "$UPSTREAM_SHA"',
+        'merge-base --is-ancestor "$UPSTREAM_SHA" "$PREVIOUS_UPSTREAM_SHA"',
+      )
+      .replaceAll('UPSTREAM_IDENTITY_AND_SHA_MATCH', 'DISABLED_IDENTITY_AND_SHA_MATCH'),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.upstream_monotonic'))
+  assert.ok(violations.some((violation) => violation.code === 'sync.upstream_release_identity'))
+})
+
+test('contract requires fail-closed Canvas discovery and tested-head merge binding', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/infinite-canvas-upstream-sync.yml'
+  files.set(
+    path,
+    files.get(path)
+      .replaceAll('INFINITE_CANVAS_RELEASE_ERROR_FILE', 'DISABLED_CANVAS_RELEASE_ERROR_FILE')
+      .replaceAll('--match-head-commit "$UPDATE_SHA"', '--admin'),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'canvas_sync.release_fail_closed'))
+  assert.ok(violations.some((violation) => violation.code === 'canvas_sync.merge_identity'))
+})

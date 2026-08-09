@@ -24,7 +24,9 @@ test('Infinite Canvas upstream updates are gated by adapter checks and pull requ
   assert.doesNotMatch(workflow, /cd \.\.\/\.\./)
   assert.match(workflow, /gh pr create/)
   assert.match(workflow, /actions:\s*write/)
-  assert.match(workflow, /gh pr merge "\$PR_NUMBER" --repo "\$GITHUB_REPOSITORY" --squash/)
+  assert.match(workflow, /PR_HEAD_SHA=.*headRefOid/)
+  assert.match(workflow, /\[\[ "\$PR_HEAD_SHA" == "\$UPDATE_SHA" \]\]/)
+  assert.match(workflow, /gh pr merge "\$PR_NUMBER"[^\n]*--match-head-commit "\$UPDATE_SHA"/)
   assert.match(workflow, /gh workflow run upstream-theme-sync\.yml/)
   assert.match(workflow, /repository_release=false/)
   assert.match(workflow, /scheduled_round=true/)
@@ -121,7 +123,7 @@ test('binary release repairs incomplete assets and verifies the published result
 test('new upstream releases are not mistaken for binary-only repairs', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
 
-  const identityIndex = workflow.indexOf('UPSTREAM_ALREADY_SYNCHRONIZED=false')
+  const identityIndex = workflow.indexOf('UPSTREAM_IDENTITY_AND_SHA_MATCH=false')
   const repairIndex = workflow.indexOf('Upstream source is synchronized, but its binary release needs repair.')
   const nextVersionIndex = workflow.indexOf('node scripts/next-release-version.mjs')
   assert.ok(identityIndex >= 0)
@@ -176,4 +178,45 @@ test('Infinite Canvas documentation describes the reusable CI merge gate', async
     assert.match(document, /backend-ci\.yml/)
     assert.doesNotMatch(document, /auto-merge/)
   }
+})
+
+
+test('release discovery fails closed and keeps external tags out of run templates', async () => {
+  const [sub2Workflow, canvasWorkflow] = await Promise.all([
+    readFile('.github/workflows/upstream-theme-sync.yml', 'utf8'),
+    readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8'),
+  ])
+
+  assert.equal((sub2Workflow.match(/repos\/Wei-Shaw\/sub2api\/releases\/latest/g) || []).length, 1)
+  assert.doesNotMatch(sub2Workflow, /releases\/latest[^\n]*\|\| true/)
+  assert.match(sub2Workflow, /UPSTREAM_RELEASE_ERROR_FILE/)
+  assert.match(sub2Workflow, /grep -Eiq '404\|not found'/)
+  assert.match(sub2Workflow, /refs\/apophis\/upstream-release/)
+  assert.doesNotMatch(sub2Workflow, /:refs\/tags\/\$\{UPSTREAM_RELEASE_TAG\}/)
+  assert.match(
+    sub2Workflow,
+    /merge-base --is-ancestor "\$PREVIOUS_UPSTREAM_SHA" "\$UPSTREAM_SHA"/,
+  )
+  assert.match(
+    sub2Workflow,
+    /PREVIOUS_UPSTREAM_RELEASE_ID[\s\S]*UPSTREAM_RELEASE_ID[\s\S]*PREVIOUS_UPSTREAM_SHA[\s\S]*UPSTREAM_SHA/,
+  )
+
+  assert.doesNotMatch(canvasWorkflow, /releases\/latest[^\n]*\|\| true/)
+  assert.match(canvasWorkflow, /INFINITE_CANVAS_RELEASE_ERROR_FILE/)
+  assert.match(canvasWorkflow, /RELEASE_TAG: \$\{\{ steps\.canvas_release\.outputs\.tag \}\}/)
+  assert.doesNotMatch(canvasWorkflow, /RELEASE_TAG="\$\{\{ steps\.canvas_release\.outputs\.tag \}\}"/)
+  assert.match(
+    canvasWorkflow,
+    /git -C integrations\/infinite-canvas merge-base --is-ancestor "\$CURRENT_SHA" "\$LATEST_SHA"/,
+  )
+})
+
+test('Canvas merge is bound to the exact SHA that passed full CI', async () => {
+  const workflow = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
+
+  assert.match(workflow, /UPDATE_SHA: \$\{\{ needs\.update\.outputs\.update_sha \}\}/)
+  assert.match(workflow, /--json headRefOid --jq '\.headRefOid'/)
+  assert.match(workflow, /\[\[ "\$PR_HEAD_SHA" == "\$UPDATE_SHA" \]\]/)
+  assert.match(workflow, /--match-head-commit "\$UPDATE_SHA"/)
 })

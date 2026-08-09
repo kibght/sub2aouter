@@ -39,18 +39,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          INFINITE_CANVAS_RELEASE_TAG="$(gh api "repos/${CANVAS_REPOSITORY}/releases/latest" --jq '.tag_name // ""' 2>/dev/null || true)"
-          echo "INFINITE_CANVAS_RELEASE_TAG=$INFINITE_CANVAS_RELEASE_TAG" >> "$GITHUB_ENV"
-          echo "tag=$INFINITE_CANVAS_RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          INFINITE_CANVAS_RELEASE_FILE=/tmp/infinite-canvas-release.txt
+          INFINITE_CANVAS_RELEASE_ERROR_FILE=/tmp/infinite-canvas-release-error.log
+          INFINITE_CANVAS_RELEASE_TAG=""
+          if gh api "repos/${CANVAS_REPOSITORY}/releases/latest" --jq '.tag_name // ""' > "$INFINITE_CANVAS_RELEASE_FILE" 2> "$INFINITE_CANVAS_RELEASE_ERROR_FILE"; then
+            INFINITE_CANVAS_RELEASE_TAG="$(tr -d '[:space:]' < "$INFINITE_CANVAS_RELEASE_FILE")"
+          elif grep -Eiq '404|not found' "$INFINITE_CANVAS_RELEASE_ERROR_FILE"; then
+            echo "No published Infinite Canvas release; falling back to main."
+          else
+            cat "$INFINITE_CANVAS_RELEASE_ERROR_FILE" >&2
+            exit 1
+          fi
+          if [[ -n "$INFINITE_CANVAS_RELEASE_TAG" ]] && ! git check-ref-format "refs/tags/${INFINITE_CANVAS_RELEASE_TAG}"; then
+            echo "Invalid Infinite Canvas release tag: $INFINITE_CANVAS_RELEASE_TAG" >&2
+            exit 1
+          fi
+          printf 'INFINITE_CANVAS_RELEASE_TAG=%s\n' "$INFINITE_CANVAS_RELEASE_TAG" >> "$GITHUB_ENV"
+          printf 'tag=%s\n' "$INFINITE_CANVAS_RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "Infinite Canvas published release: ${INFINITE_CANVAS_RELEASE_TAG:-none}"
 
       - name: Detect upstream update
         id: upstream
+        env:
+          RELEASE_TAG: ${{ steps.canvas_release.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
           CURRENT_SHA="$(git rev-parse HEAD:integrations/infinite-canvas)"
-          RELEASE_TAG="${{ steps.canvas_release.outputs.tag }}"
           if [[ -n "$RELEASE_TAG" ]]; then
             git -C integrations/infinite-canvas fetch --depth=1 origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
             LATEST_SHA="$(git -C integrations/infinite-canvas rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
@@ -65,6 +80,11 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Infinite Canvas upstream is unchanged."
           else
+            git -C integrations/infinite-canvas fetch --depth=1000 origin main
+            if ! git -C integrations/infinite-canvas merge-base --is-ancestor "$CURRENT_SHA" "$LATEST_SHA"; then
+              echo "Refusing to downgrade or cross-grade Infinite Canvas: $CURRENT_SHA -> $LATEST_SHA" >&2
+              exit 1
+            fi
             echo "changed=true" >> "$GITHUB_OUTPUT"
             git -C integrations/infinite-canvas checkout --detach "$LATEST_SHA"
             echo "Infinite Canvas update: $CURRENT_SHA -> $LATEST_SHA"
@@ -78,6 +98,8 @@ jobs:
 
       - name: Verify adapter against updated upstream
         if: steps.upstream.outputs.changed == 'true'
+        env:
+          LATEST_SHA: ${{ steps.upstream.outputs.latest_sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -88,7 +110,7 @@ jobs:
           VITE_BASE=/canvas-app/ bun run build
           cp ../VERSION dist/version.txt
           popd
-          git -C integrations/infinite-canvas reset --hard "${{ steps.upstream.outputs.latest_sha }}"
+          git -C integrations/infinite-canvas reset --hard "$LATEST_SHA"
           git -C integrations/infinite-canvas clean -f -- web/src/lib/sub2-bridge.ts
           test -z "$(git -C integrations/infinite-canvas status --short)"
 
@@ -103,6 +125,8 @@ jobs:
       - name: Create update branch
         id: update_branch
         if: steps.upstream.outputs.changed == 'true'
+        env:
+          LATEST_SHA: ${{ steps.upstream.outputs.latest_sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -110,7 +134,7 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git checkout -B "$UPDATE_BRANCH"
           git add integrations/infinite-canvas
-          git commit -m "chore: update Infinite Canvas upstream to ${{ steps.upstream.outputs.latest_sha }}"
+          git commit -m "chore: update Infinite Canvas upstream to $LATEST_SHA"
           UPDATE_SHA="$(git rev-parse HEAD)"
           git push --force origin "$UPDATE_BRANCH"
           echo "update_sha=$UPDATE_SHA" >> "$GITHUB_OUTPUT"
@@ -152,11 +176,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ needs.update.outputs.pr_number }}
+          UPDATE_SHA: ${{ needs.update.outputs.update_sha }}
         shell: bash
         run: |
           set -euo pipefail
           test -n "$PR_NUMBER"
-          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash
+          test -n "$UPDATE_SHA"
+          PR_HEAD_SHA="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.headRefOid')"
+          if [[ "$PR_HEAD_SHA" != "$UPDATE_SHA" ]]; then
+            echo "Infinite Canvas PR head changed after CI: $PR_HEAD_SHA != $UPDATE_SHA" >&2
+            exit 1
+          fi
+          [[ "$PR_HEAD_SHA" == "$UPDATE_SHA" ]]
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --match-head-commit "$UPDATE_SHA" --squash
           PR_STATE="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state --jq '.state')"
           if [[ "$PR_STATE" != "MERGED" ]]; then
             echo "Infinite Canvas update pull request was not merged: $PR_STATE" >&2

@@ -74,8 +74,12 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.push_main', syncPath, hasPattern(sync, /\n  push:\n    branches:\n      - main\n/), 'Sync must run for pushes to main.')
   check('sync.coordinated_round', syncPath, !sync.includes('  schedule:') && sync.includes('scheduled_round:') && sync.includes('SCHEDULED_ROUND'), 'Theme sync must be dispatched by the single hourly coordinator.')
   check('sync.upstream', syncPath, sync.includes('https://github.com/Wei-Shaw/sub2api.git'), 'Sync must fetch the canonical upstream repository.')
-  check('sync.upstream_release_metadata', syncPath, sync.includes('repos/Wei-Shaw/sub2api/releases/latest') && sync.includes('UPSTREAM_RELEASE_TAG'), 'Scheduled Sub2API syncs must inspect the latest published release before fetching source.')
-  check('sync.upstream_release_identity', syncPath, sync.includes('UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_TAG') && sync.includes('.apophis-upstream-release-id'), 'Scheduled Sub2API syncs must deduplicate by upstream Release identity before falling back to tag and SHA.')
+  const upstreamReleaseQueries = sync.match(/repos\/Wei-Shaw\/sub2api\/releases\/latest/g) || []
+  check('sync.upstream_release_metadata', syncPath, upstreamReleaseQueries.length === 1 && sync.includes('UPSTREAM_RELEASE_TAG') && sync.includes('UPSTREAM_RELEASE_ID'), 'Scheduled Sub2API syncs must read one immutable latest-release descriptor before fetching source.')
+  check('sync.release_fail_closed', syncPath, sync.includes('UPSTREAM_RELEASE_ERROR_FILE') && sync.includes("grep -Eiq '404|not found'") && !/releases\/latest[^\n]*\|\| true/.test(sync), 'Sub2API release discovery must fall back only on an explicit not-found response and fail on other API errors.')
+  check('sync.upstream_release_ref', syncPath, sync.includes('refs/apophis/upstream-release') && !sync.includes(':refs/tags/${UPSTREAM_RELEASE_TAG}'), 'Upstream release tags must use a private ref and never collide with themed release tags.')
+  check('sync.upstream_monotonic', syncPath, sync.includes('merge-base --is-ancestor "$PREVIOUS_UPSTREAM_SHA" "$UPSTREAM_SHA"'), 'Scheduled Sub2API synchronization must reject downgrades and unrelated release history.')
+  check('sync.upstream_release_identity', syncPath, sync.includes('UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_TAG') && sync.includes('.apophis-upstream-release-id') && sync.includes('UPSTREAM_IDENTITY_AND_SHA_MATCH') && sync.includes('"$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA"'), 'Scheduled Sub2API syncs must deduplicate only when Release identity and source SHA match.')
   check('sync.skip_unchanged', syncPath, sync.includes('SCHEDULED_ROUND') && hasPattern(sync, /PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Coordinated hourly runs must skip unchanged upstream revisions.')
   check('sync.theme_overlay', syncPath, sync.includes('node scripts/apply-theme.mjs --root .'), 'Sync must apply the Apophis overlay to fetched upstream source.')
   check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-canvas-sha') && sync.includes('.apophis-release-notes.md'), 'Sync must persist upstream, repository, Canvas, and release notes metadata.')
@@ -103,6 +107,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   const canvasSync = files.get(canvasSyncPath) || ''
   check('canvas_sync.schedule', canvasSyncPath, hasPattern(canvasSync, /cron:\s*'7 \* \* \* \*'/), 'The unified upstream coordinator must run hourly off the load boundary.')
   check('canvas_sync.release_metadata', canvasSyncPath, canvasSync.includes('repos/${CANVAS_REPOSITORY}/releases/latest') && canvasSync.includes('INFINITE_CANVAS_RELEASE_TAG'), 'Infinite Canvas sync must inspect published release metadata before syncing.')
+  check('canvas_sync.release_fail_closed', canvasSyncPath, canvasSync.includes('INFINITE_CANVAS_RELEASE_ERROR_FILE') && canvasSync.includes("grep -Eiq '404|not found'") && !/releases\/latest[^\n]*\|\| true/.test(canvasSync) && canvasSync.includes('RELEASE_TAG: ${{ steps.canvas_release.outputs.tag }}') && !canvasSync.includes('RELEASE_TAG="${{ steps.canvas_release.outputs.tag }}"') && canvasSync.includes('merge-base --is-ancestor "$CURRENT_SHA" "$LATEST_SHA"'), 'Infinite Canvas discovery must fail closed, pass external tags through env, and reject downgrades.')
   check('canvas_sync.adapter_gate', canvasSyncPath, canvasSync.includes('apply-infinite-canvas-patches.mjs') && canvasSync.includes('bun run typecheck') && canvasSync.includes('bun run build'), 'Infinite Canvas sync must gate the submodule update on adapter checks and a production build.')
   check('canvas_sync.full_ci_gate', canvasSyncPath,
     canvasSync.includes('uses: ./.github/workflows/backend-ci.yml') &&
@@ -112,6 +117,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     canvasSync.includes("needs.full-ci.result == 'success'") &&
     canvasSync.includes("needs.merge.result == 'success'"),
     'Canvas updates must run the complete CI workflow at the pushed update SHA before merge and release dispatch.')
+  check('canvas_sync.merge_identity', canvasSyncPath, canvasSync.includes('UPDATE_SHA: ${{ needs.update.outputs.update_sha }}') && canvasSync.includes('--json headRefOid') && canvasSync.includes('[[ "$PR_HEAD_SHA" == "$UPDATE_SHA" ]]') && canvasSync.includes('--match-head-commit "$UPDATE_SHA"'), 'Canvas merge must bind the pull request head to the exact SHA that passed full CI.')
   check('canvas_sync.repository_selection', canvasSyncPath,
     hasPattern(canvasSync, /gh pr list --repo "\$GITHUB_REPOSITORY"/) &&
     hasPattern(canvasSync, /gh pr create[^\n]*\n\s+--repo "\$GITHUB_REPOSITORY"/) &&

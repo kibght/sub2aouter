@@ -37,6 +37,7 @@ jobs:
     env:
       UPSTREAM_REPOSITORY: https://github.com/Wei-Shaw/sub2api.git
       UPSTREAM_REF: ${{ inputs.upstream_ref || 'main' }}
+      UPSTREAM_RELEASE_REF: refs/apophis/upstream-release
       REPOSITORY_RELEASE: ${{ inputs.repository_release || false }}
       SCHEDULED_ROUND: ${{ inputs.scheduled_round || false }}
       GENERATED_DIR: ${{ github.workspace }}/../sub2api-themed-release
@@ -104,16 +105,25 @@ jobs:
             UPSTREAM_RELEASE_TAG=""
             UPSTREAM_RELEASE_ID=""
             if [[ "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ]]; then
-              UPSTREAM_RELEASE_TAG="$(gh api repos/Wei-Shaw/sub2api/releases/latest --jq '.tag_name // ""' 2>/dev/null || true)"
-              if [[ -n "$UPSTREAM_RELEASE_TAG" ]]; then
-                UPSTREAM_RELEASE_ID="$(gh api repos/Wei-Shaw/sub2api/releases/latest --jq '.id // ""' 2>/dev/null || true)"
+              UPSTREAM_RELEASE_FILE=/tmp/apophis-upstream-release.tsv
+              UPSTREAM_RELEASE_ERROR_FILE=/tmp/apophis-upstream-release-error.log
+              if gh api repos/Wei-Shaw/sub2api/releases/latest --jq '[.tag_name // "", (.id // "" | tostring)] | @tsv' > "$UPSTREAM_RELEASE_FILE" 2> "$UPSTREAM_RELEASE_ERROR_FILE"; then
+                IFS=$'\t' read -r UPSTREAM_RELEASE_TAG UPSTREAM_RELEASE_ID < "$UPSTREAM_RELEASE_FILE"
+              elif grep -Eiq '404|not found' "$UPSTREAM_RELEASE_ERROR_FILE"; then
+                echo "No published Sub2API release; falling back to the configured upstream ref."
+              else
+                cat "$UPSTREAM_RELEASE_ERROR_FILE" >&2
+                exit 1
               fi
             fi
 
             if [[ -n "$UPSTREAM_RELEASE_TAG" ]]; then
-              git fetch --depth=1 upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:refs/tags/${UPSTREAM_RELEASE_TAG}"
-              git worktree add --detach "$GENERATED_DIR" "refs/tags/${UPSTREAM_RELEASE_TAG}"
-              UPSTREAM_REF="$UPSTREAM_RELEASE_TAG"
+              if ! git check-ref-format "refs/tags/${UPSTREAM_RELEASE_TAG}"; then
+                echo "Invalid Sub2API release tag: $UPSTREAM_RELEASE_TAG" >&2
+                exit 1
+              fi
+              git fetch --depth=1 --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:${UPSTREAM_RELEASE_REF}"
+              git worktree add --detach "$GENERATED_DIR" "$UPSTREAM_RELEASE_REF"
               echo "Using published Sub2API release: $UPSTREAM_RELEASE_TAG"
             else
               fetch_upstream_with_retry
@@ -221,16 +231,29 @@ jobs:
           echo "CURRENT_CANVAS_SHA=$CURRENT_CANVAS_SHA" >> "$GITHUB_ENV"
           echo "PREVIOUS_CANVAS_SHA=$PREVIOUS_CANVAS_SHA" >> "$GITHUB_ENV"
 
-          UPSTREAM_ALREADY_SYNCHRONIZED=false
-          if [[ "$RELEASE_KIND" == "upstream" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) ]]; then
-            if [[ -n "$UPSTREAM_RELEASE_ID" && "$PREVIOUS_UPSTREAM_RELEASE_ID" == "$UPSTREAM_RELEASE_ID" ]]; then
-              UPSTREAM_ALREADY_SYNCHRONIZED=true
-            elif [[ -n "$UPSTREAM_RELEASE_TAG" && "$PREVIOUS_UPSTREAM_RELEASE_TAG" == "$UPSTREAM_RELEASE_TAG" ]]; then
-              UPSTREAM_ALREADY_SYNCHRONIZED=true
-            elif [[ -z "$UPSTREAM_RELEASE_ID" && "$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA" ]]; then
-              UPSTREAM_ALREADY_SYNCHRONIZED=true
+          if [[ "$RELEASE_KIND" == "upstream" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) && -n "$PREVIOUS_UPSTREAM_SHA" && "$PREVIOUS_UPSTREAM_SHA" != "$UPSTREAM_SHA" ]]; then
+            git -C "$GENERATED_DIR" fetch --depth=1000 upstream "$UPSTREAM_REF"
+            if ! git -C "$GENERATED_DIR" cat-file -e "${PREVIOUS_UPSTREAM_SHA}^{commit}" 2>/dev/null; then
+              echo "Unable to verify the previously published upstream commit: $PREVIOUS_UPSTREAM_SHA" >&2
+              exit 1
+            fi
+            if ! git -C "$GENERATED_DIR" merge-base --is-ancestor "$PREVIOUS_UPSTREAM_SHA" "$UPSTREAM_SHA"; then
+              echo "Refusing to downgrade or cross-grade Sub2API: $PREVIOUS_UPSTREAM_SHA -> $UPSTREAM_SHA" >&2
+              exit 1
             fi
           fi
+
+          UPSTREAM_IDENTITY_AND_SHA_MATCH=false
+          if [[ "$RELEASE_KIND" == "upstream" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) && "$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA" ]]; then
+            if [[ -n "$UPSTREAM_RELEASE_ID" && "$PREVIOUS_UPSTREAM_RELEASE_ID" == "$UPSTREAM_RELEASE_ID" ]]; then
+              UPSTREAM_IDENTITY_AND_SHA_MATCH=true
+            elif [[ -n "$UPSTREAM_RELEASE_TAG" && "$PREVIOUS_UPSTREAM_RELEASE_TAG" == "$UPSTREAM_RELEASE_TAG" ]]; then
+              UPSTREAM_IDENTITY_AND_SHA_MATCH=true
+            elif [[ -z "$UPSTREAM_RELEASE_ID" && -z "$UPSTREAM_RELEASE_TAG" ]]; then
+              UPSTREAM_IDENTITY_AND_SHA_MATCH=true
+            fi
+          fi
+          UPSTREAM_ALREADY_SYNCHRONIZED="$UPSTREAM_IDENTITY_AND_SHA_MATCH"
 
           if [[ "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" ]] &&
              [[ "$PREVIOUS_REPOSITORY_SHA" != "$CURRENT_REPOSITORY_SHA" || "$PREVIOUS_CANVAS_SHA" != "$CURRENT_CANVAS_SHA" ]]; then
@@ -250,22 +273,10 @@ jobs:
             exit 0
           fi
 
-          if [[ "$RELEASE_KIND" == "upstream" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) ]]; then
-            if [[ -n "$UPSTREAM_RELEASE_ID" && "$PREVIOUS_UPSTREAM_RELEASE_ID" == "$UPSTREAM_RELEASE_ID" ]]; then
-              echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
-              echo "Upstream Release $UPSTREAM_RELEASE_ID is already synchronized; skipping scheduled publication."
-              exit 0
-            fi
-            if [[ -n "$UPSTREAM_RELEASE_TAG" && "$PREVIOUS_UPSTREAM_RELEASE_TAG" == "$UPSTREAM_RELEASE_TAG" ]]; then
-              echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
-              echo "Upstream release tag $UPSTREAM_RELEASE_TAG is already synchronized; skipping scheduled publication."
-              exit 0
-            fi
-            if [[ -z "$UPSTREAM_RELEASE_ID" && "$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA" ]]; then
-              echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
-              echo "上游版本未变化：$UPSTREAM_SHA，跳过本次定时构建和发布。"
-              exit 0
-            fi
+          if [[ "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) ]]; then
+            echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
+            echo "Upstream release identity and source SHA are already synchronized; skipping scheduled publication."
+            exit 0
           fi
 
           if [[ "$RELEASE_KIND" == "repository" && "$PREVIOUS_REPOSITORY_SHA" == "$RELEASE_SOURCE_SHA" && "$PREVIOUS_CANVAS_SHA" == "$CURRENT_CANVAS_SHA" ]]; then
@@ -396,13 +407,8 @@ jobs:
             } > "$NOTES_FILE"
           }
 
-          if ! UPSTREAM_RELEASE_TAG="$(gh api repos/Wei-Shaw/sub2api/releases/latest --jq '.tag_name // ""')"; then
-            echo "无法查询上游最新发布版本，改用提交摘要。"
-            write_fallback_notes
-            exit 0
-          fi
-          if [[ -z "$UPSTREAM_RELEASE_TAG" ]]; then
-            echo "上游最新发布版本没有标签，改用提交摘要。"
+          if [[ -z "${UPSTREAM_RELEASE_TAG:-}" ]]; then
+            echo "No captured upstream release tag; using commit summary."
             write_fallback_notes
             exit 0
           fi
@@ -421,13 +427,13 @@ jobs:
           fi
 
           git -C "$GENERATED_DIR" fetch --deepen=500 upstream "$UPSTREAM_REF" || true
-          if ! git -C "$GENERATED_DIR" fetch --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:refs/tags/${UPSTREAM_RELEASE_TAG}"; then
+          if ! git -C "$GENERATED_DIR" fetch --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:${UPSTREAM_RELEASE_REF}"; then
             echo "无法获取上游标签 $UPSTREAM_RELEASE_TAG，改用提交摘要。"
             write_fallback_notes
             exit 0
           fi
 
-          UPSTREAM_RELEASE_SHA="$(git -C "$GENERATED_DIR" rev-list -n 1 "refs/tags/${UPSTREAM_RELEASE_TAG}")"
+          UPSTREAM_RELEASE_SHA="$(git -C "$GENERATED_DIR" rev-list -n 1 "$UPSTREAM_RELEASE_REF")"
           if ! git -C "$GENERATED_DIR" merge-base --is-ancestor "$UPSTREAM_RELEASE_SHA" "$UPSTREAM_SHA"; then
             echo "上游发布版本 $UPSTREAM_RELEASE_TAG 不属于提交 $UPSTREAM_SHA，改用提交摘要。"
             write_fallback_notes
