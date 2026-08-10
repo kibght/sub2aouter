@@ -72,6 +72,7 @@ describe('HomeView apophis landing theme', () => {
     localStorage.clear()
     state.authStore.checkAuth.mockClear()
     state.appStore.fetchPublicSettings.mockClear()
+    state.appStore.publicSettingsLoaded = true
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
       matches: false,
       addEventListener: vi.fn(),
@@ -95,6 +96,15 @@ describe('HomeView apophis landing theme', () => {
     expect(wrapper.get('[data-test="privacy-card"]').text()).toContain('您的请求，只用于提供服务')
     expect(wrapper.get('[data-test="home-cta"]').text()).toContain('准备把 AI 能力交付给团队了吗？')
     expect(wrapper.get('[data-test="endpoint-url"]').text()).toBe('https://api.kinght.top/v1')
+  })
+
+  it('initializes auth and public settings once without leaking terminal container styles', () => {
+    state.appStore.publicSettingsLoaded = false
+    const wrapper = mountHome()
+
+    expect(state.authStore.checkAuth).toHaveBeenCalledTimes(1)
+    expect(state.appStore.fetchPublicSettings).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('.apophis-home').classes()).not.toContain('terminal-container')
   })
 
   it('does not add the Canvas workbench entry to the Sub2 homepage', () => {

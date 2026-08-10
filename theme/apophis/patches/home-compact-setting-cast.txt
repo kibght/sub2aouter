@@ -1,0 +1,3 @@
+const compactHomeEnabled = computed(() =>
+  (appStore.cachedPublicSettings as { compact_home_enabled?: boolean } | null)?.compact_home_enabled === true
+)

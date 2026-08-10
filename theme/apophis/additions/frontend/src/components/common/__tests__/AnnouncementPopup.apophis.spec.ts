@@ -126,4 +126,13 @@ describe('AnnouncementPopup', () => {
     expect(wrapper.emitted('close')).toBeUndefined()
     wrapper.unmount()
   })
+  it('uses the Apophis popup shell instead of the legacy warm gradient', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/apophis/ApophisAnnouncementPopup.vue'), 'utf8')
+
+    expect(source).toContain('announcement-popup-shell')
+    expect(source).toContain('--announcement-accent: #ff3d71')
+    expect(source).not.toContain('from-amber-500')
+    expect(source).not.toContain('from-orange-600')
+    expect(source).not.toContain('rounded-3xl')
+  })
 })

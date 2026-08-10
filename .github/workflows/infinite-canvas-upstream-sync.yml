@@ -10,27 +10,34 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  actions: write
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
-  update:
+  discover:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       changed: ${{ steps.upstream.outputs.changed }}
-      update_sha: ${{ steps.update_branch.outputs.update_sha }}
-      pr_number: ${{ steps.pull_request.outputs.pr_number }}
+      repository_sha: ${{ steps.repository.outputs.sha }}
+      current_sha: ${{ steps.upstream.outputs.current_sha }}
+      latest_sha: ${{ steps.upstream.outputs.latest_sha }}
+      release_tag: ${{ steps.upstream.outputs.release_tag }}
     env:
-      UPDATE_BRANCH: automation/infinite-canvas-upstream
       CANVAS_REPOSITORY: basketikun/infinite-canvas
     steps:
-      - name: Checkout repository and submodules
-        uses: actions/checkout@v6
+      - name: Checkout trusted repository descriptor
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: main
           fetch-depth: 0
           submodules: recursive
+          persist-credentials: false
+
+      - name: Capture immutable repository source
+        id: repository
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Read Infinite Canvas published release
         id: canvas_release
@@ -54,11 +61,10 @@ jobs:
             echo "Invalid Infinite Canvas release tag: $INFINITE_CANVAS_RELEASE_TAG" >&2
             exit 1
           fi
-          printf 'INFINITE_CANVAS_RELEASE_TAG=%s\n' "$INFINITE_CANVAS_RELEASE_TAG" >> "$GITHUB_ENV"
           printf 'tag=%s\n' "$INFINITE_CANVAS_RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "Infinite Canvas published release: ${INFINITE_CANVAS_RELEASE_TAG:-none}"
 
-      - name: Detect upstream update
+      - name: Detect immutable upstream update
         id: upstream
         env:
           RELEASE_TAG: ${{ steps.canvas_release.outputs.tag }}
@@ -86,20 +92,47 @@ jobs:
               exit 1
             fi
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            git -C integrations/infinite-canvas checkout --detach "$LATEST_SHA"
             echo "Infinite Canvas update: $CURRENT_SHA -> $LATEST_SHA"
           fi
 
+  validate-update:
+    needs: discover
+    if: needs.discover.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      LATEST_SHA: ${{ needs.discover.outputs.latest_sha }}
+      RELEASE_TAG: ${{ needs.discover.outputs.release_tag }}
+    steps:
+      - name: Checkout immutable trusted repository source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.discover.outputs.repository_sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Materialize discovered Canvas commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$LATEST_SHA"
+          if [[ -n "$RELEASE_TAG" ]]; then
+            git -C integrations/infinite-canvas fetch --depth=1 origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          else
+            git -C integrations/infinite-canvas fetch --depth=1 origin main
+          fi
+          git -C integrations/infinite-canvas fetch --depth=1000 origin main
+          git -C integrations/infinite-canvas checkout --detach "$LATEST_SHA"
+          [[ "$(git -C integrations/infinite-canvas rev-parse HEAD)" == "$LATEST_SHA" ]]
+
       - name: Setup Bun
-        if: steps.upstream.outputs.changed == 'true'
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.13
 
       - name: Verify adapter against updated upstream
-        if: steps.upstream.outputs.changed == 'true'
-        env:
-          LATEST_SHA: ${{ steps.upstream.outputs.latest_sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -115,18 +148,54 @@ jobs:
           test -z "$(git -C integrations/infinite-canvas status --short)"
 
       - name: Run integration contract tests
-        if: steps.upstream.outputs.changed == 'true'
         shell: bash
         run: |
           set -euo pipefail
           node scripts/apply-sub2-infinite-canvas-integration.mjs --root . --check
           node --test scripts/__tests__/infinite-canvas-integration.test.mjs scripts/__tests__/infinite-canvas-workflows.test.mjs
 
+  publish-update:
+    needs: [discover, validate-update]
+    if: needs.discover.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      update_sha: ${{ steps.update_branch.outputs.update_sha }}
+      pr_number: ${{ steps.pull_request.outputs.pr_number }}
+    env:
+      UPDATE_BRANCH: automation/infinite-canvas-upstream
+      LATEST_SHA: ${{ needs.discover.outputs.latest_sha }}
+      RELEASE_TAG: ${{ needs.discover.outputs.release_tag }}
+    steps:
+      - name: Checkout the exact validated repository source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.discover.outputs.repository_sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Materialize validated submodule pointer
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$LATEST_SHA"
+          if [[ -n "$RELEASE_TAG" ]]; then
+            git -C integrations/infinite-canvas fetch --depth=1 origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          else
+            git -C integrations/infinite-canvas fetch --depth=1 origin main
+          fi
+          git -C integrations/infinite-canvas fetch --depth=1000 origin main
+          git -C integrations/infinite-canvas checkout --detach "$LATEST_SHA"
+          [[ "$(git -C integrations/infinite-canvas rev-parse HEAD)" == "$LATEST_SHA" ]]
+          test "$(git diff --name-only)" = "integrations/infinite-canvas"
+
       - name: Create update branch
         id: update_branch
-        if: steps.upstream.outputs.changed == 'true'
         env:
-          LATEST_SHA: ${{ steps.upstream.outputs.latest_sha }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -136,12 +205,12 @@ jobs:
           git add integrations/infinite-canvas
           git commit -m "chore: update Infinite Canvas upstream to $LATEST_SHA"
           UPDATE_SHA="$(git rev-parse HEAD)"
+          gh auth setup-git
           git push --force origin "$UPDATE_BRANCH"
           echo "update_sha=$UPDATE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Create or update pull request
         id: pull_request
-        if: steps.upstream.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -161,22 +230,27 @@ jobs:
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
   full-ci:
-    needs: update
-    if: needs.update.outputs.changed == 'true'
+    needs: [discover, publish-update]
+    if: needs.discover.outputs.changed == 'true'
+    permissions:
+      contents: read
     uses: ./.github/workflows/backend-ci.yml
     with:
-      ref: ${{ needs.update.outputs.update_sha }}
+      ref: ${{ needs.publish-update.outputs.update_sha }}
 
   merge:
-    needs: [update, full-ci]
-    if: needs.update.outputs.changed == 'true'
+    needs: [discover, publish-update, full-ci]
+    if: needs.discover.outputs.changed == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Merge verified Infinite Canvas update
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ needs.update.outputs.pr_number }}
-          UPDATE_SHA: ${{ needs.update.outputs.update_sha }}
+          PR_NUMBER: ${{ needs.publish-update.outputs.pr_number }}
+          UPDATE_SHA: ${{ needs.publish-update.outputs.update_sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -196,9 +270,11 @@ jobs:
           fi
 
   dispatch-release:
-    needs: [update, full-ci, merge]
-    if: ${{ always() && needs.update.result == 'success' && (needs.update.outputs.changed == 'false' || (needs.update.outputs.changed == 'true' && needs.full-ci.result == 'success' && needs.merge.result == 'success')) }}
+    needs: [discover, publish-update, full-ci, merge]
+    if: ${{ always() && needs.discover.result == 'success' && (needs.discover.outputs.changed == 'false' || (needs.discover.outputs.changed == 'true' && needs.publish-update.result == 'success' && needs.full-ci.result == 'success' && needs.merge.result == 'success')) }}
     runs-on: ubuntu-latest
+    permissions:
+      actions: write
     steps:
       - name: Trigger unified upstream release sync
         env:

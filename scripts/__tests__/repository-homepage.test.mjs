@@ -15,7 +15,7 @@ test('repository homepage documents the themed distribution instead of upstream 
 
 test('custom repository homepage and preview survive upstream generation', async () => {
   const manifest = JSON.parse(await read('theme/apophis/manifest.json'))
-  const targets = new Set((manifest.files || []).map((entry) => entry.target))
+  const targets = new Set([...(manifest.files || []), ...(manifest.additions || [])].map((entry) => entry.target))
   assert.ok(targets.has('README.md'))
   assert.ok(targets.has('docs/images/theme-overview.png'))
   await access(new URL('docs/images/theme-overview.png', root))

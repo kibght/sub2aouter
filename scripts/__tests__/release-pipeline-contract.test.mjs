@@ -23,6 +23,10 @@ function readerFor(files) {
   }
 }
 
+test('contract covers the legacy release workflow supply-chain boundary', () => {
+  assert.ok(RELEASE_PIPELINE_FILES.includes('.github/workflows/release.yml'))
+})
+
 test('current repository satisfies the automatic release and frontend update contract', async () => {
   const violations = await verifyReleasePipelineContract('.')
   assert.deepEqual(violations, [])
@@ -212,8 +216,8 @@ test('contract requires generated workflows to pass a final snapshot gate', asyn
   files.set(
     path,
     files.get(path)
-      .replace('cmp "$GITHUB_WORKSPACE/.github/workflows/theme-binary-release.yml" .github/workflows/theme-binary-release.yml', 'true # disabled binary workflow comparison')
-      .replace(`node scripts/verify-release-pipeline.mjs --root .
+      .replaceAll('cmp "$GITHUB_WORKSPACE/.github/workflows/theme-binary-release.yml" .github/workflows/theme-binary-release.yml', 'true # disabled binary workflow comparison')
+      .replaceAll(`node scripts/verify-release-pipeline.mjs --root .
           git config user.name`, `true # disabled final contract
           git config user.name`),
   )
@@ -300,4 +304,53 @@ test('contract requires fail-closed Canvas discovery and tested-head merge bindi
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
   assert.ok(violations.some((violation) => violation.code === 'canvas_sync.release_fail_closed'))
   assert.ok(violations.some((violation) => violation.code === 'canvas_sync.merge_identity'))
+})
+
+
+test('contract rejects mutable actions, persisted checkout credentials, and top-level write grants', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/infinite-canvas-upstream-sync.yml'
+  files.set(
+    path,
+    files.get(path)
+      .replace('permissions:\n  contents: read', 'permissions:\n  contents: write')
+      .replace(/actions\/checkout@[0-9a-f]{40}/, 'actions/checkout@v6')
+      .replace('          persist-credentials: false\n', ''),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'workflow.top_level_write'))
+  assert.ok(violations.some((violation) => violation.code === 'workflow.mutable_action'))
+  assert.ok(violations.some((violation) => violation.code === 'workflow.checkout_credentials'))
+})
+
+test('contract rejects write-capable publication jobs that execute package or Docker builds', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(
+    path,
+    files.get(path).replace(
+      '      - name: Load and verify prebuilt themed image',
+      '      - name: Unsafe rebuild\n        run: pnpm install --frozen-lockfile && docker build .\n\n      - name: Load and verify prebuilt themed image',
+    ),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'workflow.write_build'))
+})
+
+
+test('contract rejects jobs that reference their own unresolved needs outputs', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(
+    path,
+    files.get(path).replace(
+      "      PREPARED_COMMIT: ${{ needs.discover.outputs.prepared_commit }}",
+      "      PREPARED_COMMIT: ${{ needs.build-release.outputs.verified_commit }}",
+    ),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'workflow.self_needs'))
 })

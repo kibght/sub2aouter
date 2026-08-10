@@ -127,7 +127,7 @@ describe('AnnouncementPopup', () => {
     wrapper.unmount()
   })
   it('uses the Apophis popup shell instead of the legacy warm gradient', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/common/AnnouncementPopup.vue'), 'utf8')
+    const source = readFileSync(resolve(process.cwd(), 'src/components/apophis/ApophisAnnouncementPopup.vue'), 'utf8')
 
     expect(source).toContain('announcement-popup-shell')
     expect(source).toContain('--announcement-accent: #ff3d71')

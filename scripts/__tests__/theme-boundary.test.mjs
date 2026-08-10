@@ -8,6 +8,7 @@ const read = (path) => readFile(new URL(path, root), 'utf8')
 test('theme overlay never targets backend implementation files', async () => {
   const manifest = JSON.parse(await read('theme/apophis/manifest.json'))
   const targets = [
+    ...(manifest.additions || []).map((entry) => entry.target),
     ...(manifest.files || []).map((entry) => entry.target),
     ...(manifest.patches || []).map((entry) => entry.target),
   ]
@@ -17,8 +18,9 @@ test('theme overlay never targets backend implementation files', async () => {
 test('shipped theme contains no target-site brand, domain, or account credentials', async () => {
   const manifest = JSON.parse(await read('theme/apophis/manifest.json'))
   const sources = [
+    ...(manifest.additions || []).map((entry) => `theme/apophis/${entry.source}`),
     ...(manifest.files || []).map((entry) => `theme/apophis/${entry.source}`),
-    ...(manifest.patches || []).map((entry) => `theme/apophis/${entry.source}`),
+    ...(manifest.patches || []).filter((entry) => entry.source).map((entry) => `theme/apophis/${entry.source}`),
   ]
   const content = (await Promise.all(sources.map((source) => read(source)))).join('\n')
   assert.doesNotMatch(content, /www\.apophis\.uk|ApophisCode/i)
@@ -26,7 +28,7 @@ test('shipped theme contains no target-site brand, domain, or account credential
 
 test('site branding remains driven by system settings across public and authenticated shells', async () => {
   const [home, auth, sidebar] = await Promise.all([
-    read('frontend/src/views/HomeView.vue'),
+    read('frontend/src/components/apophis/ApophisHomeView.vue'),
     read('frontend/src/components/layout/AuthLayout.vue'),
     read('frontend/src/components/layout/AppSidebar.vue'),
   ])
@@ -70,7 +72,7 @@ test('panel updater and binary release workflow use the custom repository', asyn
       entry.target === 'backend/internal/service/update_service.go',
   ))
   assert.ok((manifest.patches || []).every((entry) => entry.sentinel !== 'func isThemedReleaseVersion'))
-  assert.ok((manifest.files || []).some((entry) => entry.target === '.github/workflows/theme-binary-release.yml'))
+  assert.ok((manifest.additions || []).some((entry) => entry.target === '.github/workflows/theme-binary-release.yml'))
 })
 
 test('the unified upstream round runs hourly and skips unchanged revisions', async () => {
@@ -95,7 +97,7 @@ test('Docker images and binary releases share one generated release version', as
   assert.doesNotMatch(syncWorkflow, /GITHUB_RUN_NUMBER/)
   assert.match(syncWorkflow, /backend\/cmd\/server\/VERSION/)
   assert.match(syncWorkflow, /\$\{IMAGE\}:\$\{RELEASE_VERSION\}/)
-  assert.match(binaryWorkflow, /cat backend\/cmd\/server\/VERSION/)
+  assert.match(binaryWorkflow, /backend\/cmd\/server\/VERSION/)
   assert.match(binaryWorkflow, /gh release view/)
   assert.doesNotMatch(binaryWorkflow, /date -u/)
 })
@@ -192,9 +194,10 @@ test('generated release branch is pushed as a self-contained root snapshot', asy
 })
 test('generated snapshot keeps and verifies the freshly generated workflow directory', async () => {
   const workflow = await read('.github/workflows/upstream-theme-sync.yml')
-  const updateStep = workflow.indexOf('name: Update generated release branch')
-  const snapshotIndex = workflow.indexOf('RELEASE_TREE="$(git write-tree)"', updateStep)
+  const updateStep = workflow.indexOf('name: Create immutable verified release bundle')
+  const snapshotIndex = workflow.indexOf('VERIFIED_TREE="$(git write-tree)"', updateStep)
   const finalContractIndex = workflow.indexOf('node scripts/verify-release-pipeline.mjs --root .', updateStep)
+  const archivedThemeCheck = workflow.indexOf('node "$GITHUB_WORKSPACE/scripts/apply-theme.mjs" --root "$GENERATED_DIR" --check')
   const workflowComparisons = [
     'cmp "$GITHUB_WORKSPACE/.github/workflows/upstream-theme-sync.yml" .github/workflows/upstream-theme-sync.yml',
     'cmp "$GITHUB_WORKSPACE/.github/workflows/infinite-canvas-upstream-sync.yml" .github/workflows/infinite-canvas-upstream-sync.yml',
@@ -210,4 +213,49 @@ test('generated snapshot keeps and verifies the freshly generated workflow direc
     assert.ok(finalContractIndex > comparisonIndex, 'the final contract check must follow workflow comparison')
   }
   assert.ok(snapshotIndex > finalContractIndex, 'snapshot creation must follow final workflow verification')
+  assert.ok(archivedThemeCheck > snapshotIndex, 'the archived commit must pass the trusted theme checker before publication')
+})
+
+
+test('production Vue files are mounted as hash-gated theme components instead of whole-file overlays', async () => {
+  const manifest = JSON.parse(await read('theme/apophis/manifest.json'))
+  const productionVueFiles = (manifest.files || []).filter(
+    (entry) => entry.target.startsWith('frontend/src/') && entry.target.endsWith('.vue'),
+  )
+  assert.deepEqual(productionVueFiles, [])
+
+  const migrations = new Map(
+    (manifest.patches || [])
+      .filter((entry) => entry.operation === 'mount-component' || entry.operation === 'mount-default-component')
+      .map((entry) => [entry.target, entry]),
+  )
+  for (const target of [
+    'frontend/src/views/HomeView.vue',
+    'frontend/src/components/common/AnnouncementBell.vue',
+    'frontend/src/components/common/AnnouncementPopup.vue',
+  ]) {
+    const migration = migrations.get(target)
+    assert.ok(migration, `${target} must mount a theme component`)
+    assert.match(migration.expectedUpstreamSha256 || '', /^[0-9a-f]{64}$/)
+  }
+})
+
+test('theme additions use unique component and test paths while replacements carry upstream baselines', async () => {
+  const manifest = JSON.parse(await read('theme/apophis/manifest.json'))
+  const additionTargets = new Set((manifest.additions || []).map((entry) => entry.target))
+  for (const target of [
+    'frontend/src/components/apophis/ApophisHomeView.vue',
+    'frontend/src/components/apophis/ApophisAnnouncementBell.vue',
+    'frontend/src/components/apophis/ApophisAnnouncementPopup.vue',
+    'frontend/src/views/__tests__/HomeView.apophis.spec.ts',
+    'frontend/src/views/__tests__/HomeView.apophis.compact.spec.ts',
+    'frontend/src/components/common/__tests__/AnnouncementBell.apophis.spec.ts',
+    'frontend/src/components/common/__tests__/AnnouncementPopup.apophis.spec.ts',
+  ]) {
+    assert.ok(additionTargets.has(target), `${target} must be an additive theme file`)
+  }
+
+  for (const entry of manifest.files || []) {
+    assert.match(entry.expectedUpstreamSha256 || '', /^[0-9a-f]{64}$/, `${entry.target} requires an immutable upstream baseline`)
+  }
 })

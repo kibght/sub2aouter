@@ -1,0 +1,1 @@
+expect(wrapper.find('.apophis-home').exists()).toBe(true)

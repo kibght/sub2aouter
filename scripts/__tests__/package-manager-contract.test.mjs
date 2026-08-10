@@ -24,7 +24,7 @@ test('GitHub workflows use the pinned pnpm version', async () => {
 
   for (const workflow of workflows) {
     const source = await readFile(workflow, 'utf8')
-    assert.match(source, new RegExp(`uses: pnpm/action-setup@v6[\\s\\S]{0,80}version: ${pnpmVersion.replaceAll('.', '\\.')}`), workflow)
+    assert.match(source, new RegExp(`uses: pnpm/action-setup@[0-9a-f]{40}[\\s\\S]{0,100}version: ${pnpmVersion.replaceAll('.', '\\.')}`), workflow)
   }
 })
 
@@ -56,4 +56,16 @@ test('frontend security override pins the patched nanoid release across upstream
   const frozenInstall = workflow.indexOf('pnpm install --frozen-lockfile')
   assert.ok(reconcile >= 0 && reconcile < contractCheck)
   assert.ok(contractCheck < frozenInstall)
+})
+
+
+test('theme overlay pins pnpm setup Actions in generated workflows', async () => {
+  const manifest = JSON.parse(await readFile('theme/apophis/manifest.json', 'utf8'))
+  for (const target of ['.github/workflows/release.yml', '.github/workflows/security-scan.yml']) {
+    const patch = manifest.patches.find((entry) =>
+      entry.target === target &&
+      entry.sentinel === 'uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6'
+    )
+    assert.ok(patch, `${target} must pin pnpm/action-setup by commit SHA`)
+  }
 })

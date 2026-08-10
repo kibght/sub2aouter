@@ -36,7 +36,7 @@ test('Apophis theme defines console chrome and neutral active navigation', async
 test('theme overlay persists authenticated console changes across upstream syncs', async () => {
   const manifest = JSON.parse(await read('theme/apophis/manifest.json'))
   const patchTargets = new Set((manifest.patches || []).map((entry) => entry.target))
-  const fileTargets = new Set((manifest.files || []).map((entry) => entry.target))
+  const fileTargets = new Set([...(manifest.files || []), ...(manifest.additions || [])].map((entry) => entry.target))
 
   const appLayoutStatePatch = await read('theme/apophis/patches/app-layout-full-height-state.txt')
   assert.match(appLayoutStatePatch, /const appStore = useAppStore\(\)/)

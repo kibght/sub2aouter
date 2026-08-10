@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -339,4 +340,265 @@ test('check mode rejects drift when the primary marker remains with a sentinel',
     checkTheme({ root, overlay }),
     /Theme patch drift.*frontend\/theme\.js/,
   )
+})
+
+test('additions are idempotent but refuse to overwrite an unrelated upstream file', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-addition-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-addition-overlay-'))
+  await mkdir(path.join(overlay, 'components'), { recursive: true })
+  await writeFile(path.join(overlay, 'components/ApophisPanel.vue'), '<template>theme</template>\n')
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    additions: [
+      { source: 'components/ApophisPanel.vue', target: 'frontend/src/components/apophis/ApophisPanel.vue' },
+    ],
+  }))
+
+  const first = await applyTheme({ root, overlay })
+  const second = await applyTheme({ root, overlay })
+  assert.equal(first.changed, true)
+  assert.equal(second.changed, false)
+
+  await writeFile(path.join(root, 'frontend/src/components/apophis/ApophisPanel.vue'), '<template>upstream</template>\n')
+  await assert.rejects(
+    () => applyTheme({ root, overlay }),
+    /Refusing to overwrite existing addition target/,
+  )
+})
+
+test('replacement overlays fail closed when the upstream baseline hash drifts', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-baseline-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-baseline-overlay-'))
+  await mkdir(path.join(root, 'frontend/src/views'), { recursive: true })
+  await mkdir(path.join(overlay, 'files'), { recursive: true })
+  const upstream = 'upstream-home\n'
+  const expectedUpstreamSha256 = createHash('sha256').update(upstream).digest('hex')
+  await writeFile(path.join(root, 'frontend/src/views/HomeView.vue'), 'changed-upstream-home\n')
+  await writeFile(path.join(overlay, 'files/HomeView.vue'), 'themed-home\n')
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    files: [{
+      source: 'files/HomeView.vue',
+      target: 'frontend/src/views/HomeView.vue',
+      expectedUpstreamSha256,
+    }],
+  }))
+
+  await assert.rejects(
+    () => applyTheme({ root, overlay }),
+    /Upstream baseline drift.*frontend\/src\/views\/HomeView\.vue.*expected.*actual/s,
+  )
+  assert.equal(await readFile(path.join(root, 'frontend/src/views/HomeView.vue'), 'utf8'), 'changed-upstream-home\n')
+})
+
+test('mount-component replaces only script and template after validating the upstream hash', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-mount-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-mount-overlay-'))
+  await mkdir(path.join(root, 'frontend/src/views'), { recursive: true })
+  const upstream = `<script setup lang="ts">\nconst value = 1\n</script>\n\n<template>\n  <main>{{ value }}</main>\n</template>\n\n<style scoped>\nmain { color: red; }\n</style>\n`
+  const expectedUpstreamSha256 = createHash('sha256').update(upstream).digest('hex')
+  await writeFile(path.join(root, 'frontend/src/views/HomeView.vue'), upstream)
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    patches: [{
+      target: 'frontend/src/views/HomeView.vue',
+      operation: 'mount-component',
+      componentName: 'ApophisHomeView',
+      importPath: '@/components/apophis/ApophisHomeView.vue',
+      expectedUpstreamSha256,
+      sentinel: "import ApophisHomeView from '@/components/apophis/ApophisHomeView.vue'",
+    }],
+  }))
+
+  const first = await applyTheme({ root, overlay })
+  const second = await applyTheme({ root, overlay })
+  const mounted = await readFile(path.join(root, 'frontend/src/views/HomeView.vue'), 'utf8')
+  assert.equal(first.changed, true)
+  assert.equal(second.changed, false)
+  assert.match(mounted, /import ApophisHomeView from '@\/components\/apophis\/ApophisHomeView\.vue'/)
+  assert.match(mounted, /<ApophisHomeView \/>/)
+  assert.match(mounted, /main \{ color: red; \}/)
+  assert.doesNotMatch(mounted, /const value = 1/)
+})
+
+
+test('mount-component accepts one exact legacy themed hash during migration', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-legacy-mount-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-legacy-mount-overlay-'))
+  await mkdir(path.join(root, 'frontend/src/views'), { recursive: true })
+  const upstream = `<script setup lang="ts">\nconst upstream = true\n</script>\n<template><main>upstream</main></template>\n`
+  const legacy = `<script setup lang="ts">\nconst legacy = true\n</script>\n<template><main>legacy theme</main></template>\n`
+  const expectedUpstreamSha256 = createHash('sha256').update(upstream).digest('hex')
+  const legacySha256 = createHash('sha256').update(legacy).digest('hex')
+  await writeFile(path.join(root, 'frontend/src/views/HomeView.vue'), legacy)
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    patches: [{
+      target: 'frontend/src/views/HomeView.vue',
+      operation: 'mount-component',
+      componentName: 'ApophisHomeView',
+      importPath: '@/components/apophis/ApophisHomeView.vue',
+      expectedUpstreamSha256,
+      legacySha256: [legacySha256],
+      sentinel: "import ApophisHomeView from '@/components/apophis/ApophisHomeView.vue'",
+    }],
+  }))
+
+  await applyTheme({ root, overlay })
+  const mounted = await readFile(path.join(root, 'frontend/src/views/HomeView.vue'), 'utf8')
+  assert.match(mounted, /<ApophisHomeView \/>/)
+})
+
+
+test('mount-default-component preserves upstream custom and compact branches', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-default-mount-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-default-mount-overlay-'))
+  await mkdir(path.join(root, 'frontend/src/views'), { recursive: true })
+  const upstream = `<script setup lang="ts">\nimport { computed } from 'vue'\nconst custom = computed(() => false)\nconst compact = computed(() => false)\n</script>\n<template>\n  <section v-if="custom">custom</section>\n  <section v-else-if="compact" data-testid="compact-home">compact</section>\n  <main v-else class="terminal-container">default</main>\n</template>\n<style scoped>.terminal-container { color: red; }</style>\n`
+  const expectedUpstreamSha256 = createHash('sha256').update(upstream).digest('hex')
+  await writeFile(path.join(root, 'frontend/src/views/HomeView.vue'), upstream)
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    patches: [{
+      target: 'frontend/src/views/HomeView.vue',
+      operation: 'mount-default-component',
+      componentName: 'ApophisHomeView',
+      importPath: '@/components/apophis/ApophisHomeView.vue',
+      expectedUpstreamSha256,
+      sentinel: "import ApophisHomeView from '@/components/apophis/ApophisHomeView.vue'",
+    }],
+  }))
+
+  await applyTheme({ root, overlay })
+  const mounted = await readFile(path.join(root, 'frontend/src/views/HomeView.vue'), 'utf8')
+  assert.match(mounted, /const custom = computed/)
+  assert.match(mounted, /v-if="custom"/)
+  assert.match(mounted, /data-testid="compact-home"/)
+  assert.match(mounted, /<ApophisHomeView v-else \/>/)
+  assert.doesNotMatch(mounted, /class="terminal-container">default/)
+  assert.match(mounted, /\.terminal-container \{ color: red; \}/)
+})
+
+test('mount-component can explicitly re-emit child component events', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-event-mount-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-event-mount-overlay-'))
+  await mkdir(path.join(root, 'frontend/src/components'), { recursive: true })
+  const upstream = `<script setup lang="ts">\nconst old = true\n</script>\n<template><div>old</div></template>\n`
+  const expectedUpstreamSha256 = createHash('sha256').update(upstream).digest('hex')
+  await writeFile(path.join(root, 'frontend/src/components/Popup.vue'), upstream)
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    patches: [{
+      target: 'frontend/src/components/Popup.vue',
+      operation: 'mount-component',
+      componentName: 'ApophisPopup',
+      importPath: '@/components/apophis/ApophisPopup.vue',
+      forwardEvents: ['close'],
+      expectedUpstreamSha256,
+      sentinel: "import ApophisPopup from '@/components/apophis/ApophisPopup.vue'",
+    }],
+  }))
+
+  await applyTheme({ root, overlay })
+  const mounted = await readFile(path.join(root, 'frontend/src/components/Popup.vue'), 'utf8')
+  assert.match(mounted, /const emit = defineEmits\(\['close'\]\)/)
+  assert.match(mounted, /<ApophisPopup @close="emit\('close'\)" \/>/)
+})
+
+
+test('supports idempotent removal patches', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-remove-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-remove-overlay-'))
+  await mkdir(path.join(root, 'frontend/src/views'), { recursive: true })
+  await writeFile(path.join(root, 'frontend/src/views/HomeView.vue'), 'keep\nremove me\nkeep too\n')
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    patches: [{
+      target: 'frontend/src/views/HomeView.vue',
+      operation: 'remove',
+      marker: 'remove me\n',
+    }],
+  }))
+
+  const first = await applyTheme({ root, overlay })
+  const second = await applyTheme({ root, overlay })
+  assert.equal(first.changed, true)
+  assert.equal(second.changed, false)
+  assert.equal(await readFile(path.join(root, 'frontend/src/views/HomeView.vue'), 'utf8'), 'keep\nkeep too\n')
+})
+
+
+test('mount-component rejects a partially damaged themed wrapper', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-partial-mount-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-partial-mount-overlay-'))
+  await mkdir(path.join(root, 'frontend/src/components'), { recursive: true })
+  const upstream = `<script setup lang="ts">\nconst old = true\n</script>\n<template><div>old</div></template>\n`
+  const expectedUpstreamSha256 = createHash('sha256').update(upstream).digest('hex')
+  const target = path.join(root, 'frontend/src/components/Popup.vue')
+  await writeFile(target, upstream)
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    patches: [{
+      target: 'frontend/src/components/Popup.vue',
+      operation: 'mount-component',
+      componentName: 'ApophisPopup',
+      importPath: '@/components/apophis/ApophisPopup.vue',
+      forwardEvents: ['close'],
+      expectedUpstreamSha256,
+      sentinel: "import ApophisPopup from '@/components/apophis/ApophisPopup.vue'",
+    }],
+  }))
+
+  await applyTheme({ root, overlay })
+  const damaged = (await readFile(target, 'utf8')).replace(` @close="emit('close')"`, '')
+  await writeFile(target, damaged)
+
+  await assert.rejects(
+    () => checkTheme({ root, overlay }),
+    /Upstream baseline drift.*frontend\/src\/components\/Popup\.vue/s,
+  )
+})
+
+test('mount-default-component handles nested template elements in a valid SFC', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-nested-default-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-nested-default-overlay-'))
+  await mkdir(path.join(root, 'frontend/src/views'), { recursive: true })
+  const upstream = `<script setup lang="ts">\nconst items = [1, 2]\nconst compact = false\n</script>\n<template>\n  <section v-if="compact">compact</section>\n  <div v-else-if="items.length">\n    <template v-for="item in items" :key="item">\n      <span>{{ item }}</span>\n    </template>\n  </div>\n  <main v-else>default</main>\n</template>\n<style scoped>main { display: block; }</style>\n`
+  const expectedUpstreamSha256 = createHash('sha256').update(upstream).digest('hex')
+  const target = path.join(root, 'frontend/src/views/HomeView.vue')
+  await writeFile(target, upstream)
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    patches: [{
+      target: 'frontend/src/views/HomeView.vue',
+      operation: 'mount-default-component',
+      componentName: 'ApophisHomeView',
+      importPath: '@/components/apophis/ApophisHomeView.vue',
+      expectedUpstreamSha256,
+      sentinel: "import ApophisHomeView from '@/components/apophis/ApophisHomeView.vue'",
+    }],
+  }))
+
+  await applyTheme({ root, overlay })
+  const mounted = await readFile(target, 'utf8')
+  assert.match(mounted, /<template v-for="item in items"/)
+  assert.match(mounted, /<ApophisHomeView v-else \/>/)
+  assert.equal((mounted.match(/<\/template>/g) || []).length, 2)
+})
+
+test('mount-component replaces the complete outer template when nested templates exist', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-nested-mount-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-nested-mount-overlay-'))
+  await mkdir(path.join(root, 'frontend/src/components'), { recursive: true })
+  const upstream = `<script setup lang="ts">\nconst items = [1]\n</script>\n<template>\n  <div>\n    <template v-for="item in items" :key="item"><span>{{ item }}</span></template>\n  </div>\n</template>\n<style scoped>span { color: red; }</style>\n`
+  const expectedUpstreamSha256 = createHash('sha256').update(upstream).digest('hex')
+  const target = path.join(root, 'frontend/src/components/Popup.vue')
+  await writeFile(target, upstream)
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    patches: [{
+      target: 'frontend/src/components/Popup.vue',
+      operation: 'mount-component',
+      componentName: 'ApophisPopup',
+      importPath: '@/components/apophis/ApophisPopup.vue',
+      expectedUpstreamSha256,
+      sentinel: "import ApophisPopup from '@/components/apophis/ApophisPopup.vue'",
+    }],
+  }))
+
+  await applyTheme({ root, overlay })
+  const mounted = await readFile(target, 'utf8')
+  assert.equal((mounted.match(/<\/template>/g) || []).length, 1)
+  assert.doesNotMatch(mounted, /v-for="item in items"/)
+  assert.match(mounted, /span \{ color: red; \}/)
 })

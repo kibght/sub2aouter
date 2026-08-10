@@ -78,7 +78,7 @@ describe('AnnouncementBell', () => {
   })
 
   it('uses the Apophis announcement shell instead of the legacy gradient modal', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/common/AnnouncementBell.vue'), 'utf8')
+    const source = readFileSync(resolve(process.cwd(), 'src/components/apophis/ApophisAnnouncementBell.vue'), 'utf8')
 
     expect(source).toContain('announcement-master-detail')
     expect(source).toContain('--announcement-accent: #ff3d71')
@@ -90,12 +90,20 @@ describe('AnnouncementBell', () => {
   it('ships both announcement components through the permanent theme overlay', () => {
     const manifest = JSON.parse(
       readFileSync(resolve(process.cwd(), '../theme/apophis/manifest.json'), 'utf8'),
-    ) as { files: Array<{ target: string }> }
-    const targets = manifest.files.map((entry) => entry.target)
+    ) as {
+      additions: Array<{ target: string }>
+      patches: Array<{ target: string; operation?: string }>
+    }
+    const additions = manifest.additions.map((entry) => entry.target)
+    const mounts = manifest.patches
+      .filter((entry) => entry.operation === 'mount-component')
+      .map((entry) => entry.target)
 
-    expect(targets).toContain('frontend/src/components/common/AnnouncementBell.vue')
-    expect(targets).toContain('frontend/src/components/common/AnnouncementPopup.vue')
-    expect(targets).toContain('frontend/src/components/common/__tests__/AnnouncementBell.spec.ts')
-    expect(targets).toContain('frontend/src/components/common/__tests__/AnnouncementPopup.spec.ts')
+    expect(additions).toContain('frontend/src/components/apophis/ApophisAnnouncementBell.vue')
+    expect(additions).toContain('frontend/src/components/apophis/ApophisAnnouncementPopup.vue')
+    expect(additions).toContain('frontend/src/components/common/__tests__/AnnouncementBell.apophis.spec.ts')
+    expect(additions).toContain('frontend/src/components/common/__tests__/AnnouncementPopup.apophis.spec.ts')
+    expect(mounts).toContain('frontend/src/components/common/AnnouncementBell.vue')
+    expect(mounts).toContain('frontend/src/components/common/AnnouncementPopup.vue')
   })
 })

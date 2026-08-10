@@ -1,58 +1,42 @@
 {
-  "version": 1,
+  "version": 2,
   "upstream": "Wei-Shaw/sub2api",
-  "files": [
+  "additions": [
     {
-      "source": "files/frontend/src/views/HomeView.vue",
-      "target": "frontend/src/views/HomeView.vue"
+      "source": "additions/frontend/src/components/apophis/ApophisHomeView.vue",
+      "target": "frontend/src/components/apophis/ApophisHomeView.vue"
     },
     {
-      "source": "files/frontend/src/views/__tests__/HomeView.spec.ts",
-      "target": "frontend/src/views/__tests__/HomeView.spec.ts"
+      "source": "additions/frontend/src/components/apophis/ApophisAnnouncementBell.vue",
+      "target": "frontend/src/components/apophis/ApophisAnnouncementBell.vue"
     },
     {
-      "source": "files/frontend/src/views/__tests__/HomeView.compact.spec.ts",
-      "target": "frontend/src/views/__tests__/HomeView.compact.spec.ts"
+      "source": "additions/frontend/src/components/apophis/ApophisAnnouncementPopup.vue",
+      "target": "frontend/src/components/apophis/ApophisAnnouncementPopup.vue"
+    },
+    {
+      "source": "additions/frontend/src/views/__tests__/HomeView.apophis.spec.ts",
+      "target": "frontend/src/views/__tests__/HomeView.apophis.spec.ts"
+    },
+    {
+      "source": "additions/frontend/src/views/__tests__/HomeView.apophis.compact.spec.ts",
+      "target": "frontend/src/views/__tests__/HomeView.apophis.compact.spec.ts"
+    },
+    {
+      "source": "additions/frontend/src/components/common/__tests__/AnnouncementBell.apophis.spec.ts",
+      "target": "frontend/src/components/common/__tests__/AnnouncementBell.apophis.spec.ts"
+    },
+    {
+      "source": "additions/frontend/src/components/common/__tests__/AnnouncementPopup.apophis.spec.ts",
+      "target": "frontend/src/components/common/__tests__/AnnouncementPopup.apophis.spec.ts"
     },
     {
       "source": "files/frontend/src/styles/apophis-theme.css",
       "target": "frontend/src/styles/apophis-theme.css"
     },
     {
-      "source": "files/frontend/src/components/common/AnnouncementBell.vue",
-      "target": "frontend/src/components/common/AnnouncementBell.vue"
-    },
-    {
-      "source": "files/frontend/src/components/common/AnnouncementPopup.vue",
-      "target": "frontend/src/components/common/AnnouncementPopup.vue"
-    },
-    {
-      "source": "files/frontend/src/components/common/__tests__/AnnouncementBell.spec.ts",
-      "target": "frontend/src/components/common/__tests__/AnnouncementBell.spec.ts"
-    },
-    {
-      "source": "files/frontend/src/components/common/__tests__/AnnouncementPopup.spec.ts",
-      "target": "frontend/src/components/common/__tests__/AnnouncementPopup.spec.ts"
-    },
-    {
-      "source": "files/README.md",
-      "target": "README.md"
-    },
-    {
       "source": "files/docs/images/theme-overview.png",
       "target": "docs/images/theme-overview.png"
-    },
-    {
-      "source": "files/frontend/src/api/__tests__/admin.system.rollback.spec.ts",
-      "target": "frontend/src/api/__tests__/admin.system.rollback.spec.ts"
-    },
-    {
-      "source": "files/frontend/src/views/admin/__tests__/GroupsView.columnSettings.spec.ts",
-      "target": "frontend/src/views/admin/__tests__/GroupsView.columnSettings.spec.ts"
-    },
-    {
-      "source": "files/frontend/src/views/admin/__tests__/GroupsView.duplicate.spec.ts",
-      "target": "frontend/src/views/admin/__tests__/GroupsView.duplicate.spec.ts"
     },
     {
       "source": "files/.github/workflows/theme-binary-release.yml",
@@ -63,7 +47,91 @@
       "target": ".goreleaser.theme.yaml"
     }
   ],
+  "files": [
+    {
+      "source": "files/README.md",
+      "target": "README.md",
+      "expectedUpstreamSha256": "496bfe4a19742c0a7ee0c2b33b49270ddaebfaa5179a658e5f1e4913252d9460"
+    },
+    {
+      "source": "files/frontend/src/api/__tests__/admin.system.rollback.spec.ts",
+      "target": "frontend/src/api/__tests__/admin.system.rollback.spec.ts",
+      "expectedUpstreamSha256": "ac6d015fead902f40c06b3ce81d2be28e99af60730d20dd416e25296fbfa0342"
+    },
+    {
+      "source": "files/frontend/src/views/admin/__tests__/GroupsView.columnSettings.spec.ts",
+      "target": "frontend/src/views/admin/__tests__/GroupsView.columnSettings.spec.ts",
+      "expectedUpstreamSha256": "e2d244ba87fa0ea6a56b8ee91ce74d026881be9c0013092d9f0bb8103f25e2a8"
+    },
+    {
+      "source": "files/frontend/src/views/admin/__tests__/GroupsView.duplicate.spec.ts",
+      "target": "frontend/src/views/admin/__tests__/GroupsView.duplicate.spec.ts",
+      "expectedUpstreamSha256": "697a45a61eff72330932a36e97543acaa4cc606fe741c8f20b16ac40aa7f9fe4"
+    },
+    {
+      "source": "files/.github/workflows/release.yml",
+      "target": ".github/workflows/release.yml",
+      "expectedUpstreamSha256": "20d1517155b45b5c961a9b4a91ab9bdb2817e95ce0ec8d11b7083b520b5594e8",
+      "legacySha256": [
+        "19372d18e3f9186245f1ef9d3e87956dbac86ee32107f8667fc9bc046756853a",
+        "398fc2316c0e4470dc4d735156dc00d30e2c98039e3a4229eca498cbc3e664d6"
+      ]
+    }
+  ],
   "patches": [
+    {
+      "target": "frontend/src/views/HomeView.vue",
+      "operation": "mount-default-component",
+      "componentName": "ApophisHomeView",
+      "importPath": "@/components/apophis/ApophisHomeView.vue",
+      "expectedUpstreamSha256": "d20d893ea00fbe0146d2f12438a484aeda3a6c805d0fffac60df4263e7cae9b9",
+      "legacySha256": [
+        "4bde98632aa7064fe3b7f0dcfbae116411a14037090070d158428901f78e55a2"
+      ],
+      "sentinel": "import ApophisHomeView from '@/components/apophis/ApophisHomeView.vue'"
+    },
+    {
+      "target": "frontend/src/views/HomeView.vue",
+      "operation": "replace",
+      "marker": "const compactHomeEnabled = computed(() => appStore.cachedPublicSettings?.compact_home_enabled === true)\n",
+      "source": "patches/home-compact-setting-cast.txt",
+      "sentinel": "(appStore.cachedPublicSettings as { compact_home_enabled?: boolean } | null)?.compact_home_enabled === true"
+    },
+    {
+      "target": "frontend/src/views/HomeView.vue",
+      "operation": "remove",
+      "marker": "// GitHub URL\nconst githubUrl = 'https://github.com/Wei-Shaw/sub2api'\n\n"
+    },
+    {
+      "target": "frontend/src/views/HomeView.vue",
+      "operation": "remove",
+      "marker": "const userInitial = computed(() => {\n  const user = authStore.user\n  if (!user || !user.email) return ''\n  return user.email.charAt(0).toUpperCase()\n})\n"
+    },
+    {
+      "target": "frontend/src/components/common/AnnouncementBell.vue",
+      "operation": "mount-component",
+      "componentName": "ApophisAnnouncementBell",
+      "importPath": "@/components/apophis/ApophisAnnouncementBell.vue",
+      "expectedUpstreamSha256": "54b32bc87688bff7129bc6eca0bc32108c39d058166d7f1d28db8dbccf1f9054",
+      "legacySha256": [
+        "6bc12c09be87a8f69f67b5e1cc7c7ad262eeba722fb52b0a4985aa75868040d0"
+      ],
+      "sentinel": "import ApophisAnnouncementBell from '@/components/apophis/ApophisAnnouncementBell.vue'"
+    },
+    {
+      "target": "frontend/src/components/common/AnnouncementPopup.vue",
+      "operation": "mount-component",
+      "componentName": "ApophisAnnouncementPopup",
+      "importPath": "@/components/apophis/ApophisAnnouncementPopup.vue",
+      "expectedUpstreamSha256": "aff5ccd3088e6f0f1196c9628fbcd8bd6b61b58bf1c9560ef2e027ca5a37c461",
+      "legacySha256": [
+        "19548c931d62aa9590d9ce44d7164354f05bfd7bec4002241066296b92763464"
+      ],
+      "sentinel": "import ApophisAnnouncementPopup from '@/components/apophis/ApophisAnnouncementPopup.vue'",
+      "forwardEvents": [
+        "close"
+      ]
+    },
     {
       "target": ".gitignore",
       "marker": "scripts",
@@ -207,9 +275,23 @@
     {
       "target": ".github/workflows/release.yml",
       "operation": "replace",
+      "marker": "uses: pnpm/action-setup@v6",
+      "source": "patches/workflow-pnpm-action-sha.txt",
+      "sentinel": "uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6"
+    },
+    {
+      "target": ".github/workflows/release.yml",
+      "operation": "replace",
       "marker": "          version: 9",
       "source": "patches/workflow-pnpm-version.txt",
       "sentinel": "          version: 9.15.9"
+    },
+    {
+      "target": ".github/workflows/security-scan.yml",
+      "operation": "replace",
+      "marker": "uses: pnpm/action-setup@v6",
+      "source": "patches/workflow-pnpm-action-sha.txt",
+      "sentinel": "uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6"
     },
     {
       "target": ".github/workflows/security-scan.yml",
@@ -565,6 +647,13 @@
       "marker": ".dark .settings-tabs-shell {\n  border-color: rgb(51 65 85 / 0.65);\n  background: rgb(15 23 42 / 0.86);\n  box-shadow:\n    0 16px 36px rgb(0 0 0 / 0.28),\n    0 1px 0 rgb(255 255 255 / 0.06) inset;\n}\n\n.dark .settings-tab::before {\n  background: linear-gradient(135deg, rgb(30 41 59 / 0.9), rgb(51 65 85 / 0.62));\n}\n\n.dark .settings-tab-active {\n  box-shadow:\n    0 12px 26px rgb(0 0 0 / 0.22),\n    0 1px 0 rgb(255 255 255 / 0.08) inset;\n}",
       "source": "patches/admin-settings-neutral-dark-tabs.txt",
       "sentinel": "background: hsl(var(--card) / 0.96);"
+    },
+    {
+      "target": "frontend/src/views/__tests__/HomeView.compact.spec.ts",
+      "operation": "replace",
+      "marker": "expect(wrapper.find('.terminal-container').exists()).toBe(true)",
+      "source": "patches/home-default-selector.txt",
+      "sentinel": "expect(wrapper.find('.apophis-home').exists()).toBe(true)"
     }
   ]
 }
