@@ -236,17 +236,23 @@ jobs:
           echo "CURRENT_CANVAS_SHA=$CURRENT_CANVAS_SHA" >> "$GITHUB_ENV"
           echo "PREVIOUS_CANVAS_SHA=$PREVIOUS_CANVAS_SHA" >> "$GITHUB_ENV"
 
+          UPSTREAM_RECOVERY_FROM_UNRELEASED=false
           if [[ "$RELEASE_KIND" == "upstream" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) && -n "$PREVIOUS_UPSTREAM_SHA" && "$PREVIOUS_UPSTREAM_SHA" != "$UPSTREAM_SHA" ]]; then
             git -C "$GENERATED_DIR" fetch --depth=1000 upstream "$UPSTREAM_REF"
             if ! git -C "$GENERATED_DIR" cat-file -e "${PREVIOUS_UPSTREAM_SHA}^{commit}" 2>/dev/null; then
               echo "Unable to verify the previously published upstream commit: $PREVIOUS_UPSTREAM_SHA" >&2
               exit 1
             fi
-            if ! git -C "$GENERATED_DIR" merge-base --is-ancestor "$PREVIOUS_UPSTREAM_SHA" "$UPSTREAM_SHA"; then
+            if [[ "$PREVIOUS_UPSTREAM_RELEASE_TAG" == unreleased-* && -n "$UPSTREAM_RELEASE_TAG" && "$UPSTREAM_RELEASE_TAG" != unreleased-* && -n "$UPSTREAM_RELEASE_ID" ]] &&
+               git -C "$GENERATED_DIR" merge-base --is-ancestor "$UPSTREAM_SHA" "$PREVIOUS_UPSTREAM_SHA"; then
+              UPSTREAM_RECOVERY_FROM_UNRELEASED=true
+              echo "Recovering from descendant unreleased upstream snapshot $PREVIOUS_UPSTREAM_RELEASE_TAG to published release $UPSTREAM_RELEASE_TAG."
+            elif ! git -C "$GENERATED_DIR" merge-base --is-ancestor "$PREVIOUS_UPSTREAM_SHA" "$UPSTREAM_SHA"; then
               echo "Refusing to downgrade or cross-grade Sub2API: $PREVIOUS_UPSTREAM_SHA -> $UPSTREAM_SHA" >&2
               exit 1
             fi
           fi
+          echo "UPSTREAM_RECOVERY_FROM_UNRELEASED=$UPSTREAM_RECOVERY_FROM_UNRELEASED" >> "$GITHUB_ENV"
 
           UPSTREAM_IDENTITY_AND_SHA_MATCH=false
           if [[ "$RELEASE_KIND" == "upstream" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) && "$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA" ]]; then

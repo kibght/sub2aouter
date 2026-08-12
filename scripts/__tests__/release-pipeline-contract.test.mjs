@@ -287,6 +287,23 @@ test('contract requires monotonic upstream source and identity plus SHA deduplic
   assert.ok(violations.some((violation) => violation.code === 'sync.upstream_release_identity'))
 })
 
+test('contract requires a narrow recovery path from unreleased upstream snapshots to published releases', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(
+    path,
+    files.get(path)
+      .replaceAll('UPSTREAM_RECOVERY_FROM_UNRELEASED', 'DISABLED_RELEASE_RECOVERY')
+      .replace(
+        'merge-base --is-ancestor "$UPSTREAM_SHA" "$PREVIOUS_UPSTREAM_SHA"',
+        'merge-base --is-ancestor "$PREVIOUS_UPSTREAM_SHA" "$UPSTREAM_SHA"',
+      ),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.upstream_release_recovery'))
+})
+
 test('contract requires fail-closed Canvas discovery and tested-head merge binding', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/infinite-canvas-upstream-sync.yml'
