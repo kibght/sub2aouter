@@ -113,6 +113,30 @@ describe('InfiniteCanvasView', () => {
     expect(writeClipboard).toHaveBeenCalledWith('npx -y @basketikun/canvas-agent')
   })
 
+  it('opens the Infinite Canvas home page in a new window', async () => {
+    const openWindow = vi.spyOn(window, 'open').mockReturnValue(null)
+    const wrapper = mount(InfiniteCanvasView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          RouterLink: { template: '<a><slot /></a>' },
+          Icon: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    const openButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('infiniteCanvas.openStandalone'))
+    expect(openButton).toBeDefined()
+
+    await openButton!.trigger('click')
+
+    expect(openWindow).toHaveBeenCalledWith('/canvas-app/', '_blank', 'noopener,noreferrer')
+    openWindow.mockRestore()
+  })
+
   it('keeps the AppLayout-to-iframe height chain shrinkable on desktop and mobile', async () => {
     const [viewSource, layoutSource] = await Promise.all([
       readFile(resolve('src/views/user/InfiniteCanvasView.vue'), 'utf8'),

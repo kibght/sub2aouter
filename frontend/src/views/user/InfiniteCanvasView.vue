@@ -297,7 +297,7 @@ function reloadCanvas() {
 }
 
 function openStandalone() {
-  window.open(canvasEntryUrl, '_blank', 'noopener,noreferrer')
+  window.open(canvasUrl, '_blank', 'noopener,noreferrer')
 }
 
 async function checkAgent() {
