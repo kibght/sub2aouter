@@ -29,7 +29,6 @@ permissions:
   actions: write
   contents: write
   packages: write
-  workflows: write
 
 jobs:
   sync-build-publish:
@@ -591,6 +590,22 @@ jobs:
         working-directory: ${{ env.GENERATED_DIR }}
         run: |
           set -euo pipefail
+          WORKFLOW_DIR=.github/workflows
+          for workflow in "$WORKFLOW_DIR"/*.yml "$WORKFLOW_DIR"/*.yaml; do
+            [[ -e "$workflow" ]] || continue
+            name="${workflow##*/}"
+            case "$name" in
+              upstream-theme-sync.yml|infinite-canvas-upstream-sync.yml|backend-ci.yml|theme-binary-release.yml)
+                ;;
+              *)
+                if git cat-file -e "origin/themed-release:$workflow" 2>/dev/null; then
+                  git checkout origin/themed-release -- "$workflow"
+                else
+                  rm -f "$workflow"
+                fi
+                ;;
+            esac
+          done
           cmp "$GITHUB_WORKSPACE/.github/workflows/upstream-theme-sync.yml" .github/workflows/upstream-theme-sync.yml
           cmp "$GITHUB_WORKSPACE/.github/workflows/infinite-canvas-upstream-sync.yml" .github/workflows/infinite-canvas-upstream-sync.yml
           cmp "$GITHUB_WORKSPACE/.github/workflows/backend-ci.yml" .github/workflows/backend-ci.yml

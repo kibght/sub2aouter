@@ -73,7 +73,6 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   const sync = files.get(syncPath) || ''
   check('sync.push_main', syncPath, hasPattern(sync, /\n  push:\n    branches:\n      - main\n/), 'Sync must run for pushes to main.')
   check('sync.coordinated_round', syncPath, !sync.includes('  schedule:') && sync.includes('scheduled_round:') && sync.includes('SCHEDULED_ROUND'), 'Theme sync must be dispatched by the single hourly coordinator.')
-  check('sync.workflow_write_permission', syncPath, sync.includes('  workflows: write'), 'Sync must be able to publish generated workflow snapshots.')
   check('sync.upstream', syncPath, sync.includes('https://github.com/Wei-Shaw/sub2api.git'), 'Sync must fetch the canonical upstream repository.')
   const upstreamReleaseQueries = sync.match(/repos\/Wei-Shaw\/sub2api\/releases\/latest/g) || []
   check('sync.upstream_release_metadata', syncPath, upstreamReleaseQueries.length === 1 && sync.includes('UPSTREAM_RELEASE_TAG') && sync.includes('UPSTREAM_RELEASE_ID'), 'Scheduled Sub2API syncs must read one immutable latest-release descriptor before fetching source.')
@@ -112,6 +111,13 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     sync.includes('test -n "$GO_VERSION"') &&
     sync.includes('--build-arg "GOLANG_IMAGE=golang:${GO_VERSION}-alpine"'),
   'Docker sync builds must derive the builder image from the generated Go module version.')
+  check('sync.workflow_preservation', syncPath,
+    sync.includes('WORKFLOW_DIR=.github/workflows') &&
+    sync.includes('for workflow in "$WORKFLOW_DIR"/*.yml "$WORKFLOW_DIR"/*.yaml; do') &&
+    sync.includes('git checkout origin/themed-release -- "$workflow"') &&
+    sync.includes('rm -f "$workflow"') &&
+    sync.includes('upstream-theme-sync.yml|infinite-canvas-upstream-sync.yml|backend-ci.yml|theme-binary-release.yml'),
+  'Sync must preserve upstream-managed workflow files while publishing the verified automation snapshot.')
   check('sync.binary_recovery', syncPath, sync.includes('NEEDS_BINARY_RELEASE') && sync.includes('gh release view "$PREVIOUS_RELEASE_TAG"') && sync.includes('targetCommitish') && sync.includes('run_binary=$RUN_BINARY') && sync.includes('effective_version=$EFFECTIVE_VERSION'), 'Sync must recover a missing, incomplete, draft, prerelease, or mis-targeted binary release without minting another version.')
   check('sync.binary_call', syncPath,
     sync.includes('binary-release:') &&
