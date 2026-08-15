@@ -106,6 +106,11 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     ]) && !sourceJob.includes('docker push "${IMAGE}:latest"'),
   'Immutable image and release branch must publish before awaited binaries and final latest promotion.')
   check('sync.latest_image', syncPath, latestPushIndex > promoteLatestIndex && sync.includes('docker pull "${IMAGE}:${RELEASE_VERSION}"'), 'Sync must promote the immutable Docker version to latest only in the final job.')
+  check('sync.go_builder_version', syncPath,
+    sync.includes("GO_VERSION=\"$(awk '$1 == \"go\" { print $2; exit }' backend/go.mod)\"") &&
+    sync.includes('test -n "$GO_VERSION"') &&
+    sync.includes('--build-arg "GOLANG_IMAGE=golang:${GO_VERSION}-alpine"'),
+  'Docker sync builds must derive the builder image from the generated Go module version.')
   check('sync.binary_recovery', syncPath, sync.includes('NEEDS_BINARY_RELEASE') && sync.includes('gh release view "$PREVIOUS_RELEASE_TAG"') && sync.includes('targetCommitish') && sync.includes('run_binary=$RUN_BINARY') && sync.includes('effective_version=$EFFECTIVE_VERSION'), 'Sync must recover a missing, incomplete, draft, prerelease, or mis-targeted binary release without minting another version.')
   check('sync.binary_call', syncPath,
     sync.includes('binary-release:') &&

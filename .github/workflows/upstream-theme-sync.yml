@@ -556,8 +556,11 @@ jobs:
         working-directory: ${{ env.GENERATED_DIR }}
         run: |
           set -euo pipefail
+          GO_VERSION="$(awk '$1 == "go" { print $2; exit }' backend/go.mod)"
+          test -n "$GO_VERSION"
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
           docker build \
+            --build-arg "GOLANG_IMAGE=golang:${GO_VERSION}-alpine" \
             --build-arg "VERSION=${RELEASE_VERSION}" \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.revision=${RELEASE_SOURCE_SHA}" \

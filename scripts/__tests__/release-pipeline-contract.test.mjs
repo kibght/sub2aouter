@@ -28,6 +28,18 @@ test('current repository satisfies the automatic release and frontend update con
   assert.deepEqual(violations, [])
 })
 
+test('contract requires Docker builds to use the generated Go module version', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(
+    path,
+    files.get(path).replace('--build-arg "GOLANG_IMAGE=golang:${GO_VERSION}-alpine" \\', ''),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.go_builder_version'))
+})
+
 test('contract rejects literal question-mark placeholders in upstream release notes', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/upstream-theme-sync.yml'
