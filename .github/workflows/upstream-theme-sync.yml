@@ -29,6 +29,7 @@ permissions:
   actions: write
   contents: write
   packages: write
+  workflows: write
 
 jobs:
   sync-build-publish:

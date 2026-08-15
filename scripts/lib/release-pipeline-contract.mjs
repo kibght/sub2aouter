@@ -73,6 +73,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   const sync = files.get(syncPath) || ''
   check('sync.push_main', syncPath, hasPattern(sync, /\n  push:\n    branches:\n      - main\n/), 'Sync must run for pushes to main.')
   check('sync.coordinated_round', syncPath, !sync.includes('  schedule:') && sync.includes('scheduled_round:') && sync.includes('SCHEDULED_ROUND'), 'Theme sync must be dispatched by the single hourly coordinator.')
+  check('sync.workflow_write_permission', syncPath, sync.includes('  workflows: write'), 'Sync must be able to publish generated workflow snapshots.')
   check('sync.upstream', syncPath, sync.includes('https://github.com/Wei-Shaw/sub2api.git'), 'Sync must fetch the canonical upstream repository.')
   const upstreamReleaseQueries = sync.match(/repos\/Wei-Shaw\/sub2api\/releases\/latest/g) || []
   check('sync.upstream_release_metadata', syncPath, upstreamReleaseQueries.length === 1 && sync.includes('UPSTREAM_RELEASE_TAG') && sync.includes('UPSTREAM_RELEASE_ID'), 'Scheduled Sub2API syncs must read one immutable latest-release descriptor before fetching source.')

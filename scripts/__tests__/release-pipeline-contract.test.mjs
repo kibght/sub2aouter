@@ -40,6 +40,15 @@ test('contract requires Docker builds to use the generated Go module version', a
   assert.ok(violations.some((violation) => violation.code === 'sync.go_builder_version'))
 })
 
+test('contract requires permission to publish generated workflow snapshots', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(path, files.get(path).replace('  workflows: write\n', ''))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.workflow_write_permission'))
+})
+
 test('contract rejects literal question-mark placeholders in upstream release notes', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/upstream-theme-sync.yml'
