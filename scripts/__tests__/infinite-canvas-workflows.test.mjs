@@ -251,6 +251,7 @@ test('the watchdog detects stale synchronization and dispatches only the coordin
   assert.doesNotMatch(watchdog, /gh workflow run upstream-theme-sync\.yml/)
   assert.match(watchdog, /actions\/upload-artifact@/)
   assert.match(watchdog, /uses: \.\/\.github\/workflows\/automation-alert\.yml/)
+  assert.match(watchdog, /steps\.health\.outputs\.state == 'healthy'/)
 })
 
 test('network-facing synchronization steps source the bounded retry helper', async () => {

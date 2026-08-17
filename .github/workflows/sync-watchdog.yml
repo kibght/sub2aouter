@@ -99,7 +99,7 @@ jobs:
           retention-days: 30
 
       - name: Close recovered synchronization incident
-        if: ${{ steps.health.outputs.healthy == 'true' }}
+        if: ${{ steps.health.outputs.state == 'healthy' }}
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_TITLE: "[automation] Upstream synchronization unhealthy"
