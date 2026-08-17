@@ -1,0 +1,122 @@
+name: Roll Back Themed Latest
+
+on:
+  workflow_dispatch:
+    inputs:
+      restore_version:
+        description: Existing version to restore as latest
+        required: true
+        default: 0.1.241
+        type: string
+      remove_version:
+        description: Unwanted version tag and package version to remove
+        required: false
+        default: 0.1.242
+        type: string
+      confirm:
+        description: Type ROLLBACK to confirm
+        required: true
+        type: string
+
+concurrency:
+  group: rollback-themed-latest
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Validate rollback inputs
+        env:
+          RESTORE_VERSION: ${{ inputs.restore_version }}
+          REMOVE_VERSION: ${{ inputs.remove_version }}
+          CONFIRM: ${{ inputs.confirm }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CONFIRM" == "ROLLBACK" ]]
+          [[ "$RESTORE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ -n "$REMOVE_VERSION" ]]; then
+            [[ "$REMOVE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            [[ "$REMOVE_VERSION" != "$RESTORE_VERSION" ]]
+          fi
+
+      - name: Login to GitHub Container Registry
+        shell: bash
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Restore the previous image as latest
+        env:
+          RESTORE_VERSION: ${{ inputs.restore_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker pull "${IMAGE}:${RESTORE_VERSION}"
+          docker tag "${IMAGE}:${RESTORE_VERSION}" "${IMAGE}:latest"
+          docker push "${IMAGE}:latest"
+          RESTORE_DIGEST="$(docker buildx imagetools inspect "${IMAGE}:${RESTORE_VERSION}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          LATEST_DIGEST="$(docker buildx imagetools inspect "${IMAGE}:latest" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          [[ -n "$RESTORE_DIGEST" && "$RESTORE_DIGEST" == "$LATEST_DIGEST" ]]
+          echo "RESTORE_DIGEST=$RESTORE_DIGEST" >> "$GITHUB_ENV"
+
+      - name: Remove the unwanted GitHub release and tag
+        if: ${{ inputs.remove_version != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REMOVE_VERSION: ${{ inputs.remove_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOVE_TAG="v${REMOVE_VERSION}"
+          if gh release view "$REMOVE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete "$REMOVE_TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+          elif gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${REMOVE_TAG}" >/dev/null 2>&1; then
+            gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${REMOVE_TAG}" --method DELETE
+          else
+            echo "GitHub release and tag ${REMOVE_TAG} are already absent."
+          fi
+
+      - name: Remove the unwanted GHCR package version
+        if: ${{ inputs.remove_version != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REMOVE_VERSION: ${{ inputs.remove_version }}
+          RESTORE_VERSION: ${{ inputs.restore_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE_NAME="${GITHUB_REPOSITORY#*/}"
+          PACKAGE_JSON="$(gh api --paginate --slurp "/users/${GITHUB_REPOSITORY_OWNER}/packages/container/${PACKAGE_NAME}/versions?per_page=100")"
+          VERSION_ID="$(jq -r --arg tag "$REMOVE_VERSION" 'add | .[] | select(.metadata.container.tags | index($tag)) | .id' <<< "$PACKAGE_JSON" | head -n 1)"
+          if [[ -z "$VERSION_ID" ]]; then
+            echo "GHCR tag ${REMOVE_VERSION} is already absent."
+            exit 0
+          fi
+          VERSION_TAGS="$(jq -r --argjson id "$VERSION_ID" 'add | .[] | select(.id == $id) | .metadata.container.tags[]' <<< "$PACKAGE_JSON")"
+          if grep -Fqx -- latest <<< "$VERSION_TAGS" || grep -Fqx -- "$RESTORE_VERSION" <<< "$VERSION_TAGS"; then
+            echo "Refusing to delete package version ${VERSION_ID}; it still owns latest or ${RESTORE_VERSION}." >&2
+            exit 1
+          fi
+          gh api "/users/${GITHUB_REPOSITORY_OWNER}/packages/container/${PACKAGE_NAME}/versions/${VERSION_ID}" --method DELETE
+
+      - name: Write rollback summary
+        if: ${{ always() }}
+        env:
+          RESTORE_VERSION: ${{ inputs.restore_version }}
+          REMOVE_VERSION: ${{ inputs.remove_version }}
+        shell: bash
+        run: |
+          {
+            echo "## Themed latest rollback"
+            echo
+            echo "- Restored version: \`${RESTORE_VERSION}\`"
+            echo "- Removed version: \`${REMOVE_VERSION:-none}\`"
+            echo "- Restored digest: \`${RESTORE_DIGEST:-unknown}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

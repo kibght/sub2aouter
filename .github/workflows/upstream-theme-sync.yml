@@ -1,9 +1,6 @@
 name: Sync Upstream With Apophis Theme
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       upstream_ref:
@@ -33,7 +30,6 @@ permissions:
 
 jobs:
   sync-build-publish:
-    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'Infinite Canvas') }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     outputs:
@@ -54,7 +50,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'push' && github.sha || 'main' }}
+          ref: main
           submodules: recursive
 
       - name: Verify Infinite Canvas dependency is current
@@ -93,7 +89,7 @@ jobs:
 
       - name: Discover published Sub2API release
         id: upstream_release
-        if: ${{ github.event_name != 'push' && inputs.repository_release != true && inputs.scheduled_round == true }}
+        if: ${{ inputs.repository_release != true && inputs.scheduled_round == true }}
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -116,7 +112,7 @@ jobs:
           source scripts/ci/retry.sh
           retry_with_backoff 5 5 git fetch origin +refs/heads/themed-release:refs/remotes/origin/themed-release
 
-          if [[ "${{ github.event_name }}" == "push" || "$REPOSITORY_RELEASE" == "true" ]]; then
+          if [[ "$REPOSITORY_RELEASE" == "true" ]]; then
             git worktree add --detach "$GENERATED_DIR" origin/themed-release
             UPSTREAM_SHA="$(tr -d '[:space:]' < "$GENERATED_DIR/.apophis-upstream-sha")"
             RELEASE_SOURCE_SHA="$(git rev-parse HEAD)"
@@ -284,15 +280,16 @@ jobs:
           fi
           UPSTREAM_ALREADY_SYNCHRONIZED="$UPSTREAM_IDENTITY_AND_SHA_MATCH"
 
-          if [[ "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" ]] &&
-             [[ "$PREVIOUS_REPOSITORY_SHA" != "$CURRENT_REPOSITORY_SHA" || "$PREVIOUS_CANVAS_SHA" != "$CURRENT_CANVAS_SHA" ]]; then
+          if [[ "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$PREVIOUS_CANVAS_SHA" != "$CURRENT_CANVAS_SHA" ]]; then
             RELEASE_KIND="repository"
             RELEASE_SOURCE_SHA="$CURRENT_REPOSITORY_SHA"
             RELEASE_IMAGE_TAG="repository-${CURRENT_REPOSITORY_SHA:0:12}"
             echo "RELEASE_KIND=$RELEASE_KIND" >> "$GITHUB_ENV"
             echo "RELEASE_SOURCE_SHA=$RELEASE_SOURCE_SHA" >> "$GITHUB_ENV"
             echo "RELEASE_IMAGE_TAG=$RELEASE_IMAGE_TAG" >> "$GITHUB_ENV"
-            echo "Upstream is unchanged, but repository or Canvas metadata drifted; publishing repository state."
+            echo "Upstream is unchanged, but Canvas metadata drifted; publishing repository state."
+          elif [[ "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$PREVIOUS_REPOSITORY_SHA" != "$CURRENT_REPOSITORY_SHA" ]]; then
+            echo "Repository source drift is intentionally not published without repository_release=true."
           fi
 
           if [[ "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$NEEDS_BINARY_RELEASE" == "true" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) ]]; then

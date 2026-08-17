@@ -380,10 +380,6 @@ export function evaluateSyncHealth(options) {
       criticalReasons.push('Generated release metadata contains an invalid version or tag.')
       releaseDetails.state = 'critical'
     } else {
-      if (release.expectedMainSha && release.repositorySha !== release.expectedMainSha) {
-        recoverableReasons.push(`Generated repository metadata is stale: ${release.repositorySha || 'missing'} != ${release.expectedMainSha}.`)
-        releaseDetails.state = 'recoverable'
-      }
       if (!release.exists) {
         recoverableReasons.push(`GitHub Release ${expectedTag} is missing and requires repair.`)
         releaseDetails.state = 'recoverable'

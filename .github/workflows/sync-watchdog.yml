@@ -44,7 +44,6 @@ jobs:
             --stale-after-minutes 120 \
             --stuck-after-minutes 90 \
             --release-ref themed-release \
-            --expected-main-sha "$GITHUB_SHA" \
             --json-output "$HEALTH_JSON" \
             --github-output "$GITHUB_OUTPUT" 2> "$HEALTH_ERROR"; then
             exit 0

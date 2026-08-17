@@ -93,7 +93,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
 
   const syncPath = '.github/workflows/upstream-theme-sync.yml'
   const sync = files.get(syncPath) || ''
-  check('sync.push_main', syncPath, hasPattern(sync, /\n  push:\n    branches:\n      - main\n/), 'Sync must run for pushes to main.')
+  check('sync.no_push_release', syncPath, !sync.includes('\n  push:') && hasPattern(sync, /\non:\n  workflow_dispatch:/), 'Repository pushes must never publish a themed release automatically.')
   check('sync.coordinated_round', syncPath, !sync.includes('  schedule:') && sync.includes('scheduled_round:') && sync.includes('SCHEDULED_ROUND'), 'Theme sync must be dispatched by the single hourly coordinator.')
   check('sync.upstream', syncPath, sync.includes('https://github.com/Wei-Shaw/sub2api.git'), 'Sync must fetch the canonical upstream repository.')
   const releaseCliPath = 'scripts/resolve-github-release.mjs'
@@ -110,13 +110,13 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.skip_unchanged', syncPath, sync.includes('SCHEDULED_ROUND') && hasPattern(sync, /PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Coordinated hourly runs must skip unchanged upstream revisions.')
   check('sync.theme_overlay', syncPath, sync.includes('node scripts/apply-theme.mjs --root .'), 'Sync must apply the Apophis overlay to fetched upstream source.')
   check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-canvas-sha') && sync.includes('.apophis-release-notes.md'), 'Sync must persist upstream, repository, Canvas, and release notes metadata.')
-  check('sync.repository_recovery', syncPath, sync.includes('repository_release:') && sync.includes('CURRENT_REPOSITORY_SHA') && sync.includes('PREVIOUS_CANVAS_SHA') && sync.includes('UPSTREAM_ALREADY_SYNCHRONIZED'), 'Scheduled and dispatched syncs must recover repository or Canvas drift even when upstream is unchanged.')
+  check('sync.repository_recovery', syncPath, sync.includes('repository_release:') && sync.includes('PREVIOUS_CANVAS_SHA') && sync.includes('Repository source drift is intentionally not published') && sync.includes('UPSTREAM_ALREADY_SYNCHRONIZED'), 'Scheduled syncs may publish Canvas drift, while repository-only changes require explicit repository_release=true.')
   check('sync.canvas_freshness', syncPath, sync.includes('name: Verify Infinite Canvas dependency is current') && sync.includes('LATEST_CANVAS_SHA') && sync.includes('node scripts/resolve-github-release.mjs') && sync.includes('--repository basketikun/infinite-canvas'), 'Theme publication must stop when main is behind the latest published Infinite Canvas release.')
   check('sync.release_notes_encoding', syncPath, sync.includes('cat "$GENERATED_DIR/.apophis-upstream-release-notes.md"') && !/\?{4,}/.test(sync), 'Release notes must preserve readable text instead of emitting literal question-mark placeholders.')
-  check('sync.repository_source', syncPath, sync.includes('git worktree add --detach "$GENERATED_DIR" origin/themed-release') && sync.includes('RELEASE_KIND="repository"') && hasPattern(sync, /github\.event_name[^\n]+push/), 'Push releases must reuse themed-release without fetching upstream.')
-  check('sync.push_checkout', syncPath, sync.includes("ref: ${{ github.event_name == 'push' && github.sha || 'main' }}"), 'Push publication must checkout the immutable event SHA instead of a moving main branch.')
+  check('sync.repository_source', syncPath, sync.includes('git worktree add --detach "$GENERATED_DIR" origin/themed-release') && sync.includes('RELEASE_KIND="repository"') && sync.includes('[[ "$REPOSITORY_RELEASE" == "true" ]]'), 'Explicit repository releases must reuse themed-release without fetching upstream.')
+  check('sync.repository_checkout', syncPath, hasPattern(sync, /name: Checkout theme source[\s\S]{0,300}ref: main/) && !sync.includes("github.event_name == 'push'"), 'Manual and coordinated publication must checkout main explicitly.')
   check('sync.repository_source_sha', syncPath, sync.includes('RELEASE_SOURCE_SHA="$(git rev-parse HEAD)"') && !sync.includes('RELEASE_SOURCE_SHA="${{ github.sha }}"'), 'Repository release metadata must come from the commit actually checked out and built.')
-  check('sync.repository_notes', syncPath, sync.includes('## \u4ed3\u5e93\u4fee\u590d') && sync.includes('Capture repository release notes'), 'Push releases must publish repository fix notes.')
+  check('sync.repository_notes', syncPath, sync.includes('## \u4ed3\u5e93\u4fee\u590d') && sync.includes('Capture repository release notes'), 'Explicit repository releases must publish repository fix notes.')
   check('sync.release_version', syncPath, sync.includes('PREVIOUS_RELEASE_VERSION') && sync.includes('node scripts/next-release-version.mjs \"$PREVIOUS_RELEASE_VERSION\"'), 'Sync must migrate the next release to v0.1.200 and increment the persisted version.')
   const binaryJobIndex = sync.indexOf('\n  binary-release:\n')
   const promoteLatestIndex = sync.indexOf('\n  promote-latest:\n')
@@ -248,12 +248,10 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     watchdog.includes('stale-after-minutes 120') &&
     watchdog.includes('stuck-after-minutes 90') &&
     watchdog.includes('--release-ref themed-release') &&
-    watchdog.includes('--expected-main-sha "$GITHUB_SHA"') &&
     watchdog.includes('gh workflow run infinite-canvas-upstream-sync.yml') &&
     !watchdog.includes('gh workflow run upstream-theme-sync.yml') &&
     watchdog.includes('uses: ./.github/workflows/automation-alert.yml'),
   'The watchdog must inspect both workflows, use fixed thresholds, and recover only through the coordinator.')
-  check('sync.canvas_push_guard', syncPath, sync.includes("github.event_name != 'push'") && sync.includes("head_commit.message, 'Infinite Canvas'"), 'Automated Canvas merge pushes must not create a second repository-only release.')
 
   const binaryPath = '.github/workflows/theme-binary-release.yml'
   const binary = files.get(binaryPath) || ''

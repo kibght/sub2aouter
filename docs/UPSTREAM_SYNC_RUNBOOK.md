@@ -2,7 +2,7 @@
 
 ## 1. 这套自动化做什么
 
-仓库有两条协作流程：
+仓库通过统一协调器工作；普通 main push 只更新代码，不自动发布新版本：
 
 | 流程 | 作用 | 调度 |
 |---|---|---|
@@ -77,7 +77,7 @@ watchdog 输出四种状态：
 |---|---|---:|---:|
 | `healthy` | 两条流程都有新鲜成功运行，且当前版本 Release、附件和仓库元数据完整 | 否 | 否 |
 | `running` | 有正在运行且未超过卡死阈值的任务 | 否 | 否 |
-| `recoverable` | 最近失败、成功时间超过 120 分钟、Release 缺失/附件不完整或仓库元数据漂移，且没有活动任务 | 是，dispatch Canvas 协调器 | 是 |
+| `recoverable` | 最近失败、成功时间超过 120 分钟、Release 缺失或附件不完整，且没有活动任务 | 是，dispatch Canvas 协调器 | 是 |
 | `critical` | API 检查失败、运行记录缺失或活动任务超过 90 分钟 | 否 | 是 |
 
 watchdog 不会直接 dispatch `upstream-theme-sync.yml`，避免绕过 Canvas 门禁和统一协调逻辑。
@@ -205,3 +205,21 @@ node scripts/check-encoding.mjs
 | 网络最大重试次数 | 5 次 |
 | 网络退避上限 | 120 秒 |
 | watchdog evidence 保留 | 30 天 |
+## 11. 禁止 main push 自动发版
+
+普通代码、监控、文档和安全修复合并到 `main` 后不会自动创建版本。发布来源只有：
+
+- 上游正式 Release 发生变化；
+- Infinite Canvas 正式版本发生变化并通过完整 CI；
+- 人工执行 `upstream-theme-sync.yml` 且明确设置 `repository_release=true`。
+
+回滚镜像和删除误发版本：
+
+```powershell
+gh workflow run rollback-themed-latest.yml `
+  --repo kibght/sub2aouter `
+  --ref main `
+  -f restore_version=0.1.241 `
+  -f remove_version=0.1.242 `
+  -f confirm=ROLLBACK
+```

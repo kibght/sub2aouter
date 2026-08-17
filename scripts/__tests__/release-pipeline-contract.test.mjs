@@ -215,18 +215,18 @@ test('contract requires awaited binary publication and final latest promotion', 
   assert.ok(violations.some((violation) => violation.code === 'sync.latest_promotion'))
 })
 
-test('contract binds push checkout and repository metadata to the same immutable head', async () => {
+test('contract binds manual repository publication to the checked out main head', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/upstream-theme-sync.yml'
   files.set(
     path,
     files.get(path)
-      .replace("ref: ${{ github.event_name == 'push' && github.sha || 'main' }}", 'ref: main')
+      .replace('ref: main', 'ref: stale-branch')
       .replace('RELEASE_SOURCE_SHA="$(git rev-parse HEAD)"', 'RELEASE_SOURCE_SHA="${{ github.sha }}"'),
   )
 
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
-  assert.ok(violations.some((violation) => violation.code === 'sync.push_checkout'))
+  assert.ok(violations.some((violation) => violation.code === 'sync.repository_checkout'))
   assert.ok(violations.some((violation) => violation.code === 'sync.repository_source_sha'))
 })
 

@@ -58,6 +58,8 @@ test('repository and canvas drift are recovered before release publication', asy
   assert.match(syncWorkflow, /CURRENT_REPOSITORY_SHA/)
   assert.match(syncWorkflow, /PREVIOUS_CANVAS_SHA/)
   assert.match(syncWorkflow, /PREVIOUS_REPOSITORY_SHA.*PREVIOUS_CANVAS_SHA/)
+  assert.match(syncWorkflow, /PREVIOUS_CANVAS_SHA.*CURRENT_CANVAS_SHA/)
+  assert.match(syncWorkflow, /Repository source drift is intentionally not published/)
   assert.match(syncWorkflow, /\.apophis-canvas-sha/)
   assert.match(syncWorkflow, /name: Verify Infinite Canvas dependency is current/)
   assert.match(syncWorkflow, /LATEST_CANVAS_SHA/)
@@ -151,7 +153,7 @@ test('the Canvas workflow is the single hourly upstream coordinator', async () =
   assert.match(canvasWorkflow, /gh workflow run upstream-theme-sync\.yml[\s\S]*repository_release=false/)
   assert.doesNotMatch(canvasWorkflow, /repository_release=true/)
   assert.match(sub2Workflow, /workflow_dispatch:/)
-  assert.match(sub2Workflow, /github\.event_name != 'push' \|\| !contains\(github\.event\.head_commit\.message, 'Infinite Canvas'\)/)
+  assert.doesNotMatch(sub2Workflow, /head_commit\.message/)
 })
 
 test('Infinite Canvas merge waits for reusable full CI at the update commit', async () => {
@@ -248,7 +250,6 @@ test('the watchdog detects stale synchronization and dispatches only the coordin
   assert.match(watchdog, /cron:\s*'41 \* \* \* \*'/)
   assert.match(watchdog, /node scripts\/check-sync-health\.mjs/)
   assert.match(watchdog, /--release-ref themed-release/)
-  assert.match(watchdog, /--expected-main-sha "\$GITHUB_SHA"/)
   assert.match(watchdog, /gh workflow run infinite-canvas-upstream-sync\.yml/)
   assert.doesNotMatch(watchdog, /gh workflow run upstream-theme-sync\.yml/)
   assert.match(watchdog, /actions\/upload-artifact@/)

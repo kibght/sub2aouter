@@ -51,15 +51,10 @@ async function main() {
   const coordinator = args['coordinator-workflow'] || 'infinite-canvas-upstream-sync.yml'
   const publisher = args['publisher-workflow'] || 'upstream-theme-sync.yml'
   const releaseRef = args['release-ref'] || 'themed-release'
-  const expectedMainSha = args['expected-main-sha'] || process.env.GITHUB_SHA || ''
-  if (!expectedMainSha) {
-    throw new Error('--expected-main-sha or GITHUB_SHA is required')
-  }
-  const [coordinatorSnapshot, publisherSnapshot, versionText, repositoryShaText] = await Promise.all([
+  const [coordinatorSnapshot, publisherSnapshot, versionText] = await Promise.all([
     fetchWorkflowSnapshot({ repository, workflowId: coordinator, name: 'Infinite Canvas coordinator', token }),
     fetchWorkflowSnapshot({ repository, workflowId: publisher, name: 'Themed upstream publisher', token }),
     fetchRepositoryContent({ repository, path: 'backend/cmd/server/VERSION', ref: releaseRef, token }),
-    fetchRepositoryContent({ repository, path: '.apophis-repository-sha', ref: releaseRef, token }),
   ])
   const version = versionText.trim()
   if (!/^\d+\.\d+\.\d+$/.test(version)) {
@@ -68,8 +63,6 @@ async function main() {
   const release = {
     ...(await fetchReleaseSnapshot({ repository, tag: `v${version}`, token })),
     version,
-    repositorySha: repositoryShaText.trim(),
-    expectedMainSha,
   }
   const workflows = [coordinatorSnapshot, publisherSnapshot]
 

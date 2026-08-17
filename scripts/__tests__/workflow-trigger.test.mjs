@@ -2,14 +2,15 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-test('upstream theme workflow runs when main is pushed', async () => {
+test('upstream theme workflow never publishes automatically on main push', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
-  assert.match(workflow, /\non:\n(?:.|\n)*?  push:\n    branches:\n      - main\n/)
+  assert.match(workflow, /\non:\n  workflow_dispatch:/)
+  assert.doesNotMatch(workflow, /\n  push:/)
 })
 
-test('push publication checks out and records the same immutable event head', async () => {
+test('manual repository publication checks out and records main explicitly', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
-  assert.match(workflow, /ref: \$\{\{ github\.event_name == 'push' && github\.sha \|\| 'main' \}\}/)
+  assert.match(workflow, /ref: main/)
   assert.match(workflow, /RELEASE_SOURCE_SHA="\$\(git rev-parse HEAD\)"/)
   assert.doesNotMatch(workflow, /RELEASE_SOURCE_SHA="\$\{\{ github\.sha \}\}"/)
 })
@@ -42,9 +43,9 @@ test('upstream sync verifies the release contract before fetching upstream', asy
 })
 
 
-test('main pushes reuse the existing themed release without fetching upstream', async () => {
+test('manual repository releases reuse the existing themed release without fetching upstream', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
-  assert.match(workflow, /github\.event_name.*push/)
+  assert.match(workflow, /REPOSITORY_RELEASE.*true/)
   assert.match(workflow, /git worktree add --detach "\$GENERATED_DIR" origin\/themed-release/)
   assert.match(workflow, /RELEASE_KIND="repository"/)
   assert.match(workflow, /\u4ed3\u5e93\u4fee\u590d/)

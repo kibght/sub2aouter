@@ -272,7 +272,7 @@ test('missing or incomplete generated releases are recoverable', () => {
   }
 })
 
-test('generated repository metadata drift is recoverable', () => {
+test('repository-only metadata drift does not mint an automatic release', () => {
   const result = evaluateSyncHealth({
     now: NOW,
     staleAfterMinutes: 120,
@@ -280,9 +280,8 @@ test('generated repository metadata drift is recoverable', () => {
     workflows: [workflow()],
     release: release({ repositorySha: 'stale-sha' }),
   })
-  assert.equal(result.state, 'recoverable')
-  assert.equal(result.shouldDispatch, true)
-  assert.match(result.summary, /repository metadata/i)
+  assert.equal(result.state, 'healthy')
+  assert.equal(result.shouldDispatch, false)
 })
 
 test('an active synchronization run suppresses duplicate release repair dispatch', () => {
