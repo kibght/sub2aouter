@@ -51,6 +51,12 @@ test('frontend security override pins the patched nanoid release across upstream
     entry.source === 'patches/frontend-nanoid-override.txt' &&
     entry.sentinel === '      "nanoid@<3.3.18": "3.3.18",'
   ))
+  assert.ok((manifest.patches || []).some((entry) =>
+    entry.target === 'frontend/package.json' &&
+    entry.source === 'patches/frontend-nanoid-override-migration.txt' &&
+    entry.marker === '      "nanoid@<3.3.17": "3.3.17",' &&
+    entry.optional === true
+  ))
   const reconcile = workflow.indexOf('pnpm install --lockfile-only --no-frozen-lockfile')
   const contractCheck = workflow.indexOf('name: Verify theme overlay and UTF-8')
   const frozenInstall = workflow.indexOf('pnpm install --frozen-lockfile')

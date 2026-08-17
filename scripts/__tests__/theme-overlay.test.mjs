@@ -340,3 +340,26 @@ test('check mode rejects drift when the primary marker remains with a sentinel',
     /Theme patch drift.*frontend\/theme\.js/,
   )
 })
+
+test('optional replacement patches leave already-new upstream files unchanged', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-optional-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-optional-overlay-'))
+  await mkdir(path.join(root, 'frontend'), { recursive: true })
+  await mkdir(path.join(overlay, 'patches'), { recursive: true })
+  await writeFile(path.join(root, 'frontend/package.json'), '{"overrides": {}}\n')
+  await writeFile(path.join(overlay, 'patches/nanoid.txt'), '"nanoid@<3.3.18": "3.3.18"')
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    patches: [{
+      target: 'frontend/package.json',
+      operation: 'replace',
+      marker: '"nanoid@<3.3.17": "3.3.17"',
+      source: 'patches/nanoid.txt',
+      sentinel: '"nanoid@<3.3.18": "3.3.18"',
+      optional: true,
+    }],
+  }))
+
+  const result = await applyTheme({ root, overlay })
+  assert.equal(result.changed, false)
+  assert.equal(await readFile(path.join(root, 'frontend/package.json'), 'utf8'), '{"overrides": {}}\n')
+})

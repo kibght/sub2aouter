@@ -53,6 +53,7 @@ function applyPatch(text, patch, patchText) {
   if (normalizedPatchText && normalizedSentinel && text.includes(normalizedSentinel)) {
     throw new Error(`Theme patch drift in ${patch.target}: sentinel exists without the exact replacement`)
   }
+  if (patch.optional === true) return text
   throw new Error(`Patch marker not found in ${patch.target}: ${patch.marker}`)
 }
 
