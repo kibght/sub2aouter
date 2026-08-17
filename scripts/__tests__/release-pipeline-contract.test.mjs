@@ -409,3 +409,12 @@ test('contract requires a watchdog that only dispatches the coordinator', async 
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
   assert.ok(violations.some((violation) => violation.code === 'sync.watchdog'))
 })
+
+test('contract requires reusable CI to validate the generated Go module version', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/backend-ci.yml'
+  files.set(path, files.get(path).replaceAll("GO_VERSION=\"$(awk '$1 == \"go\" { print $2; exit }' backend/go.mod)\"", 'GO_VERSION=disabled'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'ci.go_version'))
+})

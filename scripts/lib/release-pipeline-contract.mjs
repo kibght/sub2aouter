@@ -184,6 +184,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   const ci = files.get(ciPath) || ''
   const reusableCheckoutRefs = ci.match(/ref: \$\{\{ inputs\.ref \|\| github\.sha \}\}/g) || []
   check('ci.reusable_ref', ciPath, hasPattern(ci, /\n  workflow_call:\n/) && ci.includes('description: Commit, branch, or tag to verify') && ci.includes('type: string') && reusableCheckoutRefs.length === 5, 'CI must be reusable and every checkout must verify the requested immutable ref.')
+  check('ci.go_version', ciPath, ci.includes("GO_VERSION=\"$(awk '$1 == \"go\" { print $2; exit }' backend/go.mod)\"") && ci.includes('test \"$(go env GOVERSION)\" = \"go${GO_VERSION}\"'), 'Reusable CI must validate the Go toolchain against the generated module version.')
 
   const canvasSyncPath = '.github/workflows/infinite-canvas-upstream-sync.yml'
   const canvasSync = files.get(canvasSyncPath) || ''
