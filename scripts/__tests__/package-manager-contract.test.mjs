@@ -43,13 +43,13 @@ test('frontend security override pins the patched nanoid release across upstream
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
   const manifest = JSON.parse(await readFile('theme/apophis/manifest.json', 'utf8'))
 
-  assert.equal(packageJson.pnpm?.overrides?.['nanoid@<3.3.17'], '3.3.17')
-  assert.match(lockfile, /nanoid@3\.3\.17/)
-  assert.doesNotMatch(lockfile, /nanoid@3\.3\.16/)
+  assert.equal(packageJson.pnpm?.overrides?.['nanoid@<3.3.18'], '3.3.18')
+  assert.match(lockfile, /nanoid@3\.3\.18/)
+  assert.doesNotMatch(lockfile, /nanoid@3\.3\.17/)
   assert.ok((manifest.patches || []).some((entry) =>
     entry.target === 'frontend/package.json' &&
     entry.source === 'patches/frontend-nanoid-override.txt' &&
-    entry.sentinel === '      "nanoid@<3.3.17": "3.3.17",'
+    entry.sentinel === '      "nanoid@<3.3.18": "3.3.18",'
   ))
   const reconcile = workflow.indexOf('pnpm install --lockfile-only --no-frozen-lockfile')
   const contractCheck = workflow.indexOf('name: Verify theme overlay and UTF-8')
