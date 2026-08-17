@@ -247,6 +247,8 @@ test('the watchdog detects stale synchronization and dispatches only the coordin
 
   assert.match(watchdog, /cron:\s*'41 \* \* \* \*'/)
   assert.match(watchdog, /node scripts\/check-sync-health\.mjs/)
+  assert.match(watchdog, /--release-ref themed-release/)
+  assert.match(watchdog, /--expected-main-sha "\$GITHUB_SHA"/)
   assert.match(watchdog, /gh workflow run infinite-canvas-upstream-sync\.yml/)
   assert.doesNotMatch(watchdog, /gh workflow run upstream-theme-sync\.yml/)
   assert.match(watchdog, /actions\/upload-artifact@/)

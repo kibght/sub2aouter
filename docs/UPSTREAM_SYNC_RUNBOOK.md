@@ -75,9 +75,9 @@ watchdog 输出四种状态：
 
 | 状态 | 含义 | 是否 dispatch | 是否告警 |
 |---|---|---:|---:|
-| `healthy` | 两条流程都有新鲜成功运行 | 否 | 否 |
+| `healthy` | 两条流程都有新鲜成功运行，且当前版本 Release、附件和仓库元数据完整 | 否 | 否 |
 | `running` | 有正在运行且未超过卡死阈值的任务 | 否 | 否 |
-| `recoverable` | 最近失败或成功时间超过 120 分钟，且没有活动任务 | 是，dispatch Canvas 协调器 | 是 |
+| `recoverable` | 最近失败、成功时间超过 120 分钟、Release 缺失/附件不完整或仓库元数据漂移，且没有活动任务 | 是，dispatch Canvas 协调器 | 是 |
 | `critical` | API 检查失败、运行记录缺失或活动任务超过 90 分钟 | 否 | 是 |
 
 watchdog 不会直接 dispatch `upstream-theme-sync.yml`，避免绕过 Canvas 门禁和统一协调逻辑。

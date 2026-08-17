@@ -247,6 +247,8 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     watchdog.includes('node scripts/check-sync-health.mjs') &&
     watchdog.includes('stale-after-minutes 120') &&
     watchdog.includes('stuck-after-minutes 90') &&
+    watchdog.includes('--release-ref themed-release') &&
+    watchdog.includes('--expected-main-sha "$GITHUB_SHA"') &&
     watchdog.includes('gh workflow run infinite-canvas-upstream-sync.yml') &&
     !watchdog.includes('gh workflow run upstream-theme-sync.yml') &&
     watchdog.includes('uses: ./.github/workflows/automation-alert.yml'),
