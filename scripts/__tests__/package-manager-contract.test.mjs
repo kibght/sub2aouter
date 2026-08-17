@@ -24,7 +24,7 @@ test('GitHub workflows use the pinned pnpm version', async () => {
 
   for (const workflow of workflows) {
     const source = await readFile(workflow, 'utf8')
-    assert.match(source, new RegExp(`uses: pnpm/action-setup@v6[\\s\\S]{0,80}version: ${pnpmVersion.replaceAll('.', '\\.')}`), workflow)
+    assert.match(source, new RegExp(`uses: pnpm/action-setup@[0-9a-f]{40} \# v6[\\s\\S]{0,80}version: ${pnpmVersion.replaceAll('.', '\\.')}`), workflow)
   }
 })
 
