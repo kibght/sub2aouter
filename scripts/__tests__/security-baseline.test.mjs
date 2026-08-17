@@ -3,13 +3,14 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 test('Go security baseline uses 1.26.6 across modules, images, and workflows', async () => {
-  const [goMod, rootDockerfile, backendDockerfile, deployDockerfile, release, security] = await Promise.all([
+  const [goMod, rootDockerfile, backendDockerfile, deployDockerfile, release, security, manifestText] = await Promise.all([
     readFile('backend/go.mod', 'utf8'),
     readFile('Dockerfile', 'utf8'),
     readFile('backend/Dockerfile', 'utf8'),
     readFile('deploy/Dockerfile', 'utf8'),
     readFile('.github/workflows/release.yml', 'utf8'),
     readFile('.github/workflows/security-scan.yml', 'utf8'),
+    readFile('theme/apophis/manifest.json', 'utf8'),
   ])
 
   assert.match(goMod, /^go 1\.26\.6$/m)
@@ -17,6 +18,18 @@ test('Go security baseline uses 1.26.6 across modules, images, and workflows', a
     assert.match(dockerfile, /golang:1\.26\.6-alpine/)
     assert.doesNotMatch(dockerfile, /1\.26\.5/)
   }
+
+  const manifest = JSON.parse(manifestText)
+  const requiredPatches = new Map([
+    ['backend/go.mod', 'patches/go-version-1.26.6.txt'],
+    ['backend/Dockerfile', 'patches/backend-dockerfile-go-1.26.6.txt'],
+    ['Dockerfile', 'patches/dockerfile-go-1.26.6.txt'],
+    ['deploy/Dockerfile', 'patches/deploy-dockerfile-go-1.26.6.txt'],
+  ])
+  for (const [target, source] of requiredPatches) {
+    assert.ok((manifest.patches || []).some((entry) => entry.target === target && entry.source === source && entry.sentinel?.includes('1.26.6')), `${target} security patch`)
+  }
+
   for (const workflow of [release, security]) {
     assert.match(workflow, /GO_VERSION="\$\(awk '\$1 == "go" \{ print \$2; exit \}' backend\/go\.mod\)"/)
     assert.match(workflow, /test "\$\(go env GOVERSION\)" = "go\$\{GO_VERSION\}"/)

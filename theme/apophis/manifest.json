@@ -156,6 +156,34 @@
       "sentinel": "    image: ${SUB2API_IMAGE:-ghcr.io/kibght/sub2aouter:latest}"
     },
     {
+      "target": "backend/go.mod",
+      "operation": "replace",
+      "marker": "go 1.26.5",
+      "source": "patches/go-version-1.26.6.txt",
+      "sentinel": "go 1.26.6"
+    },
+    {
+      "target": "backend/Dockerfile",
+      "operation": "replace",
+      "marker": "FROM golang:1.26.5-alpine",
+      "source": "patches/backend-dockerfile-go-1.26.6.txt",
+      "sentinel": "FROM golang:1.26.6-alpine"
+    },
+    {
+      "target": "Dockerfile",
+      "operation": "replace",
+      "marker": "ARG GOLANG_IMAGE=golang:1.26.5-alpine",
+      "source": "patches/dockerfile-go-1.26.6.txt",
+      "sentinel": "ARG GOLANG_IMAGE=golang:1.26.6-alpine"
+    },
+    {
+      "target": "deploy/Dockerfile",
+      "operation": "replace",
+      "marker": "ARG GOLANG_IMAGE=golang:1.26.5-alpine",
+      "source": "patches/deploy-dockerfile-go-1.26.6.txt",
+      "sentinel": "ARG GOLANG_IMAGE=golang:1.26.6-alpine"
+    },
+    {
       "target": "Dockerfile",
       "operation": "replace",
       "marker": "-X main.BuildType=docker",
@@ -182,6 +210,14 @@
       "position": "after",
       "source": "patches/frontend-package-manager.txt",
       "sentinel": "  \"packageManager\": \"pnpm@9.15.9\","
+    },
+    {
+      "target": "frontend/package.json",
+      "operation": "replace",
+      "marker": "      \"nanoid@<3.3.17\": \"3.3.17\",",
+      "source": "patches/frontend-nanoid-override-migration.txt",
+      "sentinel": "      \"nanoid@<3.3.18\": \"3.3.18\",",
+      "optional": true
     },
     {
       "target": "frontend/package.json",
