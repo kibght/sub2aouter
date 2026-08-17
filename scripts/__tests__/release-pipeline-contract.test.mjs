@@ -81,7 +81,7 @@ printf '?????????'
 test('contract rejects a coordinator that moves off the hourly schedule', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/infinite-canvas-upstream-sync.yml'
-  files.set(path, files.get(path).replace("cron: '7 * * * *'", "cron: '0 * * * *'"))
+  files.set(path, files.get(path).replace("cron: '17 * * * *'", "cron: '0 * * * *'"))
 
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
   assert.ok(violations.some((violation) => violation.code === 'canvas_sync.schedule'))
@@ -284,7 +284,7 @@ test('contract requires fail-closed release discovery and a private upstream rel
   files.set(
     path,
     files.get(path)
-      .replaceAll('UPSTREAM_RELEASE_ERROR_FILE', 'DISABLED_RELEASE_ERROR_FILE')
+      .replaceAll('steps.upstream_release.outputs.found', 'steps.upstream_release.outputs.disabled')
       .replaceAll('refs/apophis/upstream-release', 'refs/tags/${UPSTREAM_RELEASE_TAG}'),
   )
 
@@ -334,11 +334,87 @@ test('contract requires fail-closed Canvas discovery and tested-head merge bindi
   files.set(
     path,
     files.get(path)
-      .replaceAll('INFINITE_CANVAS_RELEASE_ERROR_FILE', 'DISABLED_CANVAS_RELEASE_ERROR_FILE')
+      .replaceAll('steps.canvas_release.outputs.found', 'steps.canvas_release.outputs.disabled')
       .replaceAll('--match-head-commit "$UPDATE_SHA"', '--admin'),
   )
 
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
   assert.ok(violations.some((violation) => violation.code === 'canvas_sync.release_fail_closed'))
   assert.ok(violations.some((violation) => violation.code === 'canvas_sync.merge_identity'))
+})
+
+test('contract requires the tested fail-closed release discovery CLI', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(path, files.get(path).replaceAll('node scripts/resolve-github-release.mjs', 'node scripts/legacy-release-query.mjs'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.release_discovery_cli'))
+})
+
+test('contract requires bounded retry for synchronization network operations', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/infinite-canvas-upstream-sync.yml'
+  files.set(path, files.get(path).replaceAll('source scripts/ci/retry.sh', ''))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.network_retry'))
+})
+
+test('contract requires primary workflow failure alerts', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(path, files.get(path).replace('uses: ./.github/workflows/automation-alert.yml', ''))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.failure_alert'))
+})
+
+test('contract requires synchronization step summaries', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(path, files.get(path).replace('$GITHUB_STEP_SUMMARY', '/tmp/missing-summary'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.workflow_summary'))
+})
+
+test('contract requires immutable remote action pins', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/backend-ci.yml'
+  files.set(path, files.get(path).replace(/actions\/checkout@[^\s#]+/, 'actions/checkout@v6'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.action_pins'))
+})
+
+test('contract owns the alert and watchdog workflow snapshots', async () => {
+  assert.ok(RELEASE_PIPELINE_FILES.includes('.github/workflows/automation-alert.yml'))
+  assert.ok(RELEASE_PIPELINE_FILES.includes('.github/workflows/sync-watchdog.yml'))
+
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(path, files.get(path).replace('automation-alert.yml|sync-watchdog.yml', ''))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.owned_workflows'))
+})
+
+test('contract requires a watchdog that only dispatches the coordinator', async () => {
+  assert.ok(RELEASE_PIPELINE_FILES.includes('.github/workflows/sync-watchdog.yml'))
+  const files = await loadContractFiles()
+  const path = '.github/workflows/sync-watchdog.yml'
+  files.set(path, files.get(path).replace('gh workflow run infinite-canvas-upstream-sync.yml', 'gh workflow run upstream-theme-sync.yml'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.watchdog'))
+})
+
+test('contract requires reusable CI to validate the generated Go module version', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/backend-ci.yml'
+  files.set(path, files.get(path).replaceAll("GO_VERSION=\"$(awk '$1 == \"go\" { print $2; exit }' backend/go.mod)\"", 'GO_VERSION=disabled'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'ci.go_version'))
 })

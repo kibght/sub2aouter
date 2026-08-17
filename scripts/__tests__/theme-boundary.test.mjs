@@ -76,7 +76,7 @@ test('panel updater and binary release workflow use the custom repository', asyn
 test('the unified upstream round runs hourly and skips unchanged revisions', async () => {
   const workflow = await read('.github/workflows/upstream-theme-sync.yml')
   const coordinator = await read('.github/workflows/infinite-canvas-upstream-sync.yml')
-  assert.match(coordinator, /cron:\s*'7 \* \* \* \*'/)
+  assert.match(coordinator, /cron:\s*'17 \* \* \* \*'/)
   assert.doesNotMatch(workflow, /schedule:/)
   assert.match(workflow, /scheduled_round:/)
   assert.match(workflow, /SCHEDULED_ROUND/)
@@ -144,7 +144,7 @@ test('Docker builds use the official release update path', async () => {
 
 test('upstream sync captures release notes only for a release contained in the fetched source', async () => {
   const workflow = await read('.github/workflows/upstream-theme-sync.yml')
-  assert.match(workflow, /repos\/Wei-Shaw\/sub2api\/releases\/latest/)
+  assert.match(workflow, /node scripts\/resolve-github-release\.mjs[\s\S]*--repository Wei-Shaw\/sub2api/)
   assert.match(workflow, /gh api[\s\S]*--jq/)
   assert.doesNotMatch(workflow, /\n\s+jq -r/)
   assert.match(workflow, /merge-base --is-ancestor/)

@@ -9,7 +9,7 @@
 
 ARG NODE_IMAGE=node:24-alpine
 ARG BUN_IMAGE=oven/bun:1.3.13
-ARG GOLANG_IMAGE=golang:1.26.5-alpine
+ARG GOLANG_IMAGE=golang:1.26.6-alpine
 ARG ALPINE_IMAGE=alpine:3.21
 ARG POSTGRES_IMAGE=postgres:18-alpine
 ARG GOPROXY=https://goproxy.cn,direct
