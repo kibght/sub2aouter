@@ -43,6 +43,7 @@ jobs:
             --repository "$GITHUB_REPOSITORY" \
             --stale-after-minutes 120 \
             --stuck-after-minutes 90 \
+            --release-ref themed-release \
             --json-output "$HEALTH_JSON" \
             --github-output "$GITHUB_OUTPUT" 2> "$HEALTH_ERROR"; then
             exit 0

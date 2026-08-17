@@ -2,7 +2,12 @@
 
 import { appendFile, writeFile } from 'node:fs/promises'
 
-import { evaluateSyncHealth, fetchWorkflowSnapshot } from './lib/sync-health.mjs'
+import {
+  evaluateSyncHealth,
+  fetchReleaseSnapshot,
+  fetchRepositoryContent,
+  fetchWorkflowSnapshot,
+} from './lib/sync-health.mjs'
 
 function parseArguments(argv) {
   const options = {}
@@ -45,16 +50,28 @@ async function main() {
   const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || ''
   const coordinator = args['coordinator-workflow'] || 'infinite-canvas-upstream-sync.yml'
   const publisher = args['publisher-workflow'] || 'upstream-theme-sync.yml'
-  const workflows = await Promise.all([
+  const releaseRef = args['release-ref'] || 'themed-release'
+  const [coordinatorSnapshot, publisherSnapshot, versionText] = await Promise.all([
     fetchWorkflowSnapshot({ repository, workflowId: coordinator, name: 'Infinite Canvas coordinator', token }),
     fetchWorkflowSnapshot({ repository, workflowId: publisher, name: 'Themed upstream publisher', token }),
+    fetchRepositoryContent({ repository, path: 'backend/cmd/server/VERSION', ref: releaseRef, token }),
   ])
+  const version = versionText.trim()
+  if (!/^\d+\.\d+\.\d+$/.test(version)) {
+    throw new Error(`Invalid generated release version: ${version || 'empty'}`)
+  }
+  const release = {
+    ...(await fetchReleaseSnapshot({ repository, tag: `v${version}`, token })),
+    version,
+  }
+  const workflows = [coordinatorSnapshot, publisherSnapshot]
 
   const result = evaluateSyncHealth({
     now: args.now || new Date(),
     staleAfterMinutes: Number(args['stale-after-minutes'] || 120),
     stuckAfterMinutes: Number(args['stuck-after-minutes'] || 90),
     workflows,
+    release,
   })
   const json = `${JSON.stringify(result, null, 2)}\n`
   process.stdout.write(json)

@@ -4,6 +4,8 @@ import test from 'node:test'
 import {
   evaluateSyncHealth,
   fetchWorkflowSnapshot,
+  fetchReleaseSnapshot,
+  fetchRepositoryContent,
 } from '../lib/sync-health.mjs'
 
 const NOW = new Date('2026-08-17T12:00:00Z')
@@ -224,4 +226,102 @@ test('workflow API snapshots retry transient failures and reject malformed paylo
     }),
     /workflow_runs/i,
   )
+})
+
+function release(overrides = {}) {
+  return {
+    version: '0.1.242',
+    tag: 'v0.1.242',
+    exists: true,
+    draft: false,
+    prerelease: false,
+    target: 'themed-release',
+    assets: [
+      'sub2api_0.1.242_linux_amd64.tar.gz',
+      'sub2api_0.1.242_linux_arm64.tar.gz',
+      'sub2api_0.1.242_windows_amd64.zip',
+      'sub2api_0.1.242_darwin_amd64.tar.gz',
+      'sub2api_0.1.242_darwin_arm64.tar.gz',
+      'checksums.txt',
+    ],
+    repositorySha: 'main-sha',
+    expectedMainSha: 'main-sha',
+    ...overrides,
+  }
+}
+
+test('missing or incomplete generated releases are recoverable', () => {
+  for (const snapshot of [
+    release({ exists: false, assets: [] }),
+    release({ assets: ['checksums.txt'] }),
+    release({ draft: true }),
+    release({ prerelease: true }),
+    release({ target: 'main' }),
+  ]) {
+    const result = evaluateSyncHealth({
+      now: NOW,
+      staleAfterMinutes: 120,
+      stuckAfterMinutes: 90,
+      workflows: [workflow()],
+      release: snapshot,
+    })
+    assert.equal(result.state, 'recoverable')
+    assert.equal(result.shouldDispatch, true)
+    assert.equal(result.shouldAlert, true)
+    assert.match(result.summary, /release/i)
+  }
+})
+
+test('repository-only metadata drift does not mint an automatic release', () => {
+  const result = evaluateSyncHealth({
+    now: NOW,
+    staleAfterMinutes: 120,
+    stuckAfterMinutes: 90,
+    workflows: [workflow()],
+    release: release({ repositorySha: 'stale-sha' }),
+  })
+  assert.equal(result.state, 'healthy')
+  assert.equal(result.shouldDispatch, false)
+})
+
+test('an active synchronization run suppresses duplicate release repair dispatch', () => {
+  const result = evaluateSyncHealth({
+    now: NOW,
+    staleAfterMinutes: 120,
+    stuckAfterMinutes: 90,
+    workflows: [workflow({ latestRun: { status: 'in_progress', conclusion: null, createdAt: '2026-08-17T11:50:00Z', updatedAt: '2026-08-17T11:55:00Z', url: '' } })],
+    release: release({ exists: false, assets: [] }),
+  })
+  assert.equal(result.state, 'running')
+  assert.equal(result.shouldDispatch, false)
+})
+
+test('release API snapshots treat 404 as a missing repairable release', async () => {
+  const missing = await fetchReleaseSnapshot({
+    repository: 'owner/repo',
+    tag: 'v0.1.242',
+    fetchImpl: async () => new Response('not found', { status: 404 }),
+    sleep: async () => {},
+  })
+  assert.deepEqual(missing, { tag: 'v0.1.242', exists: false, draft: false, prerelease: false, target: '', assets: [] })
+
+  const found = await fetchReleaseSnapshot({
+    repository: 'owner/repo',
+    tag: 'v0.1.242',
+    fetchImpl: async () => new Response(JSON.stringify({ tag_name: 'v0.1.242', draft: false, prerelease: false, target_commitish: 'themed-release', assets: [{ name: 'checksums.txt' }] }), { status: 200 }),
+    sleep: async () => {},
+  })
+  assert.equal(found.exists, true)
+  assert.deepEqual(found.assets, ['checksums.txt'])
+})
+
+test('repository content API decodes base64 metadata', async () => {
+  const content = await fetchRepositoryContent({
+    repository: 'owner/repo',
+    path: 'backend/cmd/server/VERSION',
+    ref: 'themed-release',
+    fetchImpl: async () => new Response(JSON.stringify({ encoding: 'base64', content: Buffer.from('0.1.242\n').toString('base64') }), { status: 200 }),
+    sleep: async () => {},
+  })
+  assert.equal(content, '0.1.242\n')
 })
