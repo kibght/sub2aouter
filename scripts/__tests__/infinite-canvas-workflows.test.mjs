@@ -43,10 +43,10 @@ test('both upstream workflows inspect published release metadata before syncing'
   const sub2Workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
   const canvasWorkflow = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
 
-  assert.match(sub2Workflow, /repos\/Wei-Shaw\/sub2api\/releases\/latest/)
+  assert.match(sub2Workflow, /node scripts\/resolve-github-release\.mjs[\s\S]*--repository Wei-Shaw\/sub2api/)
   assert.match(sub2Workflow, /UPSTREAM_RELEASE_TAG/)
   assert.match(canvasWorkflow, /CANVAS_REPOSITORY: basketikun\/infinite-canvas/)
-  assert.match(canvasWorkflow, /repos\/\$\{CANVAS_REPOSITORY\}\/releases\/latest/)
+  assert.match(canvasWorkflow, /node scripts\/resolve-github-release\.mjs[\s\S]*--repository "\$CANVAS_REPOSITORY"/)
   assert.match(canvasWorkflow, /INFINITE_CANVAS_RELEASE_TAG/)
 })
 
@@ -145,7 +145,7 @@ test('the Canvas workflow is the single hourly upstream coordinator', async () =
   const sub2Workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
   const canvasWorkflow = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
 
-  assert.match(canvasWorkflow, /cron:\s*'7 \* \* \* \*'/)
+  assert.match(canvasWorkflow, /cron:\s*'17 \* \* \* \*'/)
   assert.doesNotMatch(sub2Workflow, /schedule:/)
   assert.match(canvasWorkflow, /needs\.update\.outputs\.changed/)
   assert.match(canvasWorkflow, /gh workflow run upstream-theme-sync\.yml[\s\S]*repository_release=false/)
@@ -196,10 +196,9 @@ test('release discovery fails closed and keeps external tags out of run template
     readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8'),
   ])
 
-  assert.equal((sub2Workflow.match(/repos\/Wei-Shaw\/sub2api\/releases\/latest/g) || []).length, 1)
+  assert.match(sub2Workflow, /node scripts\/resolve-github-release\.mjs[\s\S]*--repository Wei-Shaw\/sub2api/)
+  assert.match(sub2Workflow, /steps\.upstream_release\.outputs\.found/)
   assert.doesNotMatch(sub2Workflow, /releases\/latest[^\n]*\|\| true/)
-  assert.match(sub2Workflow, /UPSTREAM_RELEASE_ERROR_FILE/)
-  assert.match(sub2Workflow, /grep -Eiq '404\|not found'/)
   assert.match(sub2Workflow, /refs\/apophis\/upstream-release/)
   assert.doesNotMatch(sub2Workflow, /:refs\/tags\/\$\{UPSTREAM_RELEASE_TAG\}/)
   assert.match(
@@ -211,8 +210,9 @@ test('release discovery fails closed and keeps external tags out of run template
     /PREVIOUS_UPSTREAM_RELEASE_ID[\s\S]*UPSTREAM_RELEASE_ID[\s\S]*PREVIOUS_UPSTREAM_SHA[\s\S]*UPSTREAM_SHA/,
   )
 
+  assert.match(canvasWorkflow, /node scripts\/resolve-github-release\.mjs[\s\S]*--repository "\$CANVAS_REPOSITORY"/)
   assert.doesNotMatch(canvasWorkflow, /releases\/latest[^\n]*\|\| true/)
-  assert.match(canvasWorkflow, /INFINITE_CANVAS_RELEASE_ERROR_FILE/)
+  assert.match(canvasWorkflow, /RELEASE_FOUND: \$\{\{ steps\.canvas_release\.outputs\.found \}\}/)
   assert.match(canvasWorkflow, /RELEASE_TAG: \$\{\{ steps\.canvas_release\.outputs\.tag \}\}/)
   assert.doesNotMatch(canvasWorkflow, /RELEASE_TAG="\$\{\{ steps\.canvas_release\.outputs\.tag \}\}"/)
   assert.match(
@@ -228,4 +228,40 @@ test('Canvas merge is bound to the exact SHA that passed full CI', async () => {
   assert.match(workflow, /--json headRefOid --jq '\.headRefOid'/)
   assert.match(workflow, /\[\[ "\$PR_HEAD_SHA" == "\$UPDATE_SHA" \]\]/)
   assert.match(workflow, /--match-head-commit "\$UPDATE_SHA"/)
+})
+
+test('synchronization workflows use reusable incident alerts', async () => {
+  const canvas = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
+  const sync = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  const alert = await readFile('.github/workflows/automation-alert.yml', 'utf8')
+
+  assert.match(canvas, /uses: \.\/\.github\/workflows\/automation-alert\.yml/)
+  assert.match(sync, /uses: \.\/\.github\/workflows\/automation-alert\.yml/)
+  assert.match(alert, /workflow_call:/)
+  assert.match(alert, /gh issue (create|comment)/)
+  assert.match(alert, /TELEGRAM_BOT_TOKEN/)
+})
+
+test('the watchdog detects stale synchronization and dispatches only the coordinator', async () => {
+  const watchdog = await readFile('.github/workflows/sync-watchdog.yml', 'utf8')
+
+  assert.match(watchdog, /cron:\s*'41 \* \* \* \*'/)
+  assert.match(watchdog, /node scripts\/check-sync-health\.mjs/)
+  assert.match(watchdog, /gh workflow run infinite-canvas-upstream-sync\.yml/)
+  assert.doesNotMatch(watchdog, /gh workflow run upstream-theme-sync\.yml/)
+  assert.match(watchdog, /actions\/upload-artifact@/)
+  assert.match(watchdog, /uses: \.\/\.github\/workflows\/automation-alert\.yml/)
+})
+
+test('network-facing synchronization steps source the bounded retry helper', async () => {
+  const canvas = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
+  const sync = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  const retry = await readFile('scripts/ci/retry.sh', 'utf8')
+
+  assert.match(retry, /retry_with_backoff\(\)/)
+  assert.match(retry, /MAX_ATTEMPTS/)
+  assert.match(canvas, /source scripts\/ci\/retry\.sh/)
+  assert.match(sync, /source scripts\/ci\/retry\.sh/)
+  assert.match(canvas, /retry_with_backoff .*git .*fetch/)
+  assert.match(sync, /retry_with_backoff .*git .*fetch/)
 })

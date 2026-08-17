@@ -55,12 +55,12 @@ test('main pushes reuse the existing themed release without fetching upstream', 
 test('the coordinated upstream round avoids hourly load boundaries and retries transient fetch failures', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
   const coordinator = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
-  assert.match(coordinator, /cron:\s*'7 \* \* \* \*'/)
+  assert.match(coordinator, /cron:\s*'17 \* \* \* \*'/)
   assert.doesNotMatch(coordinator, /cron:\s*'\*\/30 \* \* \* \*'/)
   assert.doesNotMatch(workflow, /schedule:/)
   assert.match(workflow, /SCHEDULED_ROUND/)
-  assert.match(workflow, /fetch_upstream_with_retry\(\)/)
-  assert.match(workflow, /git fetch --depth=1 upstream "\$UPSTREAM_REF"/)
+  assert.match(workflow, /source scripts\/ci\/retry\.sh/)
+  assert.match(workflow, /retry_with_backoff 5 5 git fetch --depth=1 upstream "\$UPSTREAM_REF"/)
 })
 
 test('scheduled upstream sync deduplicates by release identity before falling back to SHA', async () => {
@@ -72,4 +72,12 @@ test('scheduled upstream sync deduplicates by release identity before falling ba
   assert.match(workflow, /RELEASE_KIND.*upstream.*github\.event_name.*schedule/)
   assert.match(workflow, /PREVIOUS_UPSTREAM_RELEASE_ID.*UPSTREAM_RELEASE_ID/)
   assert.match(workflow, /PREVIOUS_UPSTREAM_RELEASE_TAG.*UPSTREAM_RELEASE_TAG/)
+})
+
+test('the watchdog runs independently away from the coordinator boundary', async () => {
+  const watchdog = await readFile('.github/workflows/sync-watchdog.yml', 'utf8')
+  assert.match(watchdog, /cron:\s*'41 \* \* \* \*'/)
+  assert.match(watchdog, /workflow_dispatch:/)
+  assert.match(watchdog, /stale-after-minutes 120/)
+  assert.match(watchdog, /stuck-after-minutes 90/)
 })
