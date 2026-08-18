@@ -1,0 +1,748 @@
+name: Sync Upstream With Apophis Theme
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: Upstream branch, tag, or commit
+        required: false
+        default: main
+        type: string
+      repository_release:
+        description: Publish current repository changes without refetching upstream
+        required: false
+        default: false
+        type: boolean
+      scheduled_round:
+        description: Treat this dispatch as the unified hourly upstream check
+        required: false
+        default: false
+        type: boolean
+concurrency:
+  group: upstream-theme-sync
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: write
+  packages: write
+  issues: write
+
+jobs:
+  sync-build-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      run_binary: ${{ steps.release_outputs.outputs.run_binary }}
+      should_promote_latest: ${{ steps.release_outputs.outputs.should_promote_latest }}
+      release_ref: ${{ steps.release_outputs.outputs.release_ref }}
+      release_version: ${{ steps.release_outputs.outputs.release_version }}
+    env:
+      UPSTREAM_REPOSITORY: https://github.com/Wei-Shaw/sub2api.git
+      UPSTREAM_REF: ${{ inputs.upstream_ref || 'main' }}
+      UPSTREAM_RELEASE_REF: refs/apophis/upstream-release
+      REPOSITORY_RELEASE: ${{ inputs.repository_release || false }}
+      SCHEDULED_ROUND: ${{ inputs.scheduled_round || false }}
+      GENERATED_DIR: ${{ github.workspace }}/../sub2api-themed-release
+
+    steps:
+      - name: Checkout theme source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          ref: main
+          submodules: recursive
+
+      - name: Verify Infinite Canvas dependency is current
+        id: canvas_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          RELEASE_JSON=/tmp/published-canvas-release.json
+          node scripts/resolve-github-release.mjs \
+            --repository basketikun/infinite-canvas \
+            --json-output "$RELEASE_JSON" \
+            --github-output "$GITHUB_OUTPUT"
+          CANVAS_RELEASE_FOUND="$(jq -r '.found' "$RELEASE_JSON")"
+          CANVAS_RELEASE_TAG="$(jq -r '.tag' "$RELEASE_JSON")"
+          if [[ "$CANVAS_RELEASE_FOUND" != "true" || -z "$CANVAS_RELEASE_TAG" ]]; then
+            echo "A published Infinite Canvas release is required before themed publication." >&2
+            exit 1
+          fi
+          if ! git check-ref-format "refs/tags/${CANVAS_RELEASE_TAG}"; then
+            echo "Invalid Infinite Canvas release tag: $CANVAS_RELEASE_TAG" >&2
+            exit 1
+          fi
+          retry_with_backoff 5 5 git -C integrations/infinite-canvas fetch --depth=1 origin "refs/tags/${CANVAS_RELEASE_TAG}:refs/tags/${CANVAS_RELEASE_TAG}"
+          CURRENT_CANVAS_SHA="$(git rev-parse HEAD:integrations/infinite-canvas)"
+          LATEST_CANVAS_SHA="$(git -C integrations/infinite-canvas rev-list -n 1 "refs/tags/${CANVAS_RELEASE_TAG}")"
+          if [[ "$CURRENT_CANVAS_SHA" != "$LATEST_CANVAS_SHA" ]]; then
+            echo "main Canvas SHA is stale: $CURRENT_CANVAS_SHA != $LATEST_CANVAS_SHA ($CANVAS_RELEASE_TAG)" >&2
+            exit 1
+          fi
+
+      - name: Verify release pipeline contract
+        run: node scripts/verify-release-pipeline.mjs --root .
+
+      - name: Discover published Sub2API release
+        id: upstream_release
+        if: ${{ inputs.repository_release != true && inputs.scheduled_round == true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/resolve-github-release.mjs \
+            --repository Wei-Shaw/sub2api \
+            --json-output /tmp/apophis-upstream-release.json \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Prepare release source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCOVERED_UPSTREAM_RELEASE: ${{ steps.upstream_release.outputs.found }}
+          DISCOVERED_UPSTREAM_RELEASE_TAG: ${{ steps.upstream_release.outputs.tag }}
+          DISCOVERED_UPSTREAM_RELEASE_ID: ${{ steps.upstream_release.outputs.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          retry_with_backoff 5 5 git fetch origin +refs/heads/themed-release:refs/remotes/origin/themed-release
+
+          if [[ "$REPOSITORY_RELEASE" == "true" ]]; then
+            git worktree add --detach "$GENERATED_DIR" origin/themed-release
+            UPSTREAM_SHA="$(tr -d '[:space:]' < "$GENERATED_DIR/.apophis-upstream-sha")"
+            RELEASE_SOURCE_SHA="$(git rev-parse HEAD)"
+            RELEASE_KIND="repository"
+            RELEASE_IMAGE_TAG="repository-${RELEASE_SOURCE_SHA:0:12}"
+            UPSTREAM_RELEASE_TAG=""
+            UPSTREAM_RELEASE_ID=""
+            echo "Repository push: reusing themed-release without fetching upstream."
+          else
+            git remote remove upstream 2>/dev/null || true
+            git remote add upstream "$UPSTREAM_REPOSITORY"
+            UPSTREAM_RELEASE_TAG=""
+            UPSTREAM_RELEASE_ID=""
+            if [[ "$SCHEDULED_ROUND" == "true" ]]; then
+              if [[ "$DISCOVERED_UPSTREAM_RELEASE" == "true" ]]; then
+                UPSTREAM_RELEASE_TAG="$DISCOVERED_UPSTREAM_RELEASE_TAG"
+                UPSTREAM_RELEASE_ID="$DISCOVERED_UPSTREAM_RELEASE_ID"
+              else
+                echo "No published Sub2API release; falling back to the configured upstream ref."
+              fi
+            fi
+
+            if [[ -n "$UPSTREAM_RELEASE_TAG" ]]; then
+              if ! git check-ref-format "refs/tags/${UPSTREAM_RELEASE_TAG}"; then
+                echo "Invalid Sub2API release tag: $UPSTREAM_RELEASE_TAG" >&2
+                exit 1
+              fi
+              retry_with_backoff 5 5 git fetch --depth=1 --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:${UPSTREAM_RELEASE_REF}"
+              git worktree add --detach "$GENERATED_DIR" "$UPSTREAM_RELEASE_REF"
+              echo "Using published Sub2API release: $UPSTREAM_RELEASE_TAG"
+            else
+              retry_with_backoff 5 5 git fetch --depth=1 upstream "$UPSTREAM_REF"
+              git worktree add --detach "$GENERATED_DIR" FETCH_HEAD
+            fi
+
+            UPSTREAM_SHA="$(git -C "$GENERATED_DIR" rev-parse HEAD)"
+            RELEASE_SOURCE_SHA="$UPSTREAM_SHA"
+            RELEASE_KIND="upstream"
+            RELEASE_IMAGE_TAG="upstream-${UPSTREAM_SHA:0:12}"
+          fi
+
+          echo "UPSTREAM_SHA=$UPSTREAM_SHA" >> "$GITHUB_ENV"
+          echo "UPSTREAM_RELEASE_TAG=$UPSTREAM_RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "UPSTREAM_RELEASE_ID=$UPSTREAM_RELEASE_ID" >> "$GITHUB_ENV"
+          echo "RELEASE_SOURCE_SHA=$RELEASE_SOURCE_SHA" >> "$GITHUB_ENV"
+          echo "RELEASE_KIND=$RELEASE_KIND" >> "$GITHUB_ENV"
+          echo "RELEASE_IMAGE_TAG=$RELEASE_IMAGE_TAG" >> "$GITHUB_ENV"
+
+      - name: Decide whether a release is needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          PREVIOUS_UPSTREAM_SHA=""
+          if git show origin/themed-release:.apophis-upstream-sha > /tmp/apophis-upstream-sha 2>/dev/null; then
+            PREVIOUS_UPSTREAM_SHA="$(tr -d '[:space:]' < /tmp/apophis-upstream-sha)"
+          fi
+          echo "PREVIOUS_UPSTREAM_SHA=$PREVIOUS_UPSTREAM_SHA" >> "$GITHUB_ENV"
+
+          PREVIOUS_UPSTREAM_RELEASE_ID=""
+          if git show origin/themed-release:.apophis-upstream-release-id > /tmp/apophis-upstream-release-id 2>/dev/null; then
+            PREVIOUS_UPSTREAM_RELEASE_ID="$(tr -d '[:space:]' < /tmp/apophis-upstream-release-id)"
+          fi
+          echo "PREVIOUS_UPSTREAM_RELEASE_ID=$PREVIOUS_UPSTREAM_RELEASE_ID" >> "$GITHUB_ENV"
+
+          PREVIOUS_UPSTREAM_RELEASE_TAG=""
+          if git show origin/themed-release:.apophis-upstream-release-tag > /tmp/apophis-upstream-release-tag 2>/dev/null; then
+            PREVIOUS_UPSTREAM_RELEASE_TAG="$(tr -d '[:space:]' < /tmp/apophis-upstream-release-tag)"
+          fi
+          echo "PREVIOUS_UPSTREAM_RELEASE_TAG=$PREVIOUS_UPSTREAM_RELEASE_TAG" >> "$GITHUB_ENV"
+
+          PREVIOUS_REPOSITORY_SHA=""
+          if git show origin/themed-release:.apophis-repository-sha > /tmp/apophis-repository-sha 2>/dev/null; then
+            PREVIOUS_REPOSITORY_SHA="$(tr -d '[:space:]' < /tmp/apophis-repository-sha)"
+          fi
+          echo "PREVIOUS_REPOSITORY_SHA=$PREVIOUS_REPOSITORY_SHA" >> "$GITHUB_ENV"
+
+          PREVIOUS_RELEASE_VERSION=""
+          if git show origin/themed-release:backend/cmd/server/VERSION > /tmp/apophis-release-version 2>/dev/null; then
+            PREVIOUS_RELEASE_VERSION="$(tr -d '[:space:]' < /tmp/apophis-release-version)"
+          fi
+          echo "PREVIOUS_RELEASE_VERSION=$PREVIOUS_RELEASE_VERSION" >> "$GITHUB_ENV"
+
+          NEEDS_BINARY_RELEASE=false
+          if [[ -n "$PREVIOUS_RELEASE_VERSION" ]]; then
+            PREVIOUS_RELEASE_TAG="v${PREVIOUS_RELEASE_VERSION}"
+            RELEASE_JSON_FILE=/tmp/apophis-release.json
+            RELEASE_ERROR_FILE=/tmp/apophis-release-error.log
+            set +e
+            gh release view "$PREVIOUS_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets,targetCommitish > "$RELEASE_JSON_FILE" 2> "$RELEASE_ERROR_FILE"
+            RELEASE_STATUS=$?
+            set -e
+            if [[ "$RELEASE_STATUS" -eq 0 ]]; then
+              RELEASE_DRAFT="$(jq -r '.isDraft' "$RELEASE_JSON_FILE")"
+              RELEASE_PRERELEASE="$(jq -r '.isPrerelease' "$RELEASE_JSON_FILE")"
+              RELEASE_TARGET="$(jq -r '.targetCommitish' "$RELEASE_JSON_FILE")"
+              RELEASE_ASSETS="$(jq -r '.assets[].name' "$RELEASE_JSON_FILE")"
+              REQUIRED_ASSETS=(
+                "sub2api_${PREVIOUS_RELEASE_VERSION}_linux_amd64.tar.gz"
+                "sub2api_${PREVIOUS_RELEASE_VERSION}_linux_arm64.tar.gz"
+                "sub2api_${PREVIOUS_RELEASE_VERSION}_windows_amd64.zip"
+                "sub2api_${PREVIOUS_RELEASE_VERSION}_darwin_amd64.tar.gz"
+                "sub2api_${PREVIOUS_RELEASE_VERSION}_darwin_arm64.tar.gz"
+                "checksums.txt"
+              )
+              MISSING_ASSETS=()
+              for asset in "${REQUIRED_ASSETS[@]}"; do
+                if ! grep -Fqx -- "$asset" <<< "$RELEASE_ASSETS"; then
+                  MISSING_ASSETS+=("$asset")
+                fi
+              done
+              if [[ "$RELEASE_DRAFT" == "true" || "$RELEASE_PRERELEASE" == "true" || "$RELEASE_TARGET" != "themed-release" || "${#MISSING_ASSETS[@]}" -gt 0 ]]; then
+                NEEDS_BINARY_RELEASE=true
+                echo "Existing release needs repair (draft=${RELEASE_DRAFT}, prerelease=${RELEASE_PRERELEASE}, target=${RELEASE_TARGET}, missing=${MISSING_ASSETS[*]:-none})."
+              fi
+            elif grep -Eiq '404|not found' "$RELEASE_ERROR_FILE"; then
+              NEEDS_BINARY_RELEASE=true
+              echo "Previous release is missing; binary publication must recreate it."
+            else
+              cat "$RELEASE_ERROR_FILE" >&2
+              exit "$RELEASE_STATUS"
+            fi
+          else
+            NEEDS_BINARY_RELEASE=true
+            echo "No previous release version metadata found; binary publication must run."
+          fi
+          echo "NEEDS_BINARY_RELEASE=$NEEDS_BINARY_RELEASE" >> "$GITHUB_ENV"
+
+          CURRENT_REPOSITORY_SHA="$(git rev-parse HEAD)"
+          CURRENT_CANVAS_SHA="$(git rev-parse HEAD:integrations/infinite-canvas)"
+          PREVIOUS_CANVAS_SHA="$(git rev-parse origin/themed-release:integrations/infinite-canvas 2>/dev/null || true)"
+          echo "CURRENT_REPOSITORY_SHA=$CURRENT_REPOSITORY_SHA" >> "$GITHUB_ENV"
+          echo "CURRENT_CANVAS_SHA=$CURRENT_CANVAS_SHA" >> "$GITHUB_ENV"
+          echo "PREVIOUS_CANVAS_SHA=$PREVIOUS_CANVAS_SHA" >> "$GITHUB_ENV"
+
+          UPSTREAM_RECOVERY_FROM_UNRELEASED=false
+          if [[ "$RELEASE_KIND" == "upstream" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) && -n "$PREVIOUS_UPSTREAM_SHA" && "$PREVIOUS_UPSTREAM_SHA" != "$UPSTREAM_SHA" ]]; then
+            retry_with_backoff 5 5 git -C "$GENERATED_DIR" fetch --depth=1000 upstream "$UPSTREAM_REF"
+            if ! git -C "$GENERATED_DIR" cat-file -e "${PREVIOUS_UPSTREAM_SHA}^{commit}" 2>/dev/null; then
+              echo "Unable to verify the previously published upstream commit: $PREVIOUS_UPSTREAM_SHA" >&2
+              exit 1
+            fi
+            if [[ "$PREVIOUS_UPSTREAM_RELEASE_TAG" == unreleased-* && -n "$UPSTREAM_RELEASE_TAG" && "$UPSTREAM_RELEASE_TAG" != unreleased-* && -n "$UPSTREAM_RELEASE_ID" ]] &&
+               git -C "$GENERATED_DIR" merge-base --is-ancestor "$UPSTREAM_SHA" "$PREVIOUS_UPSTREAM_SHA"; then
+              UPSTREAM_RECOVERY_FROM_UNRELEASED=true
+              echo "Recovering from descendant unreleased upstream snapshot $PREVIOUS_UPSTREAM_RELEASE_TAG to published release $UPSTREAM_RELEASE_TAG."
+            elif ! git -C "$GENERATED_DIR" merge-base --is-ancestor "$PREVIOUS_UPSTREAM_SHA" "$UPSTREAM_SHA"; then
+              echo "Refusing to downgrade or cross-grade Sub2API: $PREVIOUS_UPSTREAM_SHA -> $UPSTREAM_SHA" >&2
+              exit 1
+            fi
+          fi
+          echo "UPSTREAM_RECOVERY_FROM_UNRELEASED=$UPSTREAM_RECOVERY_FROM_UNRELEASED" >> "$GITHUB_ENV"
+
+          UPSTREAM_IDENTITY_AND_SHA_MATCH=false
+          if [[ "$RELEASE_KIND" == "upstream" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) && "$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA" ]]; then
+            if [[ -n "$UPSTREAM_RELEASE_ID" && "$PREVIOUS_UPSTREAM_RELEASE_ID" == "$UPSTREAM_RELEASE_ID" ]]; then
+              UPSTREAM_IDENTITY_AND_SHA_MATCH=true
+            elif [[ -n "$UPSTREAM_RELEASE_TAG" && "$PREVIOUS_UPSTREAM_RELEASE_TAG" == "$UPSTREAM_RELEASE_TAG" ]]; then
+              UPSTREAM_IDENTITY_AND_SHA_MATCH=true
+            elif [[ -z "$UPSTREAM_RELEASE_ID" && -z "$UPSTREAM_RELEASE_TAG" ]]; then
+              UPSTREAM_IDENTITY_AND_SHA_MATCH=true
+            fi
+          fi
+          UPSTREAM_ALREADY_SYNCHRONIZED="$UPSTREAM_IDENTITY_AND_SHA_MATCH"
+
+          if [[ "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$PREVIOUS_CANVAS_SHA" != "$CURRENT_CANVAS_SHA" ]]; then
+            RELEASE_KIND="repository"
+            RELEASE_SOURCE_SHA="$CURRENT_REPOSITORY_SHA"
+            RELEASE_IMAGE_TAG="repository-${CURRENT_REPOSITORY_SHA:0:12}"
+            echo "RELEASE_KIND=$RELEASE_KIND" >> "$GITHUB_ENV"
+            echo "RELEASE_SOURCE_SHA=$RELEASE_SOURCE_SHA" >> "$GITHUB_ENV"
+            echo "RELEASE_IMAGE_TAG=$RELEASE_IMAGE_TAG" >> "$GITHUB_ENV"
+            echo "Upstream is unchanged, but Canvas metadata drifted; publishing repository state."
+          elif [[ "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$PREVIOUS_REPOSITORY_SHA" != "$CURRENT_REPOSITORY_SHA" ]]; then
+            echo "Repository source drift is intentionally not published without repository_release=true."
+          fi
+
+          if [[ "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$NEEDS_BINARY_RELEASE" == "true" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) ]]; then
+            echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
+            echo "NEEDS_BINARY_RELEASE=true" >> "$GITHUB_ENV"
+            echo "Upstream source is synchronized, but its binary release needs repair."
+            exit 0
+          fi
+
+          if [[ "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) ]]; then
+            echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
+            echo "Upstream release identity and source SHA are already synchronized; skipping scheduled publication."
+            exit 0
+          fi
+
+          if [[ "$RELEASE_KIND" == "repository" && "$PREVIOUS_REPOSITORY_SHA" == "$RELEASE_SOURCE_SHA" && "$PREVIOUS_CANVAS_SHA" == "$CURRENT_CANVAS_SHA" ]]; then
+            if [[ "$NEEDS_BINARY_RELEASE" == "true" ]]; then
+              echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
+              echo "NEEDS_BINARY_RELEASE=true" >> "$GITHUB_ENV"
+              echo "Repository source is synchronized, but its binary release needs repair."
+              exit 0
+            fi
+            echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
+            echo "仓库提交 $RELEASE_SOURCE_SHA 已经发布，跳过重复发布。"
+            exit 0
+          fi
+
+          RELEASE_VERSION="$(node scripts/next-release-version.mjs "$PREVIOUS_RELEASE_VERSION")"
+          echo "SHOULD_PUBLISH=true" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
+          echo "正在将 $RELEASE_KIND 来源 $RELEASE_SOURCE_SHA 发布为 $RELEASE_VERSION。"
+
+      - name: Copy permanent theme source
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$GENERATED_DIR/theme" "$GENERATED_DIR/scripts" "$GENERATED_DIR/tools/windows-local"
+          mkdir -p "$GENERATED_DIR/theme" "$GENERATED_DIR/scripts" "$GENERATED_DIR/tools" "$GENERATED_DIR/.github/workflows"
+          cp -a theme/. "$GENERATED_DIR/theme/"
+          cp -a scripts/. "$GENERATED_DIR/scripts/"
+          cp -a tools/windows-local "$GENERATED_DIR/tools/windows-local"
+          cp THEME.md "$GENERATED_DIR/THEME.md"
+          cp .github/workflows/upstream-theme-sync.yml "$GENERATED_DIR/.github/workflows/upstream-theme-sync.yml"
+          cp .github/workflows/infinite-canvas-upstream-sync.yml "$GENERATED_DIR/.github/workflows/infinite-canvas-upstream-sync.yml"
+          cp .github/workflows/backend-ci.yml "$GENERATED_DIR/.github/workflows/backend-ci.yml"
+          cp .github/workflows/automation-alert.yml "$GENERATED_DIR/.github/workflows/automation-alert.yml"
+          cp .github/workflows/sync-watchdog.yml "$GENERATED_DIR/.github/workflows/sync-watchdog.yml"
+
+      - name: Restore preserved workflow snapshots
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/scripts/ci/restore-workflow-snapshots.sh" "$GENERATED_DIR"
+
+      - name: Apply theme overlay
+        if: env.SHOULD_PUBLISH == 'true'
+        run: node scripts/apply-theme.mjs --root .
+        working-directory: ${{ env.GENERATED_DIR }}
+
+      - name: Carry Infinite Canvas integration
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .gitmodules "$GENERATED_DIR/.gitmodules"
+          CANVAS_SHA="$(git rev-parse HEAD:integrations/infinite-canvas)"
+          mkdir -p "$GENERATED_DIR/integrations"
+          git -C "$GENERATED_DIR" update-index --add --cacheinfo "160000,$CANVAS_SHA,integrations/infinite-canvas"
+          git -C "$GENERATED_DIR" submodule sync -- integrations/infinite-canvas
+          git -C "$GENERATED_DIR" submodule update --init --depth=1 -- integrations/infinite-canvas
+          node scripts/apply-sub2-infinite-canvas-integration.mjs --root "$GENERATED_DIR"
+          node scripts/apply-infinite-canvas-patches.mjs --root "$GENERATED_DIR/integrations/infinite-canvas"
+
+      - name: Write unified release metadata
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        working-directory: ${{ env.GENERATED_DIR }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$RELEASE_VERSION" > backend/cmd/server/VERSION
+          printf '%s\n' "$UPSTREAM_SHA" > .apophis-upstream-sha
+          printf '%s\n' "$RELEASE_KIND" > .apophis-release-kind
+          if [[ -n "${UPSTREAM_RELEASE_ID:-}" ]]; then
+            printf '%s\n' "$UPSTREAM_RELEASE_ID" > .apophis-upstream-release-id
+          fi
+          printf '%s\n' "$CURRENT_REPOSITORY_SHA" > .apophis-repository-sha
+          printf '%s\n' "$CURRENT_CANVAS_SHA" > .apophis-canvas-sha
+
+      - name: Capture repository release notes
+        if: env.SHOULD_PUBLISH == 'true' && env.RELEASE_KIND == 'repository'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TITLE_FILE="$GENERATED_DIR/.apophis-release-title"
+          NOTES_FILE="$GENERATED_DIR/.apophis-release-notes.md"
+          BASE_SHA="${{ github.event.before }}"
+
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            BASE_SHA="$PREVIOUS_REPOSITORY_SHA"
+          fi
+
+          printf 'Sub2Aouter %s\n' "$RELEASE_VERSION" > "$TITLE_FILE"
+          {
+            printf '## 仓库修复\n\n'
+            if [[ -n "$BASE_SHA" && ! "$BASE_SHA" =~ ^0+$ ]] &&
+               git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null &&
+               git merge-base --is-ancestor "$BASE_SHA" "$RELEASE_SOURCE_SHA" &&
+               [[ "$BASE_SHA" != "$RELEASE_SOURCE_SHA" ]]; then
+              git log --reverse --format='- %s (`%h`).' "${BASE_SHA}..${RELEASE_SOURCE_SHA}"
+            else
+              commit_subject="$(git log -1 --format='%s' "$RELEASE_SOURCE_SHA" 2>/dev/null || true)"
+              if [[ -n "$commit_subject" ]]; then
+                printf -- '- %s (`%s`).\n' "$commit_subject" "${RELEASE_SOURCE_SHA:0:12}"
+              else
+                printf -- '- 已合入仓库修复提交 `%s`。\n' "${RELEASE_SOURCE_SHA:0:12}"
+              fi
+            fi
+            printf '\n---\n\n'
+            printf '本次仓库发布基于提交 `%s`，对应上游提交 `%s`。\n' "$RELEASE_SOURCE_SHA" "$UPSTREAM_SHA"
+          } > "$NOTES_FILE"
+
+      - name: Capture upstream release notes
+        if: env.SHOULD_PUBLISH == 'true' && env.RELEASE_KIND == 'upstream'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          NOTES_FILE="$GENERATED_DIR/.apophis-upstream-release-notes.md"
+          TAG_FILE="$GENERATED_DIR/.apophis-upstream-release-tag"
+          NAME_FILE="$GENERATED_DIR/.apophis-upstream-release-name"
+          URL_FILE="$GENERATED_DIR/.apophis-upstream-release-url"
+          ID_FILE="$GENERATED_DIR/.apophis-upstream-release-id"
+
+          write_fallback_notes() {
+            local short_sha="${UPSTREAM_SHA:0:12}"
+            printf '%s\n' "unreleased-${short_sha}" > "$TAG_FILE"
+            printf '%s\n' "上游版本 ${short_sha}" > "$NAME_FILE"
+            printf '%s\n' "https://github.com/Wei-Shaw/sub2api/commit/${UPSTREAM_SHA}" > "$URL_FILE"
+            {
+              printf '未找到与上游提交 %s 匹配的已发布版本。\n\n' "$UPSTREAM_SHA"
+              printf '## 上游提交\n\n'
+              if [[ -n "${PREVIOUS_UPSTREAM_SHA:-}" ]] && git -C "$GENERATED_DIR" cat-file -e "${PREVIOUS_UPSTREAM_SHA}^{commit}" 2>/dev/null; then
+                git -C "$GENERATED_DIR" log --max-count=50 --format='%h' "${PREVIOUS_UPSTREAM_SHA}..${UPSTREAM_SHA}" | while read -r commit; do printf -- '- 上游提交 `%s`。\n' "$commit"; done
+              else
+                git -C "$GENERATED_DIR" log -n 20 --format='%h' "$UPSTREAM_SHA" | while read -r commit; do printf -- '- 上游提交 `%s`。\n' "$commit"; done
+              fi
+            } > "$NOTES_FILE"
+          }
+
+          if [[ -z "${UPSTREAM_RELEASE_TAG:-}" ]]; then
+            echo "No captured upstream release tag; using commit summary."
+            write_fallback_notes
+            exit 0
+          fi
+
+          RELEASE_ENDPOINT="repos/Wei-Shaw/sub2api/releases/tags/${UPSTREAM_RELEASE_TAG}"
+          if ! UPSTREAM_RELEASE_NAME="$(retry_with_backoff 3 5 gh api "$RELEASE_ENDPOINT" --jq '.name // .tag_name // ""')" ||
+             ! UPSTREAM_RELEASE_URL="$(retry_with_backoff 3 5 gh api "$RELEASE_ENDPOINT" --jq '.html_url // ""')"; then
+            echo "无法读取上游发布信息，改用提交摘要。"
+            write_fallback_notes
+            exit 0
+          fi
+          if [[ -z "$UPSTREAM_RELEASE_URL" ]]; then
+            echo "上游最新发布信息不完整，改用提交摘要。"
+            write_fallback_notes
+            exit 0
+          fi
+
+          retry_with_backoff 3 5 git -C "$GENERATED_DIR" fetch --deepen=500 upstream "$UPSTREAM_REF" || true
+          if ! retry_with_backoff 3 5 git -C "$GENERATED_DIR" fetch --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:${UPSTREAM_RELEASE_REF}"; then
+            echo "无法获取上游标签 $UPSTREAM_RELEASE_TAG，改用提交摘要。"
+            write_fallback_notes
+            exit 0
+          fi
+
+          UPSTREAM_RELEASE_SHA="$(git -C "$GENERATED_DIR" rev-list -n 1 "$UPSTREAM_RELEASE_REF")"
+          if ! git -C "$GENERATED_DIR" merge-base --is-ancestor "$UPSTREAM_RELEASE_SHA" "$UPSTREAM_SHA"; then
+            echo "上游发布版本 $UPSTREAM_RELEASE_TAG 不属于提交 $UPSTREAM_SHA，改用提交摘要。"
+            write_fallback_notes
+            exit 0
+          fi
+
+          if [[ -z "${UPSTREAM_RELEASE_ID:-}" ]]; then
+            UPSTREAM_RELEASE_ID="$(retry_with_backoff 3 5 gh api "$RELEASE_ENDPOINT" --jq '.id // ""')"
+          fi
+          printf '%s\n' "$UPSTREAM_RELEASE_TAG" > "$TAG_FILE"
+          printf '%s\n' "$UPSTREAM_RELEASE_NAME" > "$NAME_FILE"
+          printf '%s\n' "$UPSTREAM_RELEASE_URL" > "$URL_FILE"
+          if [[ -n "$UPSTREAM_RELEASE_ID" ]]; then
+            printf '%s\n' "$UPSTREAM_RELEASE_ID" > "$ID_FILE"
+          fi
+          if ! retry_with_backoff 3 5 gh api "$RELEASE_ENDPOINT" --jq '.body // ""' > "$NOTES_FILE"; then
+            echo "无法读取上游发布说明，改用提交摘要。"
+            write_fallback_notes
+            exit 0
+          fi
+          if [[ ! -s "$NOTES_FILE" ]]; then
+            printf '上游发布版本 %s 没有提供发布说明。\n' "$UPSTREAM_RELEASE_TAG" > "$NOTES_FILE"
+          fi
+          echo "已记录上游发布版本 $UPSTREAM_RELEASE_TAG，对应提交 $UPSTREAM_RELEASE_SHA。"
+
+      - name: Compose upstream release notes
+        if: env.SHOULD_PUBLISH == 'true' && env.RELEASE_KIND == 'upstream'
+        shell: bash
+        run: |
+          set -euo pipefail
+          UPSTREAM_RELEASE_TAG="$(tr -d '[:space:]' < "$GENERATED_DIR/.apophis-upstream-release-tag")"
+          UPSTREAM_RELEASE_NAME="$(cat "$GENERATED_DIR/.apophis-upstream-release-name")"
+          UPSTREAM_RELEASE_URL="$(tr -d '[:space:]' < "$GENERATED_DIR/.apophis-upstream-release-url")"
+          printf 'Sub2Aouter %s（基于上游 %s）\n' "$RELEASE_VERSION" "$UPSTREAM_RELEASE_TAG" > "$GENERATED_DIR/.apophis-release-title"
+          {
+            printf '> 基于上游版本 [%s](%s)（%s）。\n\n' "$UPSTREAM_RELEASE_NAME" "$UPSTREAM_RELEASE_URL" "$UPSTREAM_RELEASE_TAG"
+            cat "$GENERATED_DIR/.apophis-upstream-release-notes.md"
+            printf '\n\n---\n\n'
+            printf 'Apophis 主题版本 %s，生成自上游提交 `%s`。\n' "$RELEASE_VERSION" "$UPSTREAM_SHA"
+          } > "$GENERATED_DIR/.apophis-release-notes.md"
+
+      - name: Setup pnpm
+        if: env.SHOULD_PUBLISH == 'true'
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 9.15.9
+
+      - name: Setup Node.js
+        if: env.SHOULD_PUBLISH == 'true'
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '20'
+
+      - name: Reconcile frontend security overrides
+        if: env.SHOULD_PUBLISH == 'true'
+        run: pnpm install --lockfile-only --no-frozen-lockfile
+        working-directory: ${{ env.GENERATED_DIR }}/frontend
+
+      - name: Verify theme overlay and UTF-8
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        working-directory: ${{ env.GENERATED_DIR }}
+        run: |
+          set -euo pipefail
+          node scripts/apply-theme.mjs --root . --check
+          node scripts/apply-sub2-infinite-canvas-integration.mjs --root . --check
+          node scripts/check-encoding.mjs .
+          node --test scripts/__tests__/*.test.mjs
+
+      - name: Install frontend dependencies
+        if: env.SHOULD_PUBLISH == 'true'
+        run: pnpm install --frozen-lockfile
+        working-directory: ${{ env.GENERATED_DIR }}/frontend
+
+      - name: Frontend lint and typecheck
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        working-directory: ${{ env.GENERATED_DIR }}/frontend
+        run: |
+          set -euo pipefail
+          pnpm run lint:check
+          pnpm run typecheck
+
+      - name: Frontend regression tests
+        if: env.SHOULD_PUBLISH == 'true'
+        run: pnpm run test:run
+        working-directory: ${{ env.GENERATED_DIR }}/frontend
+
+      - name: Build frontend
+        if: env.SHOULD_PUBLISH == 'true'
+        run: pnpm run build
+        working-directory: ${{ env.GENERATED_DIR }}/frontend
+
+      - name: Setup Go
+        if: env.SHOULD_PUBLISH == 'true'
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: ${{ env.GENERATED_DIR }}/backend/go.mod
+          cache: false
+
+      - name: Backend unit tests
+        if: env.SHOULD_PUBLISH == 'true'
+        run: make test-unit
+        working-directory: ${{ env.GENERATED_DIR }}/backend
+
+      - name: Build immutable themed image
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        working-directory: ${{ env.GENERATED_DIR }}
+        run: |
+          set -euo pipefail
+          GO_VERSION="$(awk '$1 == "go" { print $2; exit }' backend/go.mod)"
+          test -n "$GO_VERSION"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker build \
+            --build-arg "GOLANG_IMAGE=golang:${GO_VERSION}-alpine" \
+            --build-arg "VERSION=${RELEASE_VERSION}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${RELEASE_SOURCE_SHA}" \
+            --label "org.opencontainers.image.version=${RELEASE_VERSION}" \
+            -t "${IMAGE}:${RELEASE_IMAGE_TAG}" \
+            -t "${IMAGE}:${RELEASE_VERSION}" \
+            .
+
+      - name: Login to GitHub Container Registry
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push immutable themed image
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          retry_with_backoff 4 10 docker push "${IMAGE}:${RELEASE_IMAGE_TAG}"
+          retry_with_backoff 4 10 docker push "${IMAGE}:${RELEASE_VERSION}"
+
+      - name: Update generated release branch
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        working-directory: ${{ env.GENERATED_DIR }}
+        run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/scripts/ci/retry.sh"
+          bash "$GITHUB_WORKSPACE/scripts/ci/restore-workflow-snapshots.sh" "$GENERATED_DIR"
+          cmp "$GITHUB_WORKSPACE/.github/workflows/upstream-theme-sync.yml" .github/workflows/upstream-theme-sync.yml
+          cmp "$GITHUB_WORKSPACE/.github/workflows/infinite-canvas-upstream-sync.yml" .github/workflows/infinite-canvas-upstream-sync.yml
+          cmp "$GITHUB_WORKSPACE/.github/workflows/backend-ci.yml" .github/workflows/backend-ci.yml
+          cmp "$GITHUB_WORKSPACE/.github/workflows/theme-binary-release.yml" .github/workflows/theme-binary-release.yml
+          cmp "$GITHUB_WORKSPACE/.github/workflows/automation-alert.yml" .github/workflows/automation-alert.yml
+          cmp "$GITHUB_WORKSPACE/.github/workflows/sync-watchdog.yml" .github/workflows/sync-watchdog.yml
+          node scripts/verify-release-pipeline.mjs --root .
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add --all
+          RELEASE_TREE="$(git write-tree)"
+          if [[ "$RELEASE_KIND" == "repository" ]]; then
+            RELEASE_MESSAGE="发布：仓库修复 ${RELEASE_SOURCE_SHA:0:12}，版本 ${RELEASE_VERSION}"
+          else
+            RELEASE_MESSAGE="同步：上游 ${UPSTREAM_SHA}，Apophis 主题版本 ${RELEASE_VERSION}"
+          fi
+          RELEASE_COMMIT="$(printf '%s\n' "$RELEASE_MESSAGE" | git commit-tree "$RELEASE_TREE")"
+          retry_with_backoff 5 5 git push --no-thin origin "${RELEASE_COMMIT}:refs/heads/themed-release" --force
+          echo "RELEASE_COMMIT=$RELEASE_COMMIT" >> "$GITHUB_ENV"
+
+      - name: Export release orchestration outputs
+        id: release_outputs
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_BINARY=false
+          SHOULD_PROMOTE_LATEST=false
+          EFFECTIVE_VERSION="${RELEASE_VERSION:-${PREVIOUS_RELEASE_VERSION:-}}"
+          RELEASE_REF=""
+
+          if [[ "${SHOULD_PUBLISH:-false}" == "true" ]]; then
+            RUN_BINARY=true
+            SHOULD_PROMOTE_LATEST=true
+            RELEASE_REF="${RELEASE_COMMIT:-}"
+          elif [[ "${NEEDS_BINARY_RELEASE:-false}" == "true" ]]; then
+            RUN_BINARY=true
+            RELEASE_REF="$(git rev-parse origin/themed-release)"
+          fi
+
+          if [[ "$RUN_BINARY" == "true" ]]; then
+            test -n "$RELEASE_REF"
+            test -n "$EFFECTIVE_VERSION"
+          fi
+
+          {
+            echo "run_binary=$RUN_BINARY"
+            echo "should_promote_latest=$SHOULD_PROMOTE_LATEST"
+            echo "release_ref=$RELEASE_REF"
+            echo "release_version=$EFFECTIVE_VERSION"
+            echo "effective_version=$EFFECTIVE_VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+  binary-release:
+    needs: sync-build-publish
+    if: ${{ needs.sync-build-publish.result == 'success' && needs.sync-build-publish.outputs.run_binary == 'true' }}
+    uses: ./.github/workflows/theme-binary-release.yml
+    with:
+      release_ref: ${{ needs.sync-build-publish.outputs.release_ref }}
+    secrets: inherit
+
+  promote-latest:
+    needs: [sync-build-publish, binary-release]
+    if: ${{ always() && needs.sync-build-publish.result == 'success' && needs.sync-build-publish.outputs.should_promote_latest == 'true' && needs.binary-release.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      RELEASE_VERSION: ${{ needs.sync-build-publish.outputs.release_version }}
+    steps:
+      - name: Checkout retry helper
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+
+      - name: Login to GitHub Container Registry
+        shell: bash
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Promote verified themed image to latest
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          retry_with_backoff 4 10 docker pull "${IMAGE}:${RELEASE_VERSION}"
+          docker tag "${IMAGE}:${RELEASE_VERSION}" "${IMAGE}:latest"
+          retry_with_backoff 4 10 docker push "${IMAGE}:latest"
+
+  summary:
+    needs: [sync-build-publish, binary-release, promote-latest]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Write synchronization summary
+        env:
+          SOURCE_RESULT: ${{ needs.sync-build-publish.result }}
+          RUN_BINARY: ${{ needs.sync-build-publish.outputs.run_binary }}
+          RELEASE_VERSION: ${{ needs.sync-build-publish.outputs.release_version }}
+          BINARY_RESULT: ${{ needs.binary-release.result }}
+          PROMOTE_RESULT: ${{ needs.promote-latest.result }}
+        shell: bash
+        run: |
+          {
+            echo "## Themed upstream synchronization"
+            echo
+            echo "- Source publication: \`${SOURCE_RESULT}\`"
+            echo "- Binary publication required: \`${RUN_BINARY:-false}\`"
+            echo "- Release version: \`${RELEASE_VERSION:-unchanged}\`"
+            echo "- Binary publication: \`${BINARY_RESULT}\`"
+            echo "- Latest promotion: \`${PROMOTE_RESULT}\`"
+            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  alert-failure:
+    needs: [sync-build-publish, binary-release, promote-latest]
+    if: ${{ always() && (needs.sync-build-publish.result == 'failure' || needs.binary-release.result == 'failure' || needs.promote-latest.result == 'failure') }}
+    uses: ./.github/workflows/automation-alert.yml
+    with:
+      workflow_name: Sync Upstream With Apophis Theme
+      severity: critical
+      summary: >-
+        source=${{ needs.sync-build-publish.result }}, binary=${{ needs.binary-release.result }},
+        promote-latest=${{ needs.promote-latest.result }}, version=${{ needs.sync-build-publish.outputs.release_version }}.
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    secrets: inherit
