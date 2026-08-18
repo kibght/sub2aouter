@@ -339,6 +339,29 @@ jobs:
           cp .github/workflows/automation-alert.yml "$GENERATED_DIR/.github/workflows/automation-alert.yml"
           cp .github/workflows/sync-watchdog.yml "$GENERATED_DIR/.github/workflows/sync-watchdog.yml"
 
+      - name: Restore preserved workflow snapshots
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        working-directory: ${{ env.GENERATED_DIR }}
+        run: |
+          set -euo pipefail
+          WORKFLOW_DIR=.github/workflows
+          for workflow in "$WORKFLOW_DIR"/*.yml "$WORKFLOW_DIR"/*.yaml; do
+            [[ -e "$workflow" ]] || continue
+            name="${workflow##*/}"
+            case "$name" in
+              upstream-theme-sync.yml|infinite-canvas-upstream-sync.yml|backend-ci.yml|theme-binary-release.yml|automation-alert.yml|sync-watchdog.yml)
+                ;;
+              *)
+                if git cat-file -e "origin/themed-release:$workflow" 2>/dev/null; then
+                  git checkout origin/themed-release -- "$workflow"
+                else
+                  rm -f "$workflow"
+                fi
+                ;;
+            esac
+          done
+
       - name: Apply theme overlay
         if: env.SHOULD_PUBLISH == 'true'
         run: node scripts/apply-theme.mjs --root .

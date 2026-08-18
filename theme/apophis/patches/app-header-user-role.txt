@@ -1,2 +1,2 @@
-              <div class="app-header-user-role text-xs capitalize text-gray-500 dark:text-dark-400">
-                {{ user.role }}
+              <div class="app-header-user-role text-xs text-gray-500 dark:text-dark-400">
+                {{ t('admin.users.roles.' + user.role) }}

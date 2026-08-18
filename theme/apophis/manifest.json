@@ -409,7 +409,11 @@
     {
       "target": "frontend/src/components/layout/AppHeader.vue",
       "operation": "replace",
-      "marker": "              <div class=\"text-xs capitalize text-gray-500 dark:text-dark-400\">\n                {{ user.role }}",
+      "marker": "              <div class=\"text-xs text-gray-500 dark:text-dark-400\">\n                {{ t('admin.users.roles.' + user.role) }}",
+      "markers": [
+        "              <div class=\"text-xs capitalize text-gray-500 dark:text-dark-400\">\n                {{ user.role }}",
+        "              <div class=\"app-header-user-role text-xs capitalize text-gray-500 dark:text-dark-400\">\n                {{ user.role }}"
+      ],
       "source": "patches/app-header-user-role.txt",
       "sentinel": "class=\"app-header-user-role "
     },
