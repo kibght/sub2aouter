@@ -67,16 +67,19 @@ test('legacy themed AppHeader role markup migrates to the localized role copy', 
   assert.equal(second.changed, false)
 })
 
-test('generated workflow snapshots are restored before generated source verification', async () => {
+test('generated workflow snapshots use one shared helper before verification and final publication', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  const helper = 'scripts/ci/restore-workflow-snapshots.sh'
   const copyIndex = workflow.indexOf('name: Copy permanent theme source')
-  const restoreIndex = workflow.indexOf('name: Restore preserved workflow snapshots', copyIndex)
+  const firstRestoreIndex = workflow.indexOf(helper, copyIndex)
   const verifyIndex = workflow.indexOf('name: Verify theme overlay and UTF-8')
+  const releaseBranchIndex = workflow.indexOf('name: Update generated release branch')
+  const secondRestoreIndex = workflow.indexOf(helper, releaseBranchIndex)
 
   assert.ok(copyIndex >= 0, 'theme source copy step must exist')
-  assert.ok(restoreIndex > copyIndex, 'workflow restoration must follow the permanent source copy')
-  assert.ok(verifyIndex > restoreIndex, 'workflow restoration must run before generated source verification')
-  const restoreStep = workflow.slice(restoreIndex, verifyIndex)
-  assert.match(restoreStep, /git checkout origin\/themed-release -- "\$workflow"/)
-  assert.match(restoreStep, /rm -f "\$workflow"/)
+  assert.ok(firstRestoreIndex > copyIndex, 'workflow restoration must follow the permanent source copy')
+  assert.ok(verifyIndex > firstRestoreIndex, 'workflow restoration must run before generated source verification')
+  assert.ok(releaseBranchIndex > verifyIndex, 'release branch update must follow verification')
+  assert.ok(secondRestoreIndex > releaseBranchIndex, 'final publication must restore workflows through the same helper')
+  assert.equal(workflow.split(helper).length - 1, 2)
 })

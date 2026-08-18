@@ -342,25 +342,7 @@ jobs:
       - name: Restore preserved workflow snapshots
         if: env.SHOULD_PUBLISH == 'true'
         shell: bash
-        working-directory: ${{ env.GENERATED_DIR }}
-        run: |
-          set -euo pipefail
-          WORKFLOW_DIR=.github/workflows
-          for workflow in "$WORKFLOW_DIR"/*.yml "$WORKFLOW_DIR"/*.yaml; do
-            [[ -e "$workflow" ]] || continue
-            name="${workflow##*/}"
-            case "$name" in
-              upstream-theme-sync.yml|infinite-canvas-upstream-sync.yml|backend-ci.yml|theme-binary-release.yml|automation-alert.yml|sync-watchdog.yml)
-                ;;
-              *)
-                if git cat-file -e "origin/themed-release:$workflow" 2>/dev/null; then
-                  git checkout origin/themed-release -- "$workflow"
-                else
-                  rm -f "$workflow"
-                fi
-                ;;
-            esac
-          done
+        run: bash "$GITHUB_WORKSPACE/scripts/ci/restore-workflow-snapshots.sh" "$GENERATED_DIR"
 
       - name: Apply theme overlay
         if: env.SHOULD_PUBLISH == 'true'
@@ -633,22 +615,7 @@ jobs:
         run: |
           set -euo pipefail
           source "$GITHUB_WORKSPACE/scripts/ci/retry.sh"
-          WORKFLOW_DIR=.github/workflows
-          for workflow in "$WORKFLOW_DIR"/*.yml "$WORKFLOW_DIR"/*.yaml; do
-            [[ -e "$workflow" ]] || continue
-            name="${workflow##*/}"
-            case "$name" in
-              upstream-theme-sync.yml|infinite-canvas-upstream-sync.yml|backend-ci.yml|theme-binary-release.yml|automation-alert.yml|sync-watchdog.yml)
-                ;;
-              *)
-                if git cat-file -e "origin/themed-release:$workflow" 2>/dev/null; then
-                  git checkout origin/themed-release -- "$workflow"
-                else
-                  rm -f "$workflow"
-                fi
-                ;;
-            esac
-          done
+          bash "$GITHUB_WORKSPACE/scripts/ci/restore-workflow-snapshots.sh" "$GENERATED_DIR"
           cmp "$GITHUB_WORKSPACE/.github/workflows/upstream-theme-sync.yml" .github/workflows/upstream-theme-sync.yml
           cmp "$GITHUB_WORKSPACE/.github/workflows/infinite-canvas-upstream-sync.yml" .github/workflows/infinite-canvas-upstream-sync.yml
           cmp "$GITHUB_WORKSPACE/.github/workflows/backend-ci.yml" .github/workflows/backend-ci.yml

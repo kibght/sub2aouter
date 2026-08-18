@@ -41,11 +41,12 @@ test('contract requires Docker builds to use the generated Go module version', a
 })
 
 test('contract requires preserving non-owned upstream workflow files', async () => {
+  const helperPath = 'scripts/ci/restore-workflow-snapshots.sh'
+  assert.ok(RELEASE_PIPELINE_FILES.includes(helperPath))
   const files = await loadContractFiles()
-  const path = '.github/workflows/upstream-theme-sync.yml'
   files.set(
-    path,
-    files.get(path).replace('for workflow in "$WORKFLOW_DIR"/*.yml "$WORKFLOW_DIR"/*.yaml; do\n', ''),
+    helperPath,
+    files.get(helperPath).replace('for workflow in "$WORKFLOW_DIR"/*.yml "$WORKFLOW_DIR"/*.yaml; do\n', ''),
   )
 
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
@@ -391,10 +392,11 @@ test('contract requires immutable remote action pins', async () => {
 test('contract owns the alert and watchdog workflow snapshots', async () => {
   assert.ok(RELEASE_PIPELINE_FILES.includes('.github/workflows/automation-alert.yml'))
   assert.ok(RELEASE_PIPELINE_FILES.includes('.github/workflows/sync-watchdog.yml'))
+  const helperPath = 'scripts/ci/restore-workflow-snapshots.sh'
+  assert.ok(RELEASE_PIPELINE_FILES.includes(helperPath))
 
   const files = await loadContractFiles()
-  const path = '.github/workflows/upstream-theme-sync.yml'
-  files.set(path, files.get(path).replace('automation-alert.yml|sync-watchdog.yml', ''))
+  files.set(helperPath, files.get(helperPath).replace('automation-alert.yml|sync-watchdog.yml', ''))
 
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
   assert.ok(violations.some((violation) => violation.code === 'sync.owned_workflows'))

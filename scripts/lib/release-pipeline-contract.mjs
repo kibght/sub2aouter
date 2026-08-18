@@ -11,6 +11,7 @@ export const RELEASE_PIPELINE_FILES = Object.freeze([
   'scripts/resolve-github-release.mjs',
   'scripts/check-sync-health.mjs',
   'scripts/ci/retry.sh',
+  'scripts/ci/restore-workflow-snapshots.sh',
   'scripts/lib/github-release.mjs',
   'scripts/lib/sync-health.mjs',
   'backend/internal/service/update_service.go',
@@ -93,6 +94,8 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
 
   const syncPath = '.github/workflows/upstream-theme-sync.yml'
   const sync = files.get(syncPath) || ''
+  const workflowRestorePath = 'scripts/ci/restore-workflow-snapshots.sh'
+  const workflowRestore = files.get(workflowRestorePath) || ''
   check('sync.no_push_release', syncPath, !sync.includes('\n  push:') && hasPattern(sync, /\non:\n  workflow_dispatch:/), 'Repository pushes must never publish a themed release automatically.')
   check('sync.coordinated_round', syncPath, !sync.includes('  schedule:') && sync.includes('scheduled_round:') && sync.includes('SCHEDULED_ROUND'), 'Theme sync must be dispatched by the single hourly coordinator.')
   check('sync.upstream', syncPath, sync.includes('https://github.com/Wei-Shaw/sub2api.git'), 'Sync must fetch the canonical upstream repository.')
@@ -137,13 +140,14 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     sync.includes('test -n "$GO_VERSION"') &&
     sync.includes('--build-arg "GOLANG_IMAGE=golang:${GO_VERSION}-alpine"'),
   'Docker sync builds must derive the builder image from the generated Go module version.')
-  check('sync.workflow_preservation', syncPath,
-    sync.includes('WORKFLOW_DIR=.github/workflows') &&
-    sync.includes('for workflow in "$WORKFLOW_DIR"/*.yml "$WORKFLOW_DIR"/*.yaml; do') &&
-    sync.includes('git checkout origin/themed-release -- "$workflow"') &&
-    sync.includes('rm -f "$workflow"') &&
-    sync.includes('upstream-theme-sync.yml|infinite-canvas-upstream-sync.yml|backend-ci.yml|theme-binary-release.yml|automation-alert.yml|sync-watchdog.yml'),
-  'Sync must preserve upstream-managed workflow files while publishing the verified automation snapshot.')
+  const workflowRestoreInvocations = sync.match(/bash "\$GITHUB_WORKSPACE\/scripts\/ci\/restore-workflow-snapshots\.sh" "\$GENERATED_DIR"/g) || []
+  check('sync.workflow_preservation', workflowRestorePath,
+    workflowRestoreInvocations.length === 2 &&
+    workflowRestore.includes('WORKFLOW_DIR=.github/workflows') &&
+    workflowRestore.includes('for workflow in "$WORKFLOW_DIR"/*.yml "$WORKFLOW_DIR"/*.yaml; do') &&
+    workflowRestore.includes('git checkout origin/themed-release -- "$workflow"') &&
+    workflowRestore.includes('rm -f "$workflow"'),
+  'Sync must restore non-owned workflow snapshots through one shared helper before verification and final publication.')
   check('sync.binary_recovery', syncPath, sync.includes('NEEDS_BINARY_RELEASE') && sync.includes('gh release view "$PREVIOUS_RELEASE_TAG"') && sync.includes('targetCommitish') && sync.includes('run_binary=$RUN_BINARY') && sync.includes('effective_version=$EFFECTIVE_VERSION'), 'Sync must recover a missing, incomplete, draft, prerelease, or mis-targeted binary release without minting another version.')
   check('sync.binary_call', syncPath,
     sync.includes('binary-release:') &&
@@ -237,8 +241,8 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     canvasSync.includes('$GITHUB_STEP_SUMMARY') &&
     watchdog.includes('$GITHUB_STEP_SUMMARY'),
   'Synchronization workflows and the watchdog must emit operator-readable step summaries.')
-  check('sync.owned_workflows', syncPath,
-    sync.includes('automation-alert.yml|sync-watchdog.yml') &&
+  check('sync.owned_workflows', workflowRestorePath,
+    workflowRestore.includes('automation-alert.yml|sync-watchdog.yml') &&
     sync.includes('cmp "$GITHUB_WORKSPACE/.github/workflows/automation-alert.yml" .github/workflows/automation-alert.yml') &&
     sync.includes('cmp "$GITHUB_WORKSPACE/.github/workflows/sync-watchdog.yml" .github/workflows/sync-watchdog.yml'),
   'The generated release snapshot must own and verify the alert and watchdog workflows.')
