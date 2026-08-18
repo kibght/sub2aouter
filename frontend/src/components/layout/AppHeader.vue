@@ -121,8 +121,8 @@
               <div class="app-header-user-name text-sm font-medium text-gray-900 dark:text-white">
                 {{ displayName }}
               </div>
-              <div class="app-header-user-role text-xs capitalize text-gray-500 dark:text-dark-400">
-                {{ user.role }}
+              <div class="app-header-user-role text-xs text-gray-500 dark:text-dark-400">
+                {{ t('admin.users.roles.' + user.role) }}
               </div>
             </div>
             <Icon name="chevronDown" size="sm" class="hidden text-gray-400 md:block" />
