@@ -418,6 +418,13 @@
       "sentinel": "class=\"app-header-user-role "
     },
     {
+      "target": "frontend/src/components/account/__tests__/CreateAccountModal.grok.spec.ts",
+      "operation": "replace",
+      "marker": "    expect(source).toContain(\"? 'xai-...'\")",
+      "source": "patches/create-account-grok-placeholder-test.txt",
+      "sentinel": "source.includes(\"case 'grok':\")"
+    },
+    {
       "target": "frontend/src/components/layout/AppHeader.vue",
       "operation": "replace",
       "marker": "const userInitials = computed(() => {\n  if (!user.value) return ''\n  // Prefer username, fallback to email\n  if (user.value.username) {\n    return user.value.username.substring(0, 2).toUpperCase()\n  }\n  if (user.value.email) {\n    // Get the part before @ and take first 2 chars\n    const localPart = user.value.email.split('@')[0]\n    return localPart.substring(0, 2).toUpperCase()\n  }\n  return ''\n})",
