@@ -49,6 +49,7 @@ function applyPatch(text, patch, patchText) {
     const insertionIndex = patch.position === 'after' ? index + marker.length : index
     return `${text.slice(0, insertionIndex)}${normalizedPatchText}${text.slice(insertionIndex)}`
   }
+  if (normalizedPatchText && patch.optional === true && normalizedSentinel && text.includes(normalizedSentinel)) return text
   if (!normalizedPatchText && normalizedSentinel && text.includes(normalizedSentinel)) return text
   if (normalizedPatchText && normalizedSentinel && text.includes(normalizedSentinel)) {
     throw new Error(`Theme patch drift in ${patch.target}: sentinel exists without the exact replacement`)

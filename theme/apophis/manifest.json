@@ -422,7 +422,8 @@
       "operation": "replace",
       "marker": "    expect(source).toContain(\"? 'xai-...'\")",
       "source": "patches/create-account-grok-placeholder-test.txt",
-      "sentinel": "source.includes(\"case 'grok':\")"
+      "sentinel": "return 'xai-...'",
+      "optional": true
     },
     {
       "target": "frontend/src/components/layout/AppHeader.vue",

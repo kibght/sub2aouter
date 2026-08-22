@@ -85,35 +85,41 @@ test('generated workflow snapshots use one shared helper before verification and
 })
 
 
-test('generated Grok placeholder test accepts ternary and switch implementations', async () => {
+test('generated Grok placeholder test accepts both old and refactored upstream implementations', async () => {
   const target = 'frontend/src/components/account/__tests__/CreateAccountModal.grok.spec.ts'
-  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-grok-test-root-'))
-  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-grok-test-overlay-'))
-  await mkdir(path.join(root, 'frontend/src/components/account/__tests__'), { recursive: true })
-  await mkdir(path.join(overlay, 'patches'), { recursive: true })
-  await writeFile(
-    path.join(root, target),
-    '    expect(source).toContain("? \'xai-...\'")\n',
-  )
-
   const manifest = JSON.parse(await readFile('theme/apophis/manifest.json', 'utf8'))
   const compatibilityPatch = manifest.patches.find((entry) =>
     entry.target === target && entry.source === 'patches/create-account-grok-placeholder-test.txt'
   )
   assert.ok(compatibilityPatch, 'Grok placeholder compatibility patch must exist')
-  await writeFile(
-    path.join(overlay, compatibilityPatch.source),
-    await readFile(path.join('theme/apophis', compatibilityPatch.source), 'utf8'),
-  )
-  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({ patches: [compatibilityPatch] }))
 
-  const first = await applyTheme({ root, overlay })
-  const second = await applyTheme({ root, overlay })
-  const spec = await readFile(path.join(root, target), 'utf8')
+  for (const [name, source, changed] of [
+    ['legacy', '    expect(source).toContain("? \'xai-...\'")\n', true],
+    ['refactored', '    expect(source).toContain("return \'xai-...\'")\n', false],
+  ]) {
+    const root = await mkdtemp(path.join(os.tmpdir(), `sub2api-grok-test-root-${name}-`))
+    const overlay = await mkdtemp(path.join(os.tmpdir(), `sub2api-grok-test-overlay-${name}-`))
+    await mkdir(path.join(root, 'frontend/src/components/account/__tests__'), { recursive: true })
+    await mkdir(path.join(overlay, 'patches'), { recursive: true })
+    await writeFile(path.join(root, target), source)
+    await writeFile(
+      path.join(overlay, compatibilityPatch.source),
+      await readFile(path.join('theme/apophis', compatibilityPatch.source), 'utf8'),
+    )
+    await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({ patches: [compatibilityPatch] }))
 
-  assert.match(spec, /source\.includes\("\? 'xai-\.\.\.'"\)/)
-  assert.match(spec, /source\.includes\("case 'grok':"\)/)
-  assert.match(spec, /source\.includes\("return 'xai-\.\.\.'"\)/)
-  assert.equal(first.changed, true)
-  assert.equal(second.changed, false)
+    const first = await applyTheme({ root, overlay })
+    const second = await applyTheme({ root, overlay })
+    const spec = await readFile(path.join(root, target), 'utf8')
+
+    if (changed) {
+      assert.match(spec, /source\.includes\("\? 'xai-\.\.\.'"\)/)
+      assert.match(spec, /source\.includes\("case 'grok':"\)/)
+      assert.match(spec, /source\.includes\("return 'xai-\.\.\.'"\)/)
+    } else {
+      assert.match(spec, /return 'xai-\.\.\.'/)
+    }
+    assert.equal(first.changed, changed)
+    assert.equal(second.changed, false)
+  }
 })
