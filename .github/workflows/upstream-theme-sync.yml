@@ -126,16 +126,35 @@ jobs:
             git remote add upstream "$UPSTREAM_REPOSITORY"
             UPSTREAM_RELEASE_TAG=""
             UPSTREAM_RELEASE_ID=""
+            UPSTREAM_RELEASE_PUBLISHED=false
+            UPSTREAM_SOURCE_FROM_MAIN=false
             if [[ "$SCHEDULED_ROUND" == "true" ]]; then
               if [[ "$DISCOVERED_UPSTREAM_RELEASE" == "true" ]]; then
                 UPSTREAM_RELEASE_TAG="$DISCOVERED_UPSTREAM_RELEASE_TAG"
                 UPSTREAM_RELEASE_ID="$DISCOVERED_UPSTREAM_RELEASE_ID"
+                UPSTREAM_RELEASE_PUBLISHED=true
               else
                 echo "No published Sub2API release; falling back to the configured upstream ref."
               fi
             fi
 
-            if [[ -n "$UPSTREAM_RELEASE_TAG" ]]; then
+            if [[ -n "$UPSTREAM_RELEASE_TAG" && "$SCHEDULED_ROUND" == "true" ]]; then
+              retry_with_backoff 5 5 git fetch --depth=1 upstream "$UPSTREAM_REF"
+              MAIN_UPSTREAM_VERSION="$(git show FETCH_HEAD:backend/cmd/server/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
+              RELEASE_VERSION_FROM_TAG="${UPSTREAM_RELEASE_TAG#v}"
+              if [[ "$MAIN_UPSTREAM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
+                 [[ "$RELEASE_VERSION_FROM_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
+                 [[ "$MAIN_UPSTREAM_VERSION" != "$RELEASE_VERSION_FROM_TAG" ]] &&
+                 [[ "$(printf '%s\n%s\n' "$RELEASE_VERSION_FROM_TAG" "$MAIN_UPSTREAM_VERSION" | sort -V | tail -n 1)" == "$MAIN_UPSTREAM_VERSION" ]]; then
+                echo "Using newer unreleased upstream main version $MAIN_UPSTREAM_VERSION instead of $UPSTREAM_RELEASE_TAG."
+                UPSTREAM_RELEASE_TAG="v${MAIN_UPSTREAM_VERSION}"
+                UPSTREAM_RELEASE_ID=""
+                UPSTREAM_RELEASE_PUBLISHED=false
+                UPSTREAM_SOURCE_FROM_MAIN=true
+              fi
+            fi
+
+            if [[ -n "$UPSTREAM_RELEASE_TAG" && "$UPSTREAM_SOURCE_FROM_MAIN" != "true" ]]; then
               if ! git check-ref-format "refs/tags/${UPSTREAM_RELEASE_TAG}"; then
                 echo "Invalid Sub2API release tag: $UPSTREAM_RELEASE_TAG" >&2
                 exit 1
@@ -157,6 +176,8 @@ jobs:
           echo "UPSTREAM_SHA=$UPSTREAM_SHA" >> "$GITHUB_ENV"
           echo "UPSTREAM_RELEASE_TAG=$UPSTREAM_RELEASE_TAG" >> "$GITHUB_ENV"
           echo "UPSTREAM_RELEASE_ID=$UPSTREAM_RELEASE_ID" >> "$GITHUB_ENV"
+          echo "UPSTREAM_RELEASE_PUBLISHED=$UPSTREAM_RELEASE_PUBLISHED" >> "$GITHUB_ENV"
+          echo "UPSTREAM_SOURCE_FROM_MAIN=$UPSTREAM_SOURCE_FROM_MAIN" >> "$GITHUB_ENV"
           echo "RELEASE_SOURCE_SHA=$RELEASE_SOURCE_SHA" >> "$GITHUB_ENV"
           echo "RELEASE_KIND=$RELEASE_KIND" >> "$GITHUB_ENV"
           echo "RELEASE_IMAGE_TAG=$RELEASE_IMAGE_TAG" >> "$GITHUB_ENV"
@@ -427,8 +448,15 @@ jobs:
 
           write_fallback_notes() {
             local short_sha="${UPSTREAM_SHA:0:12}"
-            printf '%s\n' "unreleased-${short_sha}" > "$TAG_FILE"
-            printf '%s\n' "上游版本 ${short_sha}" > "$NAME_FILE"
+            local upstream_version=""
+            upstream_version="$(tr -d '[:space:]' < "$GENERATED_DIR/backend/cmd/server/VERSION" 2>/dev/null || true)"
+            if [[ "$upstream_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              printf '%s\n' "v${upstream_version}" > "$TAG_FILE"
+              printf '%s\n' "Sub2API v${upstream_version}" > "$NAME_FILE"
+            else
+              printf '%s\n' "unreleased-${short_sha}" > "$TAG_FILE"
+              printf '%s\n' "上游版本 ${short_sha}" > "$NAME_FILE"
+            fi
             printf '%s\n' "https://github.com/Wei-Shaw/sub2api/commit/${UPSTREAM_SHA}" > "$URL_FILE"
             {
               printf '未找到与上游提交 %s 匹配的已发布版本。\n\n' "$UPSTREAM_SHA"
@@ -440,6 +468,12 @@ jobs:
               fi
             } > "$NOTES_FILE"
           }
+
+          if [[ "${UPSTREAM_RELEASE_PUBLISHED:-false}" != "true" ]]; then
+            echo "No published upstream release metadata; using the source VERSION and commit summary."
+            write_fallback_notes
+            exit 0
+          fi
 
           if [[ -z "${UPSTREAM_RELEASE_TAG:-}" ]]; then
             echo "No captured upstream release tag; using commit summary."
