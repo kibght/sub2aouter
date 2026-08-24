@@ -11,7 +11,7 @@ test('theme overlay never targets backend implementation files', async () => {
     ...(manifest.files || []).map((entry) => entry.target),
     ...(manifest.patches || []).map((entry) => entry.target),
   ]
-  assert.deepEqual([...new Set(targets.filter((target) => target === 'backend' || target.startsWith('backend/')))].sort(), ['backend/Dockerfile', 'backend/go.mod', 'backend/internal/service/update_service.go'])
+  assert.deepEqual([...new Set(targets.filter((target) => target === 'backend' || target.startsWith('backend/')))].sort(), ['backend/internal/service/update_service.go'])
 })
 
 test('shipped theme contains no target-site brand, domain, or account credentials', async () => {
