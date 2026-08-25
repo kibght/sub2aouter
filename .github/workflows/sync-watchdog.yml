@@ -1,0 +1,166 @@
+name: Sync Watchdog
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '41 * * * *'
+
+concurrency:
+  group: sync-watchdog
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      healthy: ${{ steps.health.outputs.healthy }}
+      state: ${{ steps.health.outputs.state }}
+      should_dispatch: ${{ steps.health.outputs.should_dispatch }}
+      should_alert: ${{ steps.health.outputs.should_alert }}
+      summary: ${{ steps.health.outputs.summary }}
+    steps:
+      - name: Checkout monitoring source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+
+      - name: Evaluate synchronization health
+        id: health
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          HEALTH_JSON=/tmp/sync-health.json
+          HEALTH_ERROR=/tmp/sync-health-error.log
+          if node scripts/check-sync-health.mjs \
+            --repository "$GITHUB_REPOSITORY" \
+            --stale-after-minutes 120 \
+            --stuck-after-minutes 90 \
+            --release-ref themed-release \
+            --json-output "$HEALTH_JSON" \
+            --github-output "$GITHUB_OUTPUT" 2> "$HEALTH_ERROR"; then
+            exit 0
+          fi
+
+          ERROR_SUMMARY="$(tr '\n' ' ' < "$HEALTH_ERROR" | sed 's/[[:space:]]\+/ /g' | cut -c1-2000)"
+          cat > "$HEALTH_JSON" <<JSON
+          {
+            "state": "critical",
+            "healthy": false,
+            "shouldDispatch": false,
+            "shouldAlert": true,
+            "summary": $(jq -Rn --arg value "GitHub workflow health inspection failed: ${ERROR_SUMMARY}" '$value')
+          }
+          JSON
+          DELIMITER="SYNC_HEALTH_$(date +%s)"
+          {
+            echo "healthy=false"
+            echo "state=critical"
+            echo "should_dispatch=false"
+            echo "should_alert=true"
+            echo "summary<<${DELIMITER}"
+            echo "GitHub workflow health inspection failed: ${ERROR_SUMMARY}"
+            echo "${DELIMITER}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write watchdog summary
+        if: ${{ always() }}
+        env:
+          HEALTH_STATE: ${{ steps.health.outputs.state }}
+          HEALTHY: ${{ steps.health.outputs.healthy }}
+          SHOULD_DISPATCH: ${{ steps.health.outputs.should_dispatch }}
+          HEALTH_SUMMARY: ${{ steps.health.outputs.summary }}
+        shell: bash
+        run: |
+          {
+            echo "## Synchronization watchdog"
+            echo
+            echo "- State: \`${HEALTH_STATE:-unknown}\`"
+            echo "- Healthy: \`${HEALTHY:-false}\`"
+            echo "- Recovery dispatch required: \`${SHOULD_DISPATCH:-false}\`"
+            echo "- Evaluated at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`"
+            echo
+            echo "${HEALTH_SUMMARY:-No health summary was produced.}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload watchdog evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sync-health-${{ github.run_id }}
+          path: /tmp/sync-health.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Close recovered synchronization incident
+        if: ${{ steps.health.outputs.state == 'healthy' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_TITLE: "[automation] Upstream synchronization unhealthy"
+        shell: bash
+        run: |
+          set -euo pipefail
+          ISSUE_NUMBER="$(
+            gh issue list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --limit 100 \
+              --json number,title |
+              jq -r --arg title "$ISSUE_TITLE" '.[] | select(.title == $title) | .number' |
+              head -n 1
+          )"
+          if [[ -n "$ISSUE_NUMBER" ]]; then
+            gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --comment "Synchronization health recovered in ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}."
+          else
+            echo "No open synchronization incident issue exists."
+          fi
+
+  recover:
+    needs: inspect
+    if: ${{ needs.inspect.outputs.should_dispatch == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout retry helper
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+
+      - name: Dispatch unified synchronization coordinator
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          retry_with_backoff 5 5 gh workflow run infinite-canvas-upstream-sync.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+
+  alert:
+    needs: [inspect, recover]
+    if: ${{ always() && needs.inspect.outputs.should_alert == 'true' }}
+    uses: ./.github/workflows/automation-alert.yml
+    with:
+      workflow_name: Sync Watchdog
+      severity: ${{ needs.inspect.outputs.state == 'critical' && 'critical' || 'warning' }}
+      summary: ${{ needs.inspect.outputs.summary }}
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    secrets: inherit
+
+  mark-unhealthy:
+    needs: [inspect, recover, alert]
+    if: ${{ always() && needs.inspect.outputs.should_alert == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail unhealthy watchdog run after remediation and notification
+        run: |
+          echo "${{ needs.inspect.outputs.summary }}" >&2
+          exit 1
