@@ -43,18 +43,19 @@ export function installSub2Bridge() {
         if (event.origin !== window.location.origin || event.source !== parent || !isInitMessage(event.data)) return;
 
         const { baseUrl, apiKey, theme, locale } = event.data.payload;
+        const gatewayBaseUrl = baseUrl.trim();
+        const gatewayApiKey = apiKey.trim();
         const state = useConfigStore.getState();
-        const firstChannel = state.config.channels[0];
+        const gatewayChannels = state.config.channels.map((channel) => ({ ...channel, baseUrl: gatewayBaseUrl, apiKey: gatewayApiKey, apiFormat: "openai" as const }));
         state.updateConfig(
             "channels",
-            firstChannel
-                ? state.config.channels.map((channel, index) =>
-                      index === 0 ? { ...channel, baseUrl: baseUrl.trim(), apiKey: apiKey.trim() } : channel,
-                  )
-                : [createModelChannel({ id: "default", name: "默认渠道", baseUrl: baseUrl.trim(), apiKey: apiKey.trim() })],
+            gatewayChannels.length
+                ? gatewayChannels
+                : [createModelChannel({ id: "default", name: "默认渠道", baseUrl: gatewayBaseUrl, apiKey: gatewayApiKey, apiFormat: "openai" })],
         );
-        state.updateConfig("baseUrl", baseUrl.trim());
-        state.updateConfig("apiKey", apiKey.trim());
+        state.updateConfig("baseUrl", gatewayBaseUrl);
+        state.updateConfig("apiKey", gatewayApiKey);
+        state.updateConfig("apiFormat", "openai");
         state.openConfigDialog(false);
         if (theme === "light" || theme === "dark") useThemeStore.getState().setTheme(theme);
         if (locale === "zh-CN" || locale === "en-US") void changeAppLocale(locale as AppLocale);

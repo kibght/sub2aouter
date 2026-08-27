@@ -55,6 +55,11 @@ test('infinite canvas adapter applies cleanly and remains idempotent', async () 
     assert.match(childBridge, /import \{ changeAppLocale, type AppLocale \} from "@\/i18n"/)
     assert.match(childBridge, /const \{ baseUrl, apiKey, theme, locale \} = event\.data\.payload/)
     assert.match(childBridge, /changeAppLocale\(locale(?: as AppLocale)?\)/)
+    assert.match(
+      childBridge,
+      /state\.config\.channels\.map\(\(channel\) => \(\{ \.\.\.channel, baseUrl: gatewayBaseUrl, apiKey: gatewayApiKey, apiFormat: "openai"(?: as const)? \}\)\)/
+    )
+    assert.match(childBridge, /state\.updateConfig\("apiFormat", "openai"\)/)
     assert.equal((init.match(/installSub2Bridge/g) || []).length, 2)
   } finally {
     await rm(root, { recursive: true, force: true })
