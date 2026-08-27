@@ -22,3 +22,13 @@ test('unreleased upstream snapshots use the source VERSION in release metadata',
   assert.match(workflow, /Sub2API v\$\{upstream_version\}/)
   assert.match(workflow, /No published upstream release metadata/)
 })
+
+test('repository releases initialize upstream release metadata before exporting it', () => {
+  const repositorySourceBlock = workflow.match(
+    /if \[\[ "\$REPOSITORY_RELEASE" == "true" \]\]; then([\s\S]*?)\n          else/
+  )?.[1]
+
+  assert.ok(repositorySourceBlock)
+  assert.match(repositorySourceBlock, /UPSTREAM_RELEASE_PUBLISHED=false/)
+  assert.match(repositorySourceBlock, /UPSTREAM_SOURCE_FROM_MAIN=false/)
+})
