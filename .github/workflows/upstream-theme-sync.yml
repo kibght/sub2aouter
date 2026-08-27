@@ -120,6 +120,8 @@ jobs:
             RELEASE_IMAGE_TAG="repository-${RELEASE_SOURCE_SHA:0:12}"
             UPSTREAM_RELEASE_TAG=""
             UPSTREAM_RELEASE_ID=""
+            UPSTREAM_RELEASE_PUBLISHED=false
+            UPSTREAM_SOURCE_FROM_MAIN=false
             echo "Repository push: reusing themed-release without fetching upstream."
           else
             git remote remove upstream 2>/dev/null || true
