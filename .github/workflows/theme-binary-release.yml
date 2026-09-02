@@ -1,0 +1,282 @@
+name: Publish Themed Binary Release
+
+on:
+  workflow_call:
+    inputs:
+      release_ref:
+        description: Immutable generated release commit to build
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      release_ref:
+        description: Generated release branch, tag, or commit to build
+        required: false
+        default: themed-release
+        type: string
+
+concurrency:
+  group: themed-binary-release-${{ inputs.release_ref || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  binary-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.release_ref || 'themed-release' }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Verify themed release matches main repository and canvas
+        id: source_guard
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          retry_with_backoff 5 5 git fetch --depth=1 origin main
+          MAIN_REPOSITORY_SHA="$(git rev-parse FETCH_HEAD)"
+          RELEASE_REPOSITORY_SHA="$(tr -d '[:space:]' < .apophis-repository-sha)"
+          MAIN_CANVAS_SHA="$(git rev-parse "${MAIN_REPOSITORY_SHA}:integrations/infinite-canvas")"
+          RELEASE_CANVAS_SHA="$(git rev-parse HEAD:integrations/infinite-canvas)"
+          RELEASE_JSON=/tmp/published-canvas-release.json
+          node scripts/resolve-github-release.mjs \
+            --repository basketikun/infinite-canvas \
+            --json-output "$RELEASE_JSON" \
+            --github-output "$GITHUB_OUTPUT"
+          CANVAS_RELEASE_FOUND="$(jq -r '.found' "$RELEASE_JSON")"
+          CANVAS_RELEASE_TAG="$(jq -r '.tag' "$RELEASE_JSON")"
+          if [[ "$CANVAS_RELEASE_FOUND" != "true" || -z "$CANVAS_RELEASE_TAG" ]]; then
+            echo "A published Infinite Canvas release is required before binary publication." >&2
+            exit 1
+          fi
+          if ! git check-ref-format "refs/tags/${CANVAS_RELEASE_TAG}"; then
+            echo "Invalid Infinite Canvas release tag: $CANVAS_RELEASE_TAG" >&2
+            exit 1
+          fi
+          retry_with_backoff 5 5 git -C integrations/infinite-canvas fetch --depth=1 origin "refs/tags/${CANVAS_RELEASE_TAG}:refs/tags/${CANVAS_RELEASE_TAG}"
+          LATEST_CANVAS_SHA="$(git -C integrations/infinite-canvas rev-list -n 1 "refs/tags/${CANVAS_RELEASE_TAG}")"
+          if [[ "$RELEASE_CANVAS_SHA" != "$LATEST_CANVAS_SHA" ]]; then
+            echo "Themed release Canvas SHA is behind the latest upstream release: $RELEASE_CANVAS_SHA != $LATEST_CANVAS_SHA ($CANVAS_RELEASE_TAG)" >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_REPOSITORY_SHA" != "$MAIN_REPOSITORY_SHA" ]]; then
+            echo "Themed release repository SHA is stale: $RELEASE_REPOSITORY_SHA != $MAIN_REPOSITORY_SHA" >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_CANVAS_SHA" != "$MAIN_CANVAS_SHA" ]]; then
+            echo "Themed release Canvas SHA is stale: $RELEASE_CANVAS_SHA != $MAIN_CANVAS_SHA" >&2
+            exit 1
+          fi
+
+      - name: Read release version and skip duplicates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          RELEASE_VERSION="$(cat backend/cmd/server/VERSION | tr -d '[:space:]')"
+          if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid themed release version: $RELEASE_VERSION" >&2
+            exit 1
+          fi
+          RELEASE_TAG="v${RELEASE_VERSION}"
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          REQUIRED_ASSETS=(
+            "sub2api_${RELEASE_VERSION}_linux_amd64.tar.gz"
+            "sub2api_${RELEASE_VERSION}_linux_arm64.tar.gz"
+            "sub2api_${RELEASE_VERSION}_windows_amd64.zip"
+            "sub2api_${RELEASE_VERSION}_darwin_amd64.tar.gz"
+            "sub2api_${RELEASE_VERSION}_darwin_arm64.tar.gz"
+            "checksums.txt"
+          )
+          RELEASE_EXISTS=false
+          RELEASE_JSON_FILE=/tmp/apophis-release.json
+          RELEASE_ERROR_FILE=/tmp/apophis-release-error.log
+          set +e
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets,targetCommitish > "$RELEASE_JSON_FILE" 2> "$RELEASE_ERROR_FILE"
+          RELEASE_STATUS=$?
+          set -e
+          if [[ "$RELEASE_STATUS" -eq 0 ]]; then
+            RELEASE_EXISTS=true
+            RELEASE_DRAFT="$(jq -r '.isDraft' "$RELEASE_JSON_FILE")"
+            RELEASE_PRERELEASE="$(jq -r '.isPrerelease' "$RELEASE_JSON_FILE")"
+            RELEASE_TARGET="$(jq -r '.targetCommitish' "$RELEASE_JSON_FILE")"
+            RELEASE_ASSETS="$(jq -r '.assets[].name' "$RELEASE_JSON_FILE")"
+            MISSING_ASSETS=()
+            for asset in "${REQUIRED_ASSETS[@]}"; do
+              if ! grep -Fqx -- "$asset" <<< "$RELEASE_ASSETS"; then
+                MISSING_ASSETS+=("$asset")
+              fi
+            done
+            if [[ "$RELEASE_DRAFT" == "false" && "$RELEASE_PRERELEASE" == "false" && "$RELEASE_TARGET" == "themed-release" && "${#MISSING_ASSETS[@]}" -eq 0 ]]; then
+              echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
+              echo "RELEASE_EXISTS=true" >> "$GITHUB_ENV"
+              echo "Release $RELEASE_TAG already exists with all required assets; nothing to publish."
+              exit 0
+            fi
+            echo "Existing release ${RELEASE_TAG} needs repair (draft=${RELEASE_DRAFT}, prerelease=${RELEASE_PRERELEASE}, target=${RELEASE_TARGET}, missing=${MISSING_ASSETS[*]:-none})."
+          elif grep -Eiq '404|not found' "$RELEASE_ERROR_FILE"; then
+            echo "Release $RELEASE_TAG does not exist; creating it."
+          else
+            cat "$RELEASE_ERROR_FILE" >&2
+            exit "$RELEASE_STATUS"
+          fi
+          echo "RELEASE_EXISTS=$RELEASE_EXISTS" >> "$GITHUB_ENV"
+          echo "SHOULD_PUBLISH=true" >> "$GITHUB_ENV"
+          git tag -f "$RELEASE_TAG"
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        if: env.SHOULD_PUBLISH == 'true'
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: env.SHOULD_PUBLISH == 'true'
+        with:
+          node-version: '20'
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        if: env.SHOULD_PUBLISH == 'true'
+        with:
+          bun-version: 1.3.13
+
+      - run: pnpm install --frozen-lockfile
+        if: env.SHOULD_PUBLISH == 'true'
+        working-directory: frontend
+
+      - run: pnpm run build
+        if: env.SHOULD_PUBLISH == 'true'
+        working-directory: frontend
+
+      - name: Build Infinite Canvas
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          node scripts/apply-infinite-canvas-patches.mjs --root integrations/infinite-canvas
+          cd integrations/infinite-canvas/web
+          retry_with_backoff 3 10 bun install --frozen-lockfile
+          VITE_BASE=/canvas-app/ bun run typecheck
+          VITE_BASE=/canvas-app/ bun run build
+          cp ../VERSION dist/version.txt
+          cd ../../..
+          mkdir -p backend/internal/web/dist/canvas-app
+          cp -a integrations/infinite-canvas/web/dist/. backend/internal/web/dist/canvas-app/
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: env.SHOULD_PUBLISH == 'true'
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
+        if: env.SHOULD_PUBLISH == 'true'
+        with:
+          version: '~> v2'
+          args: release --clean --skip=publish --skip=validate --config=.goreleaser.theme.yaml
+
+      - name: Verify GoReleaser artifacts
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for artifact in \
+            "dist/sub2api_${RELEASE_VERSION}_linux_amd64.tar.gz" \
+            "dist/sub2api_${RELEASE_VERSION}_linux_arm64.tar.gz" \
+            "dist/sub2api_${RELEASE_VERSION}_windows_amd64.zip" \
+            "dist/sub2api_${RELEASE_VERSION}_darwin_amd64.tar.gz" \
+            "dist/sub2api_${RELEASE_VERSION}_darwin_arm64.tar.gz"; do
+            test -s "$artifact" || { echo "Missing release artifact: $artifact" >&2; exit 1; }
+          done
+          test -s dist/checksums.txt
+
+      - name: Publish GitHub binary release
+        if: env.SHOULD_PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          RELEASE_TITLE="$(cat .apophis-release-title)"
+          if [[ -z "$RELEASE_TITLE" || ! -s .apophis-release-notes.md ]]; then
+            echo "Generated release title or notes are missing." >&2
+            exit 1
+          fi
+
+          if [[ "$RELEASE_EXISTS" == "true" ]]; then
+            retry_with_backoff 4 10 gh release upload "$RELEASE_TAG" \
+              dist/*.tar.gz dist/*.zip dist/checksums.txt \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+            retry_with_backoff 4 10 gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target themed-release \
+              --title "$RELEASE_TITLE" \
+              --notes-file .apophis-release-notes.md \
+              --latest \
+              --draft=false \
+              --prerelease=false
+          else
+            retry_with_backoff 4 10 gh release create "$RELEASE_TAG" \
+              dist/*.tar.gz dist/*.zip dist/checksums.txt \
+              --repo "$GITHUB_REPOSITORY" \
+              --target themed-release \
+              --title "$RELEASE_TITLE" \
+              --notes-file .apophis-release-notes.md \
+              --latest
+          fi
+
+      - name: Verify published GitHub release
+        if: env.SHOULD_PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          RELEASE_JSON_FILE=/tmp/apophis-published-release.json
+          retry_with_backoff 5 3 gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets,targetCommitish > "$RELEASE_JSON_FILE"
+          test "$(jq -r '.isDraft' "$RELEASE_JSON_FILE")" = "false"
+          test "$(jq -r '.isPrerelease' "$RELEASE_JSON_FILE")" = "false"
+          test "$(jq -r '.targetCommitish' "$RELEASE_JSON_FILE")" = "themed-release"
+          PUBLISHED_ASSETS="$(jq -r '.assets[].name' "$RELEASE_JSON_FILE")"
+          REQUIRED_ASSETS=(
+            "sub2api_${RELEASE_VERSION}_linux_amd64.tar.gz"
+            "sub2api_${RELEASE_VERSION}_linux_arm64.tar.gz"
+            "sub2api_${RELEASE_VERSION}_windows_amd64.zip"
+            "sub2api_${RELEASE_VERSION}_darwin_amd64.tar.gz"
+            "sub2api_${RELEASE_VERSION}_darwin_arm64.tar.gz"
+            "checksums.txt"
+          )
+          for asset in "${REQUIRED_ASSETS[@]}"; do
+            grep -Fqx -- "$asset" <<< "$PUBLISHED_ASSETS" || {
+              echo "Missing published release asset: $asset" >&2
+              exit 1
+            }
+          done
+
+      - name: Write binary release summary
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          {
+            echo "## Themed binary release"
+            echo
+            echo "- Requested ref: \`${{ inputs.release_ref || 'themed-release' }}\`"
+            echo "- Release version: \`${RELEASE_VERSION:-unknown}\`"
+            echo "- Publish required: \`${SHOULD_PUBLISH:-unknown}\`"
+            echo "- Source guard Canvas tag: \`${{ steps.source_guard.outputs.tag || 'unknown' }}\`"
+            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } >> "$GITHUB_STEP_SUMMARY"
