@@ -1,0 +1,345 @@
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+
+export const RELEASE_PIPELINE_FILES = Object.freeze([
+  '.github/workflows/upstream-theme-sync.yml',
+  '.github/workflows/infinite-canvas-upstream-sync.yml',
+  '.github/workflows/theme-binary-release.yml',
+  '.github/workflows/backend-ci.yml',
+  '.github/workflows/automation-alert.yml',
+  '.github/workflows/sync-watchdog.yml',
+  'scripts/resolve-github-release.mjs',
+  'scripts/check-sync-health.mjs',
+  'scripts/ci/retry.sh',
+  'scripts/ci/restore-workflow-snapshots.sh',
+  'scripts/lib/github-release.mjs',
+  'scripts/lib/sync-health.mjs',
+  'backend/internal/service/update_service.go',
+  'Dockerfile',
+  'frontend/src/components/common/VersionBadge.vue',
+  'frontend/src/views/HomeView.vue',
+  'README.md',
+  'scripts/lib/release-version.mjs',
+  'scripts/next-release-version.mjs',
+  'theme/apophis/files/frontend/src/views/HomeView.vue',
+  'theme/apophis/files/README.md',
+  'theme/apophis/files/.github/workflows/theme-binary-release.yml',
+  'theme/apophis/manifest.json',
+])
+
+function violation(code, path, message) {
+  return { code, path, message }
+}
+
+function hasPattern(text, pattern) {
+  return pattern.test(text)
+}
+
+function hasOrderedMarkers(text, markers) {
+  let cursor = -1
+  for (const marker of markers) {
+    const index = text.indexOf(marker, cursor + 1)
+    if (index < 0 || index <= cursor) {
+      return false
+    }
+    cursor = index
+  }
+  return true
+}
+
+function manifestHasPatch(manifest, target, sentinel) {
+  return (manifest.patches || []).some(
+    (entry) => entry.target === target && entry.sentinel === sentinel,
+  )
+}
+
+function manifestHasFile(manifest, target) {
+  return (manifest.files || []).some((entry) => entry.target === target)
+}
+
+function remoteActionsPinned(workflows) {
+  for (const workflow of workflows) {
+    for (const match of workflow.matchAll(/^\s*(?:-\s*)?uses:\s*([^\s#]+)/gm)) {
+      const reference = match[1]
+      if (reference.startsWith('./')) {
+        continue
+      }
+      if (!/^[^@\s]+@[0-9a-f]{40}$/.test(reference)) {
+        return false
+      }
+    }
+  }
+  return true
+}
+
+export async function verifyReleasePipelineContract(root = '.', options = {}) {
+  const base = resolve(root)
+  const readText = options.readText || ((path) => readFile(resolve(base, path), 'utf8'))
+  const files = new Map()
+  const violations = []
+
+  for (const path of RELEASE_PIPELINE_FILES) {
+    try {
+      files.set(path, await readText(path))
+    } catch (error) {
+      violations.push(violation('file.missing', path, `Unable to read required file: ${error.message}`))
+    }
+  }
+
+  const check = (code, path, condition, message) => {
+    if (!condition) {
+      violations.push(violation(code, path, message))
+    }
+  }
+
+  const syncPath = '.github/workflows/upstream-theme-sync.yml'
+  const sync = files.get(syncPath) || ''
+  const workflowRestorePath = 'scripts/ci/restore-workflow-snapshots.sh'
+  const workflowRestore = files.get(workflowRestorePath) || ''
+  check('sync.no_push_release', syncPath, !sync.includes('\n  push:') && hasPattern(sync, /\non:\n  workflow_dispatch:/), 'Repository pushes must never publish a themed release automatically.')
+  check('sync.coordinated_round', syncPath, !sync.includes('  schedule:') && sync.includes('scheduled_round:') && sync.includes('SCHEDULED_ROUND'), 'Theme sync must be dispatched by the single hourly coordinator.')
+  check('sync.upstream', syncPath, sync.includes('https://github.com/Wei-Shaw/sub2api.git'), 'Sync must fetch the canonical upstream repository.')
+  const releaseCliPath = 'scripts/resolve-github-release.mjs'
+  const releaseCli = files.get(releaseCliPath) || ''
+  const releaseLibraryPath = 'scripts/lib/github-release.mjs'
+  const releaseLibrary = files.get(releaseLibraryPath) || ''
+  check('sync.upstream_release_metadata', syncPath, sync.includes('node scripts/resolve-github-release.mjs') && sync.includes('--repository Wei-Shaw/sub2api') && sync.includes('UPSTREAM_RELEASE_TAG') && sync.includes('UPSTREAM_RELEASE_ID'), 'Scheduled Sub2API syncs must read one immutable latest-release descriptor before fetching source.')
+  check('sync.release_discovery_cli', syncPath, sync.includes('node scripts/resolve-github-release.mjs') && releaseCli.includes('fetchLatestRelease') && releaseLibrary.includes('response.status === 404') && releaseLibrary.includes('response.status === 429') && releaseLibrary.includes('response.status >= 500'), 'Synchronization must use the tested fail-closed latest-release discovery CLI with bounded transient retry.')
+  check('sync.release_fail_closed', syncPath, sync.includes('steps.upstream_release.outputs.found') && sync.includes('steps.upstream_release.outputs.tag') && !/releases\/latest[^\n]*\|\| true/.test(sync), 'Sub2API release discovery must fall back only on an explicit no-release result and fail on other API errors.')
+  check('sync.upstream_release_ref', syncPath, sync.includes('refs/apophis/upstream-release') && !sync.includes(':refs/tags/${UPSTREAM_RELEASE_TAG}'), 'Upstream release tags must use a private ref and never collide with themed release tags.')
+  check('sync.upstream_main_version', syncPath, sync.includes('MAIN_UPSTREAM_VERSION') && sync.includes('backend/cmd/server/VERSION') && sync.includes('sort -V') && sync.includes('UPSTREAM_SOURCE_FROM_MAIN=true'), 'Scheduled syncs must prefer a newer upstream main version over a stale formal release tag.')
+  check('sync.unreleased_version_metadata', syncPath, sync.includes('upstream_version=') && sync.includes('v${upstream_version}') && sync.includes('backend/cmd/server/VERSION') && sync.includes('UPSTREAM_RELEASE_PUBLISHED'), 'Unreleased upstream snapshots must publish their source VERSION instead of a commit-only label.')
+  check('sync.upstream_monotonic', syncPath, sync.includes('merge-base --is-ancestor "$PREVIOUS_UPSTREAM_SHA" "$UPSTREAM_SHA"'), 'Scheduled Sub2API synchronization must reject downgrades and unrelated release history.')
+  check('sync.upstream_release_recovery', syncPath, sync.includes('UPSTREAM_RECOVERY_FROM_UNRELEASED') && sync.includes('\"$PREVIOUS_UPSTREAM_RELEASE_TAG\" == unreleased-*') && sync.includes('\"$UPSTREAM_RELEASE_TAG\" != unreleased-*') && sync.includes('\"$UPSTREAM_RELEASE_ID\"') && sync.includes('merge-base --is-ancestor \"$UPSTREAM_SHA\" \"$PREVIOUS_UPSTREAM_SHA\"'), 'Scheduled Sub2API synchronization may recover only from a descendant unreleased snapshot to its published upstream Release ancestor.')
+  check('sync.upstream_release_identity', syncPath, sync.includes('UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_TAG') && sync.includes('.apophis-upstream-release-id') && sync.includes('UPSTREAM_IDENTITY_AND_SHA_MATCH') && sync.includes('"$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA"'), 'Scheduled Sub2API syncs must deduplicate only when Release identity and source SHA match.')
+  check('sync.skip_unchanged', syncPath, sync.includes('SCHEDULED_ROUND') && hasPattern(sync, /PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Coordinated hourly runs must skip unchanged upstream revisions.')
+  check('sync.theme_overlay', syncPath, sync.includes('node scripts/apply-theme.mjs --root .'), 'Sync must apply the Apophis overlay to fetched upstream source.')
+  check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-canvas-sha') && sync.includes('.apophis-release-notes.md'), 'Sync must persist upstream, repository, Canvas, and release notes metadata.')
+  check('sync.repository_recovery', syncPath, sync.includes('repository_release:') && sync.includes('PREVIOUS_CANVAS_SHA') && sync.includes('Repository source drift is intentionally not published') && sync.includes('UPSTREAM_ALREADY_SYNCHRONIZED'), 'Scheduled syncs may publish Canvas drift, while repository-only changes require explicit repository_release=true.')
+  check('sync.canvas_freshness', syncPath, sync.includes('name: Verify Infinite Canvas dependency is current') && sync.includes('LATEST_CANVAS_SHA') && sync.includes('node scripts/resolve-github-release.mjs') && sync.includes('--repository basketikun/infinite-canvas'), 'Theme publication must stop when main is behind the latest published Infinite Canvas release.')
+  check('sync.release_notes_encoding', syncPath, sync.includes('cat "$GENERATED_DIR/.apophis-upstream-release-notes.md"') && !/\?{4,}/.test(sync), 'Release notes must preserve readable text instead of emitting literal question-mark placeholders.')
+  check('sync.repository_source', syncPath, sync.includes('git worktree add --detach "$GENERATED_DIR" origin/themed-release') && sync.includes('RELEASE_KIND="repository"') && sync.includes('[[ "$REPOSITORY_RELEASE" == "true" ]]'), 'Explicit repository releases must reuse themed-release without fetching upstream.')
+  check('sync.repository_checkout', syncPath, hasPattern(sync, /name: Checkout theme source[\s\S]{0,300}ref: main/) && !sync.includes("github.event_name == 'push'"), 'Manual and coordinated publication must checkout main explicitly.')
+  check('sync.repository_source_sha', syncPath, sync.includes('RELEASE_SOURCE_SHA="$(git rev-parse HEAD)"') && !sync.includes('RELEASE_SOURCE_SHA="${{ github.sha }}"'), 'Repository release metadata must come from the commit actually checked out and built.')
+  check('sync.repository_notes', syncPath, sync.includes('## \u4ed3\u5e93\u4fee\u590d') && sync.includes('Capture repository release notes'), 'Explicit repository releases must publish repository fix notes.')
+  check('sync.release_version', syncPath, sync.includes('PREVIOUS_RELEASE_VERSION') && sync.includes('node scripts/next-release-version.mjs \"$PREVIOUS_RELEASE_VERSION\"'), 'Sync must migrate the next release to v0.1.200 and increment the persisted version.')
+  const binaryJobIndex = sync.indexOf('\n  binary-release:\n')
+  const promoteLatestIndex = sync.indexOf('\n  promote-latest:\n')
+  const latestPushIndex = promoteLatestIndex >= 0 ? sync.indexOf('docker push "${IMAGE}:latest"', promoteLatestIndex) : -1
+  const sourceJob = binaryJobIndex >= 0 ? sync.slice(0, binaryJobIndex) : sync
+  check('sync.publish_order', syncPath,
+    hasOrderedMarkers(sync, [
+      'name: Push immutable themed image',
+      'name: Update generated release branch',
+      '\n  binary-release:\n',
+      '\n  promote-latest:\n',
+      'docker push "${IMAGE}:latest"',
+    ]) && !sourceJob.includes('docker push "${IMAGE}:latest"'),
+  'Immutable image and release branch must publish before awaited binaries and final latest promotion.')
+  check('sync.latest_image', syncPath, latestPushIndex > promoteLatestIndex && sync.includes('docker pull "${IMAGE}:${RELEASE_VERSION}"'), 'Sync must promote the immutable Docker version to latest only in the final job.')
+  check('sync.go_builder_version', syncPath,
+    sync.includes("GO_VERSION=\"$(awk '$1 == \"go\" { print $2; exit }' backend/go.mod)\"") &&
+    sync.includes('test -n "$GO_VERSION"') &&
+    sync.includes('--build-arg "GOLANG_IMAGE=golang:${GO_VERSION}-alpine"'),
+  'Docker sync builds must derive the builder image from the generated Go module version.')
+  const workflowRestoreInvocations = sync.match(/bash "\$GITHUB_WORKSPACE\/scripts\/ci\/restore-workflow-snapshots\.sh" "\$GENERATED_DIR"/g) || []
+  check('sync.workflow_preservation', workflowRestorePath,
+    workflowRestoreInvocations.length === 2 &&
+    workflowRestore.includes('WORKFLOW_DIR=.github/workflows') &&
+    workflowRestore.includes('for workflow in "$WORKFLOW_DIR"/*.yml "$WORKFLOW_DIR"/*.yaml; do') &&
+    workflowRestore.includes('git checkout origin/themed-release -- "$workflow"') &&
+    workflowRestore.includes('rm -f "$workflow"'),
+  'Sync must restore non-owned workflow snapshots through one shared helper before verification and final publication.')
+  check('sync.binary_recovery', syncPath, sync.includes('NEEDS_BINARY_RELEASE') && sync.includes('gh release view "$PREVIOUS_RELEASE_TAG"') && sync.includes('targetCommitish') && sync.includes('run_binary=$RUN_BINARY') && sync.includes('effective_version=$EFFECTIVE_VERSION'), 'Sync must recover a missing, incomplete, draft, prerelease, or mis-targeted binary release without minting another version.')
+  check('sync.binary_call', syncPath,
+    sync.includes('binary-release:') &&
+    sync.includes('uses: ./.github/workflows/theme-binary-release.yml') &&
+    sync.includes('release_ref: ${{ needs.sync-build-publish.outputs.release_ref }}') &&
+    !sync.includes('gh workflow run theme-binary-release.yml'),
+  'Source publication must await the local reusable binary workflow at the generated immutable commit.')
+  check('sync.latest_promotion', syncPath,
+    sync.includes('promote-latest:') &&
+    sync.includes('needs: [sync-build-publish, binary-release]') &&
+    sync.includes("needs.binary-release.result == 'success'") &&
+    sync.includes('needs.sync-build-publish.outputs.should_promote_latest') &&
+    latestPushIndex > promoteLatestIndex &&
+    !sourceJob.includes('docker push "${IMAGE}:latest"'),
+  'The latest image must be promoted only after the reusable binary publication succeeds.')
+
+  const releaseBranchIndex = sync.indexOf('name: Update generated release branch')
+  const releaseTreeIndex = sync.indexOf('RELEASE_TREE="$(git write-tree)"', releaseBranchIndex)
+  const finalContractIndex = sync.indexOf('node scripts/verify-release-pipeline.mjs --root .', releaseBranchIndex)
+  const workflowComparisonIndexes = [
+    'cmp "$GITHUB_WORKSPACE/.github/workflows/upstream-theme-sync.yml" .github/workflows/upstream-theme-sync.yml',
+    'cmp "$GITHUB_WORKSPACE/.github/workflows/infinite-canvas-upstream-sync.yml" .github/workflows/infinite-canvas-upstream-sync.yml',
+    'cmp "$GITHUB_WORKSPACE/.github/workflows/backend-ci.yml" .github/workflows/backend-ci.yml',
+    'cmp "$GITHUB_WORKSPACE/.github/workflows/theme-binary-release.yml" .github/workflows/theme-binary-release.yml',
+    'cmp "$GITHUB_WORKSPACE/.github/workflows/automation-alert.yml" .github/workflows/automation-alert.yml',
+    'cmp "$GITHUB_WORKSPACE/.github/workflows/sync-watchdog.yml" .github/workflows/sync-watchdog.yml',
+  ].map((marker) => sync.indexOf(marker, releaseBranchIndex))
+  check('sync.verified_workflow_snapshot', syncPath,
+    releaseBranchIndex >= 0 &&
+    !sync.includes('rm -rf "$GENERATED_DIR/.github/workflows"') &&
+    !sync.includes('git checkout origin/themed-release -- .github/workflows') &&
+    workflowComparisonIndexes.every((index) => index > releaseBranchIndex) &&
+    finalContractIndex > Math.max(...workflowComparisonIndexes) &&
+    releaseTreeIndex > finalContractIndex,
+  'Generated workflows must remain current and pass byte comparison plus the release contract before snapshot creation.')
+
+  const ciPath = '.github/workflows/backend-ci.yml'
+  const ci = files.get(ciPath) || ''
+  const reusableCheckoutRefs = ci.match(/ref: \$\{\{ inputs\.ref \|\| github\.sha \}\}/g) || []
+  check('ci.reusable_ref', ciPath, hasPattern(ci, /\n  workflow_call:\n/) && ci.includes('description: Commit, branch, or tag to verify') && ci.includes('type: string') && reusableCheckoutRefs.length === 5, 'CI must be reusable and every checkout must verify the requested immutable ref.')
+  check('ci.go_version', ciPath, ci.includes("GO_VERSION=\"$(awk '$1 == \"go\" { print $2; exit }' backend/go.mod)\"") && ci.includes('test \"$(go env GOVERSION)\" = \"go${GO_VERSION}\"'), 'Reusable CI must validate the Go toolchain against the generated module version.')
+
+  const canvasSyncPath = '.github/workflows/infinite-canvas-upstream-sync.yml'
+  const canvasSync = files.get(canvasSyncPath) || ''
+  check('canvas_sync.schedule', canvasSyncPath, hasPattern(canvasSync, /cron:\s*'17 \* \* \* \*'/), 'The unified upstream coordinator must run hourly off the load boundary.')
+  check('canvas_sync.release_metadata', canvasSyncPath, canvasSync.includes('node scripts/resolve-github-release.mjs') && canvasSync.includes('--repository "$CANVAS_REPOSITORY"') && canvasSync.includes('INFINITE_CANVAS_RELEASE_TAG'), 'Infinite Canvas sync must inspect published release metadata before syncing.')
+  check('canvas_sync.release_fail_closed', canvasSyncPath, canvasSync.includes('steps.canvas_release.outputs.found') && !/releases\/latest[^\n]*\|\| true/.test(canvasSync) && canvasSync.includes('RELEASE_TAG: ${{ steps.canvas_release.outputs.tag }}') && !canvasSync.includes('RELEASE_TAG="${{ steps.canvas_release.outputs.tag }}"') && canvasSync.includes('merge-base --is-ancestor "$CURRENT_SHA" "$LATEST_SHA"'), 'Infinite Canvas discovery must fail closed, pass external tags through env, and reject downgrades.')
+  check('canvas_sync.adapter_gate', canvasSyncPath, canvasSync.includes('apply-infinite-canvas-patches.mjs') && canvasSync.includes('bun run typecheck') && canvasSync.includes('bun run build'), 'Infinite Canvas sync must gate the submodule update on adapter checks and a production build.')
+  check('canvas_sync.full_ci_gate', canvasSyncPath,
+    canvasSync.includes('uses: ./.github/workflows/backend-ci.yml') &&
+    canvasSync.includes('ref: ${{ needs.update.outputs.update_sha }}') &&
+    canvasSync.includes('needs: [update, full-ci]') &&
+    hasOrderedMarkers(canvasSync, ['uses: ./.github/workflows/backend-ci.yml', 'gh pr merge']) &&
+    canvasSync.includes("needs.full-ci.result == 'success'") &&
+    canvasSync.includes("needs.merge.result == 'success'"),
+    'Canvas updates must run the complete CI workflow at the pushed update SHA before merge and release dispatch.')
+  check('canvas_sync.merge_identity', canvasSyncPath, canvasSync.includes('UPDATE_SHA: ${{ needs.update.outputs.update_sha }}') && canvasSync.includes('--json headRefOid') && canvasSync.includes('[[ "$PR_HEAD_SHA" == "$UPDATE_SHA" ]]') && canvasSync.includes('--match-head-commit "$UPDATE_SHA"'), 'Canvas merge must bind the pull request head to the exact SHA that passed full CI.')
+  check('canvas_sync.repository_selection', canvasSyncPath,
+    hasPattern(canvasSync, /gh pr list --repo "\$GITHUB_REPOSITORY"/) &&
+    hasPattern(canvasSync, /gh pr create[^\n]*\n\s+--repo "\$GITHUB_REPOSITORY"/) &&
+    hasPattern(canvasSync, /gh pr merge[^\n]*--repo "\$GITHUB_REPOSITORY"/) &&
+    hasPattern(canvasSync, /gh pr view[^\n]*--repo "\$GITHUB_REPOSITORY"/) &&
+    hasPattern(canvasSync, /gh workflow run upstream-theme-sync\.yml[^\n]*\n\s+--repo "\$GITHUB_REPOSITORY"/),
+    'Canvas automation must explicitly target the current repository for PR and workflow commands.')
+  check('canvas_sync.release_dispatch', canvasSyncPath, canvasSync.includes('actions: write') && canvasSync.includes('gh workflow run upstream-theme-sync.yml') && canvasSync.includes('repository_release=false') && canvasSync.includes('scheduled_round=true') && canvasSync.includes('needs.update.outputs.changed') && canvasSync.includes('always()'), 'The coordinator must dispatch one combined Canvas and Sub2API release round after every successful check.')
+
+
+  const retryPath = 'scripts/ci/retry.sh'
+  const retry = files.get(retryPath) || ''
+  const alertPath = '.github/workflows/automation-alert.yml'
+  const alert = files.get(alertPath) || ''
+  const watchdogPath = '.github/workflows/sync-watchdog.yml'
+  const watchdog = files.get(watchdogPath) || ''
+  check('sync.network_retry', retryPath,
+    retry.includes('retry_with_backoff()') &&
+    retry.includes('MAX_ATTEMPTS') &&
+    sync.includes('source scripts/ci/retry.sh') &&
+    canvasSync.includes('source scripts/ci/retry.sh') &&
+    hasPattern(sync, /retry_with_backoff[^\n]+git[^\n]+fetch/) &&
+    hasPattern(canvasSync, /retry_with_backoff[^\n]+git[^\n]+fetch/),
+  'Synchronization network fetches and dispatches must use the bounded retry helper.')
+  check('sync.failure_alert', alertPath,
+    sync.includes('uses: ./.github/workflows/automation-alert.yml') &&
+    canvasSync.includes('uses: ./.github/workflows/automation-alert.yml') &&
+    alert.includes('workflow_call:') &&
+    alert.includes('gh issue') &&
+    alert.includes('TELEGRAM_BOT_TOKEN'),
+  'Primary synchronization workflow failures must call the reusable issue and Telegram alert workflow.')
+  check('sync.workflow_summary', syncPath,
+    sync.includes('$GITHUB_STEP_SUMMARY') &&
+    canvasSync.includes('$GITHUB_STEP_SUMMARY') &&
+    watchdog.includes('$GITHUB_STEP_SUMMARY'),
+  'Synchronization workflows and the watchdog must emit operator-readable step summaries.')
+  check('sync.owned_workflows', workflowRestorePath,
+    workflowRestore.includes('automation-alert.yml|sync-watchdog.yml') &&
+    sync.includes('cmp "$GITHUB_WORKSPACE/.github/workflows/automation-alert.yml" .github/workflows/automation-alert.yml') &&
+    sync.includes('cmp "$GITHUB_WORKSPACE/.github/workflows/sync-watchdog.yml" .github/workflows/sync-watchdog.yml'),
+  'The generated release snapshot must own and verify the alert and watchdog workflows.')
+  check('sync.watchdog', watchdogPath,
+    hasPattern(watchdog, /cron:\s*'41 \* \* \* \*'/) &&
+    watchdog.includes('node scripts/check-sync-health.mjs') &&
+    watchdog.includes('stale-after-minutes 120') &&
+    watchdog.includes('stuck-after-minutes 90') &&
+    watchdog.includes('--release-ref themed-release') &&
+    watchdog.includes('gh workflow run infinite-canvas-upstream-sync.yml') &&
+    !watchdog.includes('gh workflow run upstream-theme-sync.yml') &&
+    watchdog.includes('uses: ./.github/workflows/automation-alert.yml'),
+  'The watchdog must inspect both workflows, use fixed thresholds, and recover only through the coordinator.')
+
+  const binaryPath = '.github/workflows/theme-binary-release.yml'
+  const binary = files.get(binaryPath) || ''
+  check('binary.reusable_entry', binaryPath,
+    hasPattern(binary, /\n  workflow_call:\n[\s\S]*release_ref:/) &&
+    hasPattern(binary, /\n  workflow_dispatch:\n[\s\S]*release_ref:/) &&
+    !binary.includes('workflow_run:'),
+  'Binary release must expose reusable and manual inputs without recursive workflow_run triggers.')
+  check('binary.source_guard', binaryPath, binary.includes('name: Verify themed release matches main repository and canvas') && binary.includes('RELEASE_REPOSITORY_SHA') && binary.includes('MAIN_REPOSITORY_SHA') && binary.includes('MAIN_CANVAS_SHA') && binary.includes('RELEASE_CANVAS_SHA'), 'Binary release must reject a themed snapshot that does not match main repository and Canvas revisions.')
+  check('binary.canvas_freshness', binaryPath, binary.includes('LATEST_CANVAS_SHA') && binary.includes('node scripts/resolve-github-release.mjs') && binary.includes('--repository basketikun/infinite-canvas'), 'Binary publication must stop when the themed Canvas is behind the latest published upstream release.')
+  check('binary.checkout', binaryPath, binary.includes("ref: ${{ inputs.release_ref || 'themed-release' }}"), 'Binary release must build the requested immutable generated release ref.')
+  check('binary.version', binaryPath, binary.includes('cat backend/cmd/server/VERSION'), 'Binary release must reuse the generated version.')
+  check('binary.publish', binaryPath, binary.includes('gh release create') && binary.includes('--target themed-release') && binary.includes('--latest'), 'Binary release must publish the themed branch as the latest GitHub Release.')
+  check('binary.notes', binaryPath, binary.includes('.apophis-release-title') && binary.includes('.apophis-release-notes.md') && binary.includes('--notes-file'), 'Binary release must include the generated repository or upstream notes file.')
+  check('binary.artifacts', binaryPath, binary.includes('name: Verify GoReleaser artifacts') && binary.includes('linux_amd64.tar.gz') && binary.includes('linux_arm64.tar.gz') && binary.includes('windows_amd64.zip') && binary.includes('darwin_amd64.tar.gz') && binary.includes('darwin_arm64.tar.gz') && binary.includes('dist/checksums.txt'), 'Binary release must verify Linux, Windows, macOS, and checksum artifacts before publishing.')
+  check('binary.release_recovery', binaryPath, binary.includes('RELEASE_EXISTS') && binary.includes('gh release upload "$RELEASE_TAG"') && binary.includes('--clobber') && binary.includes('gh release edit "$RELEASE_TAG"') && binary.includes('name: Verify published GitHub release') && binary.includes('Missing published release asset'), 'Binary publication must repair incomplete releases and verify the final GitHub Release state.')
+
+
+  const ownedWorkflowPaths = [
+    syncPath,
+    canvasSyncPath,
+    binaryPath,
+    ciPath,
+    alertPath,
+    watchdogPath,
+  ]
+  check('sync.action_pins', '.github/workflows', remoteActionsPinned(ownedWorkflowPaths.map((path) => files.get(path) || '')), 'Remote actions in the synchronization release gate must be pinned to immutable commit SHAs.')
+
+  const overlayBinaryPath = 'theme/apophis/files/.github/workflows/theme-binary-release.yml'
+  check('binary.overlay_copy', overlayBinaryPath, files.get(overlayBinaryPath) === binary, 'The permanent theme copy of the binary workflow must match the active workflow.')
+
+  const releaseVersionPath = 'scripts/lib/release-version.mjs'
+  const releaseVersion = files.get(releaseVersionPath) || ''
+  check('release_version.bootstrap', releaseVersionPath, releaseVersion.includes('FIRST_RELEASE_PATCH = 200'), 'Release version generation must bootstrap at v0.1.200.')
+
+  const servicePath = 'backend/internal/service/update_service.go'
+  const service = files.get(servicePath) || ''
+  check('backend.repository', servicePath, hasPattern(service, /githubRepo\s+=\s+"kibght\/sub2aouter"/), 'Backend update checks must use themed Releases.')
+
+  const dockerfilePath = 'Dockerfile'
+  const dockerfile = files.get(dockerfilePath) || ''
+  check('docker.build_type', dockerfilePath, dockerfile.includes('-X main.BuildType=release'), 'Docker builds must use the official release build type.')
+
+  const badgePath = 'frontend/src/components/common/VersionBadge.vue'
+  const badge = files.get(badgePath) || ''
+  check('frontend.repository', badgePath, badge.includes("const GITHUB_REPO = 'kibght/sub2aouter'"), 'Frontend release links must use the themed repository.')
+  check('frontend.image', badgePath, badge.includes("const DOCKER_IMAGE = 'ghcr.io/kibght/sub2aouter'"), 'Frontend Docker commands must use the themed image.')
+  check('frontend.refresh', badgePath, badge.includes("const isReleaseBuild = computed(() => buildType.value === 'release')") && !badge.includes('VERSION_REFRESH_INTERVAL_MS') && !hasPattern(badge, /setInterval\([\s\S]*fetchVersion\(true\)/), 'Frontend update behavior must stay aligned with the official source.')
+  check('frontend.docker_update', badgePath, badge.includes("const isReleaseBuild = computed(() => buildType.value === 'release')") && badge.includes('@click="handleUpdate"') && badge.includes('@click="toggleRollbackPanel"') && !badge.includes("buildType.value === 'release' || buildType.value === 'docker'") && !badge.includes('const isDockerBuild = computed') && !badge.includes('dockerUpdateCommand'), 'Docker builds must keep the official manual-update flow instead of in-place replacement.')
+
+  const contributorPattern = /KKBK-233|<h[1-6][^>]*>\s*Contributors\s*<\/h[1-6]>|^\s*#{1,6}\s+Contributors\s*$/im
+  for (const path of [
+    'frontend/src/views/HomeView.vue',
+    'README.md',
+    'theme/apophis/files/frontend/src/views/HomeView.vue',
+    'theme/apophis/files/README.md',
+  ]) {
+    check('template.contributors', path, !contributorPattern.test(files.get(path) || ''), 'The shipped template must not add an explicit contributor card or account.')
+  }
+
+  const manifestPath = 'theme/apophis/manifest.json'
+  const manifestText = files.get(manifestPath) || ''
+  try {
+    const manifest = JSON.parse(manifestText)
+    check('manifest.backend_repository', manifestPath, manifestHasPatch(manifest, servicePath, 'githubRepo     = "kibght/sub2aouter"'), 'Theme manifest must preserve the custom update repository.')
+    check('manifest.frontend_repository', manifestPath, manifestHasPatch(manifest, badgePath, "const GITHUB_REPO = 'kibght/sub2aouter'"), 'Theme manifest must preserve frontend release discovery.')
+    check('manifest.frontend_refresh', manifestPath, !manifestHasPatch(manifest, badgePath, 'const VERSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000'), 'Theme manifest must not alter the official frontend refresh behavior.')
+    check('manifest.frontend_direct_update', manifestPath, !manifestHasPatch(manifest, badgePath, "buildType.value === 'release' || buildType.value === 'docker'") && !manifestHasPatch(manifest, badgePath, 'dockerUpdateCommand'), 'Theme manifest must not replace the official Docker update flow.')
+    const dockerBuildTypeMigration = (manifest.patches || []).find(
+      (entry) => entry.target === dockerfilePath && entry.source === 'patches/dockerfile-build-type-migration.txt',
+    )
+    check('manifest.docker_build_type', manifestPath,
+      !manifestHasPatch(manifest, dockerfilePath, '-X main.BuildType=release') &&
+      !manifestHasPatch(manifest, dockerfilePath, '-X main.BuildType=docker') ||
+      Boolean(dockerBuildTypeMigration &&
+        dockerBuildTypeMigration.marker === '-X main.BuildType=docker' &&
+        dockerBuildTypeMigration.sentinel === '-X main.BuildType=release'),
+      'Theme manifest must keep the official Docker build type and may only migrate stale generated snapshots.')
+    check('manifest.binary_workflow', manifestPath, manifestHasFile(manifest, binaryPath), 'Theme manifest must carry the binary release workflow into generated releases.')
+  } catch (error) {
+    violations.push(violation('manifest.invalid', manifestPath, `Theme manifest is invalid JSON: ${error.message}`))
+  }
+
+  return violations
+}
