@@ -39,6 +39,22 @@ export async function patchCanvasGenerationHelpers(file) {
   return true
 }
 
+export async function patchModelScriptEditorModalStyles(file) {
+  let content
+  try {
+    content = await readFile(file, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
+  }
+
+  const contentStyle = /[ \t]*content: \{ height: "100dvh", maxHeight: "100dvh", margin: 0, padding: 0, borderRadius: 0, overflow: "hidden" \},\r?\n/
+  if (!contentStyle.test(content)) return false
+
+  await writeFile(file, content.replace(contentStyle, ''), 'utf8')
+  return true
+}
+
 function findJsxOpeningTagEnd(content, start) {
   let quote = null
   let escaped = false
@@ -138,6 +154,7 @@ export async function applyInfiniteCanvasPatches({ root }) {
 
   await copyTemplate(resolvedRoot, 'web/src/lib/sub2-bridge.ts')
   await patchCanvasGenerationHelpers(path.join(resolvedRoot, 'web/src/lib/canvas/canvas-generation-helpers.ts'))
+  await patchModelScriptEditorModalStyles(path.join(resolvedRoot, 'web/src/components/layout/model-script-editor.tsx'))
 
   await replaceOnce(
     indexPath,

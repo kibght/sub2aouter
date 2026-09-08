@@ -4,7 +4,37 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import { applyInfiniteCanvasPatches } from '../apply-infinite-canvas-patches.mjs'
+import {
+  applyInfiniteCanvasPatches,
+  patchModelScriptEditorModalStyles,
+} from '../apply-infinite-canvas-patches.mjs'
+
+test('infinite canvas adapter removes the Ant Design 6 modal content style key', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'infinite-canvas-model-script-editor-'))
+  const file = path.join(root, 'model-script-editor.tsx')
+  try {
+    await writeFile(file, `
+<Modal
+  styles={{
+    wrapper: { overflow: "hidden" },
+    content: { height: "100dvh", maxHeight: "100dvh", margin: 0, padding: 0, borderRadius: 0, overflow: "hidden" },
+    body: { height: "100dvh", maxHeight: "100dvh", padding: 0, overflow: "hidden" },
+  }}
+>
+</Modal>
+`)
+
+    await patchModelScriptEditorModalStyles(file)
+    await patchModelScriptEditorModalStyles(file)
+
+    const patched = await readFile(file, 'utf8')
+    assert.doesNotMatch(patched, /content: \{ height: "100dvh"/)
+    assert.match(patched, /wrapper: \{ overflow: "hidden" \}/)
+    assert.match(patched, /body: \{ height: "100dvh"/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 test('infinite canvas adapter applies cleanly and remains idempotent', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'infinite-canvas-adapter-'))
