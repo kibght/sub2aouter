@@ -585,6 +585,14 @@
       "marker": ".dark .settings-tabs-shell {\n  border-color: rgb(51 65 85 / 0.65);\n  background: rgb(15 23 42 / 0.86);\n  box-shadow:\n    0 16px 36px rgb(0 0 0 / 0.28),\n    0 1px 0 rgb(255 255 255 / 0.06) inset;\n}\n\n.dark .settings-tab::before {\n  background: linear-gradient(135deg, rgb(30 41 59 / 0.9), rgb(51 65 85 / 0.62));\n}\n\n.dark .settings-tab-active {\n  box-shadow:\n    0 12px 26px rgb(0 0 0 / 0.22),\n    0 1px 0 rgb(255 255 255 / 0.08) inset;\n}",
       "source": "patches/admin-settings-neutral-dark-tabs.txt",
       "sentinel": "background: hsl(var(--card) / 0.96);"
+    },
+    {
+      "target": "frontend/src/views/admin/__tests__/GroupsView.codexManifest.spec.ts",
+      "marker": "vi.mock(\"@/stores/app\", () => ({\n  useAppStore: () => ({\n    showError: vi.fn(),\n    showSuccess: vi.fn(),\n  }),\n}));",
+      "position": "after",
+      "source": "patches/groups-view-codex-manifest-auth-store.txt",
+      "sentinel": "vi.mock(\"@/stores/auth\"",
+      "optional": true
     }
   ]
 }
