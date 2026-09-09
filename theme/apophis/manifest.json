@@ -593,6 +593,13 @@
       "source": "patches/groups-view-codex-manifest-auth-store.txt",
       "sentinel": "vi.mock(\"@/stores/auth\"",
       "optional": true
+    },
+    {
+      "target": "frontend/src/views/admin/__tests__/ChannelMonitorView.grok.spec.ts",
+      "operation": "replace",
+      "marker": "expect(providerButtons).toHaveLength(8)",
+      "source": "patches/channel-monitor-grok-provider-count.txt",
+      "sentinel": "expect(providerButtons).toHaveLength(PROVIDERS.length)"
     }
   ]
 }

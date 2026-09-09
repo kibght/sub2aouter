@@ -53,6 +53,21 @@ test('generated releases carry upstream test compatibility fixes required by the
   }
 })
 
+test('generated releases tolerate upstream provider additions in channel monitor tests', async () => {
+  const manifest = JSON.parse(await read('theme/apophis/manifest.json'))
+  const patch = (manifest.patches || []).find(
+    (entry) => entry.target === 'frontend/src/views/admin/__tests__/ChannelMonitorView.grok.spec.ts',
+  )
+
+  assert.ok(patch, 'the Grok provider count compatibility patch must be registered')
+  assert.equal(patch.operation, 'replace')
+  assert.equal(patch.sentinel, 'expect(providerButtons).toHaveLength(PROVIDERS.length)')
+  assert.equal(
+    (await read(`theme/apophis/${patch.source}`)).trim(),
+    'expect(providerButtons).toHaveLength(PROVIDERS.length)',
+  )
+})
+
 test('panel updater and binary release workflow use the custom repository', async () => {
   const [service, workflow, manifestText] = await Promise.all([
     read('backend/internal/service/update_service.go'),
