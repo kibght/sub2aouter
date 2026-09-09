@@ -1,0 +1,16 @@
+        // 主色调 - Teal/Cyan 青色系
+        primary: {
+          DEFAULT: 'hsl(var(--primary) / <alpha-value>)',
+          foreground: 'hsl(var(--primary-foreground) / <alpha-value>)',
+          50: 'hsl(var(--muted) / <alpha-value>)',
+          100: 'hsl(var(--muted) / <alpha-value>)',
+          200: 'hsl(var(--border) / <alpha-value>)',
+          300: 'hsl(var(--muted-foreground) / <alpha-value>)',
+          400: 'hsl(var(--muted-foreground) / <alpha-value>)',
+          500: 'hsl(var(--foreground) / <alpha-value>)',
+          600: 'hsl(var(--foreground) / <alpha-value>)',
+          700: 'hsl(var(--foreground) / <alpha-value>)',
+          800: 'hsl(var(--foreground) / <alpha-value>)',
+          900: 'hsl(var(--foreground) / <alpha-value>)',
+          950: 'hsl(var(--foreground) / <alpha-value>)'
+        },
