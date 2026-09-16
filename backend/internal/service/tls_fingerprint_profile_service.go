@@ -171,11 +171,22 @@ func (s *TLSFingerprintProfileService) getRandomProfile() *tlsfingerprint.Profil
 // ResolveTLSProfile 根据 Account 的配置解析出运行时 TLS Profile
 //
 // 逻辑：
-//  1. 未启用 TLS 指纹 → 返回 nil（不伪装）
-//  2. 启用 + 绑定了 profile_id → 从缓存查找对应 profile
-//  3. 启用 + 未绑定或找不到 → 返回空 Profile（使用代码内置默认值）
+//  1. OpenAI 平台账号 → 强制返回 nil（OpenAI 不应使用 Claude Code 的 Node.js 指纹）
+//  2. 未启用 TLS 指纹 → 返回 nil（不伪装）
+//  3. 启用 + 绑定了 profile_id → 从缓存查找对应 profile
+//  4. 启用 + 未绑定或找不到 → 返回空 Profile（使用代码内置默认值）
 func (s *TLSFingerprintProfileService) ResolveTLSProfile(account *Account) *tlsfingerprint.Profile {
-	if account == nil || !account.IsTLSFingerprintEnabled() {
+	if account == nil {
+		return nil
+	}
+
+	// OpenAI 平台账号强制禁用 TLS 指纹伪装
+	// Claude Code 的 Node.js 24.x 指纹会暴露项目特征，导致账号被 OpenAI 封禁
+	if account.Platform == PlatformOpenAI {
+		return nil
+	}
+
+	if !account.IsTLSFingerprintEnabled() {
 		return nil
 	}
 	id := account.GetTLSFingerprintProfileID()
@@ -190,7 +201,7 @@ func (s *TLSFingerprintProfileService) ResolveTLSProfile(account *Account) *tlsf
 			return p
 		}
 	}
-	// TLS 启用但无绑定 profile → 空 Profile → dialer 使用内置默认值
+	// TLS 启用但无绑定 profile → 空 Profile → dialer 使用内置默认值（仅用于 Anthropic/Gemini 等平台）
 	return &tlsfingerprint.Profile{Name: "Built-in Default (Node.js 24.x)"}
 }
 
