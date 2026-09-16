@@ -6,11 +6,17 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 )
 
 var ErrUsageBillingRequestIDRequired = errors.New("usage billing request_id is required")
 var ErrUsageBillingRequestConflict = errors.New("usage billing request fingerprint conflict")
+var ErrUsageBillingAmountInvalid = errors.New("usage billing balance amount must be finite and non-negative")
+
+func validUsageBillingAmount(value float64) bool {
+	return value >= 0 && !math.IsNaN(value) && !math.IsInf(value, 0)
+}
 
 // UsageBillingCommand describes one billable request that must be applied at most once.
 type UsageBillingCommand struct {
@@ -39,6 +45,23 @@ type UsageBillingCommand struct {
 	APIKeyQuotaCost     float64
 	APIKeyRateLimitCost float64
 	AccountQuotaCost    float64
+}
+
+// Validate rejects malformed balance costs before they reach SQL.
+func (c *UsageBillingCommand) Validate() error {
+	if c == nil {
+		return nil
+	}
+	if !validUsageBillingAmount(c.BalanceCost) {
+		return ErrUsageBillingAmountInvalid
+	}
+	return nil
+}
+
+// ValidateAmounts is kept as the explicit amount-validation entry point for
+// callers that do not need to validate request identity fields.
+func (c *UsageBillingCommand) ValidateAmounts() error {
+	return c.Validate()
 }
 
 func (c *UsageBillingCommand) Normalize() {
@@ -115,7 +138,7 @@ type UsageBillingApplyResult struct {
 	Applied              bool
 	APIKeyQuotaExhausted bool
 	NewBalance           *float64           // post-deduction balance (nil = no balance deduction)
-	BalanceOverdrafted   bool               // true when the sufficient-balance guard missed and debt was still recorded
+	BalanceOverdrafted   bool               // retained for response compatibility; new deductions never overdraft
 	QuotaState           *AccountQuotaState // post-increment quota state (nil = no quota increment)
 }
 
@@ -129,6 +152,23 @@ type BatchImageBalanceHoldCommand struct {
 	BatchID            string
 	HoldAmount         float64
 	ActualAmount       float64
+}
+
+// Validate rejects malformed hold/settlement amounts before they reach SQL.
+func (c *BatchImageBalanceHoldCommand) Validate() error {
+	if c == nil {
+		return nil
+	}
+	if !validUsageBillingAmount(c.HoldAmount) || !validUsageBillingAmount(c.ActualAmount) {
+		return ErrUsageBillingAmountInvalid
+	}
+	return nil
+}
+
+// ValidateAmounts is kept as the explicit amount-validation entry point for
+// batch hold callers.
+func (c *BatchImageBalanceHoldCommand) ValidateAmounts() error {
+	return c.Validate()
 }
 
 func (c *BatchImageBalanceHoldCommand) Normalize() {

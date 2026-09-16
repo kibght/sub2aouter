@@ -7,9 +7,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import InfiniteCanvasView from '../InfiniteCanvasView.vue'
 import { CANVAS_CONFIGURED_MESSAGE, CANVAS_INIT_MESSAGE, CANVAS_READY_MESSAGE } from '@/features/infiniteCanvas/bridge'
 
-const { listKeys, showError, fetchAgentConfig, writeClipboard } = vi.hoisted(() => ({
+const { listKeys, showError, publicSettings, fetchAgentConfig, writeClipboard } = vi.hoisted(() => ({
   listKeys: vi.fn(),
   showError: vi.fn(),
+  publicSettings: { api_base_url: 'https://gateway.example.com' },
   fetchAgentConfig: vi.fn(),
   writeClipboard: vi.fn(),
 }))
@@ -19,7 +20,7 @@ vi.mock('@/api/keys', () => ({
 }))
 
 vi.mock('@/stores/app', () => ({
-  useAppStore: () => ({ showError }),
+  useAppStore: () => ({ showError, cachedPublicSettings: publicSettings }),
 }))
 
 vi.mock('@/i18n', async (importOriginal) => {
@@ -70,6 +71,7 @@ describe('InfiniteCanvasView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    publicSettings.api_base_url = 'https://gateway.example.com'
     fetchAgentConfig.mockRejectedValue(new TypeError('Agent unavailable'))
     vi.stubGlobal('fetch', fetchAgentConfig)
     writeClipboard.mockResolvedValue(undefined)
@@ -104,7 +106,7 @@ describe('InfiniteCanvasView', () => {
     expect(card.text()).toContain('infiniteCanvas.connectCodex')
     expect(card.text()).toContain('npx -y @basketikun/canvas-agent')
     expect(card.text()).toContain('infiniteCanvas.downloadStartAgent')
-    expect(link.attributes('href')).toBe('https://api.kinght.top/canvas-app/?mode=new')
+    expect(link.attributes('href')).toBe(`${window.location.origin}/canvas-app/canvas?mode=new`)
     expect(link.attributes('href')).not.toMatch(/token|api[_-]?key|secret/i)
 
     await card.get('[data-test="codex-agent-copy"]').trigger('click')
@@ -156,7 +158,11 @@ describe('InfiniteCanvasView', () => {
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: CANVAS_INIT_MESSAGE,
-        payload: expect.objectContaining({ apiKey: 'sk-canvas-secret' }),
+        payload: expect.objectContaining({
+          apiKey: 'sk-canvas-secret',
+          baseUrl: 'https://gateway.example.com/v1',
+          locale: 'zh-CN',
+        }),
       }),
       window.location.origin
     )

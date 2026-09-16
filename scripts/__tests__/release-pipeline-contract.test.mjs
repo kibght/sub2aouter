@@ -63,16 +63,13 @@ test('contract rejects a coordinator that moves off the hourly schedule', async 
   assert.ok(violations.some((violation) => violation.code === 'canvas_sync.schedule'))
 })
 
-test('contract rejects binary publishing without a successful sync guard', async () => {
+test('contract rejects binary publication without a reusable release ref', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/theme-binary-release.yml'
-  files.set(
-    path,
-    files.get(path).replace("github.event.workflow_run.conclusion == 'success'", 'true'),
-  )
+  files.set(path, files.get(path).replace('workflow_call:', 'disabled_workflow_call:'))
 
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
-  assert.ok(violations.some((violation) => violation.code === 'binary.success_guard'))
+  assert.ok(violations.some((violation) => violation.code === 'binary.reusable'))
 })
 
 test('contract rejects a frontend that checks the upstream repository instead of themed releases', async () => {
@@ -174,20 +171,13 @@ test('contract requires binary release recovery and post-publication verificatio
   assert.ok(violations.some((violation) => violation.code === 'binary.release_recovery'))
 })
 
-test('contract requires explicit repository selection for binary workflow dispatch', async () => {
+test('contract requires binary publication to consume the selected immutable release ref', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/upstream-theme-sync.yml'
-  const workflow = files.get(path)
-  const dispatchStart = workflow.indexOf('gh workflow run theme-binary-release.yml')
-  assert.notEqual(dispatchStart, -1)
-  const dispatch = workflow.slice(dispatchStart)
-  files.set(
-    path,
-    `${workflow.slice(0, dispatchStart)}${dispatch.replace('--repo "$GITHUB_REPOSITORY"', '--repo "Wei-Shaw/sub2api"', 1)}`,
-  )
+  files.set(path, files.get(path).replace('release_ref: ${{ needs.sync-build-publish.outputs.release_ref }}', 'release_ref: themed-release'))
 
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
-  assert.ok(violations.some((violation) => violation.code === 'sync.binary_dispatch_repository'))
+  assert.ok(violations.some((violation) => violation.code === 'sync.binary_workflow_ref'))
 })
 
 test('contract requires reusable CI to verify an immutable Canvas update ref', async () => {

@@ -1,12 +1,23 @@
 name: Publish Themed Binary Release
 
 on:
+  workflow_call:
+    inputs:
+      release_ref:
+        description: Immutable generated release commit to build
+        required: false
+        default: themed-release
+        type: string
+    secrets:
+      GH_TOKEN:
+        required: false
   workflow_dispatch:
-  workflow_run:
-    workflows:
-      - Sync Upstream With Apophis Theme
-    types:
-      - completed
+    inputs:
+      release_ref:
+        description: Generated release branch, tag, or commit to build
+        required: false
+        default: themed-release
+        type: string
 
 concurrency:
   group: themed-binary-release
@@ -17,12 +28,11 @@ permissions:
 
 jobs:
   binary-release:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: themed-release
+          ref: ${{ inputs.release_ref || 'themed-release' }}
           fetch-depth: 0
           submodules: recursive
 

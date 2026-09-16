@@ -73,6 +73,19 @@ func (s *BillingCacheSuite) TestUserBalance() {
 			},
 		},
 		{
+			name: "deduct_clamps_balance_at_zero",
+			fn: func(ctx context.Context, rdb *redis.Client, cache service.BillingCache) {
+				userID := int64(4)
+
+				require.NoError(s.T(), cache.SetUserBalance(ctx, userID, 2.0), "SetUserBalance")
+				require.NoError(s.T(), cache.DeductUserBalance(ctx, userID, 5.0), "DeductUserBalance")
+
+				got, err := cache.GetUserBalance(ctx, userID)
+				require.NoError(s.T(), err, "GetUserBalance after insufficient deduct")
+				require.Equal(s.T(), 0.0, got, "balance cache must not become negative")
+			},
+		},
+		{
 			name: "invalidate_removes_key",
 			fn: func(ctx context.Context, rdb *redis.Client, cache service.BillingCache) {
 				userID := int64(100)

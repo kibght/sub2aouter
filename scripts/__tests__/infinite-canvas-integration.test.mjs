@@ -47,7 +47,21 @@ test('infinite canvas adapter applies cleanly and remains idempotent', async () 
     assert.doesNotMatch(historyTest, /\uFFFD/)
     assert.match(historyTest, /\\uFFFD\\uFFFD/)
     assert.match(bridge, /event\.origin !== window\.location\.origin/)
-    assert.match(sub2CanvasView, /CANVAS_ENTRY_URL = 'https:\/\/api\.kinght\.top\/canvas-app\/\?mode=new'/)
+    assert.match(
+      bridge,
+      /state\.config\.channels\.map\(\(channel\) => \(\{ \.\.\.channel, baseUrl: gatewayBaseUrl, apiKey: gatewayApiKey, apiFormat: "openai"(?: as const)? \}\)\)/
+    )
+    assert.match(bridge, /state\.updateConfig\("apiFormat", "openai"\)/)
+    assert.match(
+      bridge,
+      /state\.config\.channels\.map\(\(channel\) => \(\{ \.\.\.channel, baseUrl: gatewayBaseUrl, apiKey: gatewayApiKey, apiFormat: "openai"(?: as const)? \}\)\)/
+    )
+    assert.match(bridge, /state\.updateConfig\("apiFormat", "openai"\)/)
+    assert.match(sub2CanvasView, /buildCanvasEntryUrl\(window\.location\.origin\)/)
+    assert.match(sub2CanvasView, /cachedPublicSettings\?\.api_base_url/)
+    assert.match(bridge, /import \{ changeAppLocale, type AppLocale \} from "@\/i18n"/)
+    assert.match(bridge, /const \{ baseUrl, apiKey, theme, locale \} = event\.data\.payload/)
+    assert.match(bridge, /changeAppLocale\(locale(?: as AppLocale)?\)/)
     assert.equal((init.match(/installSub2Bridge/g) || []).length, 2)
   } finally {
     await rm(root, { recursive: true, force: true })

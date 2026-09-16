@@ -23,8 +23,14 @@ export function normalizeCanvasAppPath(value = '/canvas-app/'): string {
   return trimmed.endsWith('/') ? trimmed : `${trimmed}/`
 }
 
-export function buildGatewayBaseUrl(origin: string): string {
-  return `${origin.replace(/\/+$/, '')}/v1`
+export function buildCanvasEntryUrl(origin: string, appPath = '/canvas-app/'): string {
+  const base = `${origin.trim().replace(/\/+$/, '')}/`
+  return new URL(`${normalizeCanvasAppPath(appPath)}canvas?mode=new`, base).toString()
+}
+
+export function buildGatewayBaseUrl(baseUrl: string): string {
+  const normalized = baseUrl.trim().replace(/\/+$/, '')
+  return normalized.toLowerCase().endsWith('/v1') ? normalized : `${normalized}/v1`
 }
 
 export function buildCanvasInitMessage(payload: CanvasInitPayload): CanvasInitMessage {

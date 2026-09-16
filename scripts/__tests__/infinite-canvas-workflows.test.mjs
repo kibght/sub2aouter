@@ -24,7 +24,7 @@ test('Infinite Canvas upstream updates are gated by adapter checks and pull requ
   assert.doesNotMatch(workflow, /cd \.\.\/\.\./)
   assert.match(workflow, /gh pr create/)
   assert.match(workflow, /actions:\s*write/)
-  assert.match(workflow, /gh pr merge "\$PR_NUMBER" --repo "\$GITHUB_REPOSITORY" --squash/)
+  assert.match(workflow, /gh pr merge "\$PR_NUMBER" --repo "\$GITHUB_REPOSITORY" --match-head-commit "\$UPDATE_SHA" --squash/)
   assert.match(workflow, /gh workflow run upstream-theme-sync\.yml/)
   assert.match(workflow, /repository_release=false/)
   assert.match(workflow, /scheduled_round=true/)
@@ -41,10 +41,11 @@ test('both upstream workflows inspect published release metadata before syncing'
   const sub2Workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
   const canvasWorkflow = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
 
-  assert.match(sub2Workflow, /repos\/Wei-Shaw\/sub2api\/releases\/latest/)
+  assert.match(sub2Workflow, /resolve-github-release\.mjs[\s\S]*--repository Wei-Shaw\/sub2api/)
   assert.match(sub2Workflow, /UPSTREAM_RELEASE_TAG/)
+  assert.doesNotMatch(sub2Workflow, /releases\/latest[^\n]*\|\| true/)
   assert.match(canvasWorkflow, /CANVAS_REPOSITORY: basketikun\/infinite-canvas/)
-  assert.match(canvasWorkflow, /repos\/\$\{CANVAS_REPOSITORY\}\/releases\/latest/)
+  assert.match(canvasWorkflow, /resolve-github-release\.mjs[\s\S]*--repository \"\$CANVAS_REPOSITORY\"/)
   assert.match(canvasWorkflow, /INFINITE_CANVAS_RELEASE_TAG/)
 })
 
@@ -80,19 +81,20 @@ test('the themed binary release verifies all requested platform artifacts before
 })
 
 
-test('successful theme sync explicitly dispatches serialized binary publication', async () => {
+test('successful theme sync runs binary publication before promoting latest', async () => {
   const [syncWorkflow, binaryWorkflow] = await Promise.all([
     readFile('.github/workflows/upstream-theme-sync.yml', 'utf8'),
     readFile('.github/workflows/theme-binary-release.yml', 'utf8'),
   ])
 
-  assert.match(syncWorkflow, /name: Trigger themed binary publication/)
-  assert.match(syncWorkflow, /gh workflow run theme-binary-release\.yml/)
-  assert.match(syncWorkflow, /gh workflow run theme-binary-release\.yml[^\n]*\n\s+--repo "\$GITHUB_REPOSITORY"/)
-  assert.match(syncWorkflow, /permissions:\n\s+actions:\s+write/)
-  assert.match(binaryWorkflow, /workflow_dispatch:/)
-  assert.match(binaryWorkflow, /group: themed-binary-release/)
-  assert.match(binaryWorkflow, /github\.event_name == 'workflow_dispatch' \|\| github\.event\.workflow_run\.conclusion == 'success'/)
+  assert.match(syncWorkflow, /name: Prepare binary publication outputs/)
+  assert.match(syncWorkflow, /binary-release:\n[\s\S]*uses: \.\/\.github\/workflows\/theme-binary-release\.yml/)
+  assert.match(syncWorkflow, /release_ref: \${{ needs\.sync-build-publish\.outputs\.release_ref }}/)
+  assert.match(syncWorkflow, /promote-latest:\n[\s\S]*needs: \[sync-build-publish, binary-release\]/)
+  assert.match(syncWorkflow, /needs\.binary-release\.result == 'success'/)
+  assert.match(binaryWorkflow, /workflow_call:/)
+  assert.match(binaryWorkflow, /release_ref:/)
+  assert.doesNotMatch(binaryWorkflow, /workflow_run:/)
 })
 
 
@@ -104,7 +106,7 @@ test('hourly sync recovers missing or incomplete binary releases without minting
   assert.match(workflow, /targetCommitish/)
   assert.match(workflow, /\.assets\[\]\.name/)
   assert.match(workflow, /sub2api_\$\{PREVIOUS_RELEASE_VERSION\}_linux_amd64\.tar\.gz/)
-  assert.match(workflow, /env\.SHOULD_PUBLISH == 'true' \|\| env\.NEEDS_BINARY_RELEASE == 'true'/)
+  assert.match(workflow, /Prepare binary publication outputs/)
 })
 
 test('binary release repairs incomplete assets and verifies the published result', async () => {
@@ -176,4 +178,44 @@ test('Infinite Canvas documentation describes the reusable CI merge gate', async
     assert.match(document, /backend-ci\.yml/)
     assert.doesNotMatch(document, /auto-merge/)
   }
+})
+
+
+test('Canvas release discovery fails closed on lookup errors and rejects non-descendant updates', async () => {
+  const workflow = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
+
+  assert.doesNotMatch(workflow, /releases\/latest[^\n]*\|\| true/)
+  assert.match(
+    workflow,
+    /merge-base --is-ancestor "\$CURRENT_SHA" "\$LATEST_SHA"/,
+  )
+})
+
+test('Canvas merge is bound to the exact commit that passed full CI', async () => {
+  const workflow = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
+
+  assert.match(workflow, /UPDATE_SHA: \$\{\{ needs\.update\.outputs\.update_sha \}\}/)
+  assert.match(workflow, /--json headRefOid --jq '\.headRefOid'/)
+  assert.match(workflow, /if \[[\s\S]*\"\$PR_HEAD_SHA\" != \"\$UPDATE_SHA\"/)
+  assert.match(workflow, /--match-head-commit "\$UPDATE_SHA"/)
+})
+
+test('Binary publication uses an immutable reusable release ref before latest promotion', async () => {
+  const [syncWorkflow, binaryWorkflow] = await Promise.all([
+    readFile('.github/workflows/upstream-theme-sync.yml', 'utf8'),
+    readFile('.github/workflows/theme-binary-release.yml', 'utf8'),
+  ])
+
+  assert.match(binaryWorkflow, /workflow_call:/)
+  assert.match(binaryWorkflow, /release_ref:/)
+  assert.match(binaryWorkflow, /ref: \$\{\{ inputs\.release_ref \|\| 'themed-release' \}\}/)
+  assert.doesNotMatch(binaryWorkflow, /workflow_run:/)
+
+  const binaryGate = syncWorkflow.indexOf('binary-release:')
+  const latestPromotion = syncWorkflow.indexOf('promote-latest:')
+  assert.ok(binaryGate >= 0)
+  assert.ok(latestPromotion > binaryGate)
+  assert.match(syncWorkflow, /uses: \.\/\.github\/workflows\/theme-binary-release\.yml/)
+  assert.match(syncWorkflow, /release_ref: \$\{\{ needs\.sync-build-publish\.outputs\.release_ref \}\}/)
+  assert.match(syncWorkflow, /needs\.binary-release\.result == 'success'/)
 })
