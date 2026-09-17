@@ -78,8 +78,21 @@ ON CONFLICT (user_id, provider_type, grant_reason) DO NOTHING`,
 	}
 
 	if providerDefaults.Balance != 0 {
-		if err := client.User.UpdateOneID(userID).AddBalance(providerDefaults.Balance).Exec(ctx); err != nil {
-			return fmt.Errorf("apply first bind balance default: %w", err)
+		// sub2aouter: non-negative-balance-first-bind-v1
+		if s.userRepo == nil {
+			return fmt.Errorf("apply first bind balance default: user repository is nil")
+		}
+		var balanceErr error
+		if creditor, ok := s.userRepo.(interface {
+			CreditBalance(context.Context, int64, float64) error
+		}); ok {
+			balanceErr = creditor.CreditBalance(ctx, userID, providerDefaults.Balance)
+		} else {
+			// Keep compatibility with repository implementations from older releases.
+			balanceErr = client.User.UpdateOneID(userID).AddBalance(providerDefaults.Balance).Exec(ctx)
+		}
+		if balanceErr != nil {
+			return fmt.Errorf("apply first bind balance default: %w", balanceErr)
 		}
 	}
 	if providerDefaults.Concurrency != 0 {

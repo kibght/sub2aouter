@@ -14,6 +14,8 @@ export const RELEASE_PIPELINE_FILES = Object.freeze([
   'scripts/ci/restore-workflow-snapshots.sh',
   'scripts/lib/github-release.mjs',
   'scripts/lib/sync-health.mjs',
+  'scripts/apply-non-negative-balance.mjs',
+  'backend/migrations/192_enforce_non_negative_user_balance.sql',
   'backend/internal/service/update_service.go',
   'Dockerfile',
   'frontend/src/components/common/VersionBadge.vue',
@@ -114,6 +116,12 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.upstream_release_identity', syncPath, sync.includes('UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_TAG') && sync.includes('.apophis-upstream-release-id') && sync.includes('UPSTREAM_IDENTITY_AND_SHA_MATCH') && sync.includes('"$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA"'), 'Scheduled Sub2API syncs must deduplicate only when Release identity and source SHA match.')
   check('sync.skip_unchanged', syncPath, sync.includes('SCHEDULED_ROUND') && hasPattern(sync, /PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Coordinated hourly runs must skip unchanged upstream revisions.')
   check('sync.theme_overlay', syncPath, sync.includes('node scripts/apply-theme.mjs --root .'), 'Sync must apply the Apophis overlay to fetched upstream source.')
+  check('sync.balance_guard', syncPath,
+    sync.includes('name: Carry non-negative balance migration') &&
+    sync.includes('cmp -s "$SOURCE_MIGRATION" "$TARGET_MIGRATION"') &&
+    sync.includes('node scripts/apply-non-negative-balance.mjs --root .') &&
+    sync.includes('node scripts/apply-non-negative-balance.mjs --root . --check'),
+    'Sync must carry the non-negative balance migration and apply/check the fail-closed balance guard.')
   check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-canvas-sha') && sync.includes('.apophis-release-notes.md'), 'Sync must persist upstream, repository, Canvas, and release notes metadata.')
   check('sync.repository_recovery', syncPath, sync.includes('repository_release:') && sync.includes('PREVIOUS_CANVAS_SHA') && sync.includes('Repository source drift is intentionally not published') && sync.includes('UPSTREAM_ALREADY_SYNCHRONIZED'), 'Scheduled syncs may publish Canvas drift, while repository-only changes require explicit repository_release=true.')
   check('sync.canvas_freshness', syncPath, sync.includes('name: Verify Infinite Canvas dependency is current') && sync.includes('LATEST_CANVAS_SHA') && sync.includes('node scripts/resolve-github-release.mjs') && sync.includes('--repository basketikun/infinite-canvas'), 'Theme publication must stop when main is behind the latest published Infinite Canvas release.')
@@ -123,6 +131,11 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.repository_source_sha', syncPath, sync.includes('RELEASE_SOURCE_SHA="$(git rev-parse HEAD)"') && !sync.includes('RELEASE_SOURCE_SHA="${{ github.sha }}"'), 'Repository release metadata must come from the commit actually checked out and built.')
   check('sync.repository_notes', syncPath, sync.includes('## \u4ed3\u5e93\u4fee\u590d') && sync.includes('Capture repository release notes'), 'Explicit repository releases must publish repository fix notes.')
   check('sync.release_version', syncPath, sync.includes('PREVIOUS_RELEASE_VERSION') && sync.includes('node scripts/next-release-version.mjs \"$PREVIOUS_RELEASE_VERSION\"'), 'Sync must migrate the next release to v0.1.200 and increment the persisted version.')
+  check('sync.explicit_release_version', syncPath,
+    sync.includes('release_version:') &&
+    sync.includes('RELEASE_VERSION_OVERRIDE') &&
+    sync.includes('Invalid explicit release version'),
+    'Verified repository republishing must support an explicit validated release version.')
   const binaryJobIndex = sync.indexOf('\n  binary-release:\n')
   const promoteLatestIndex = sync.indexOf('\n  promote-latest:\n')
   const latestPushIndex = promoteLatestIndex >= 0 ? sync.indexOf('docker push "${IMAGE}:latest"', promoteLatestIndex) : -1

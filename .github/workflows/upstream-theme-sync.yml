@@ -18,6 +18,11 @@ on:
         required: false
         default: false
         type: boolean
+      release_version:
+        description: Explicit release version for a verified repository republish
+        required: false
+        default: ''
+        type: string
 concurrency:
   group: upstream-theme-sync
   cancel-in-progress: false
@@ -43,6 +48,7 @@ jobs:
       UPSTREAM_RELEASE_REF: refs/apophis/upstream-release
       REPOSITORY_RELEASE: ${{ inputs.repository_release || false }}
       SCHEDULED_ROUND: ${{ inputs.scheduled_round || false }}
+      RELEASE_VERSION_OVERRIDE: ${{ inputs.release_version || '' }}
       GENERATED_DIR: ${{ github.workspace }}/../sub2api-themed-release
 
     steps:
@@ -340,7 +346,16 @@ jobs:
             exit 0
           fi
 
-          RELEASE_VERSION="$(node scripts/next-release-version.mjs "$PREVIOUS_RELEASE_VERSION")"
+          if [[ -n "$RELEASE_VERSION_OVERRIDE" ]]; then
+            if [[ ! "$RELEASE_VERSION_OVERRIDE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Invalid explicit release version: $RELEASE_VERSION_OVERRIDE" >&2
+              exit 1
+            fi
+            RELEASE_VERSION="$RELEASE_VERSION_OVERRIDE"
+            echo "Using explicit release version $RELEASE_VERSION for this verified repository publication."
+          else
+            RELEASE_VERSION="$(node scripts/next-release-version.mjs "$PREVIOUS_RELEASE_VERSION")"
+          fi
           echo "SHOULD_PUBLISH=true" >> "$GITHUB_ENV"
           echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
           echo "正在将 $RELEASE_KIND 来源 $RELEASE_SOURCE_SHA 发布为 $RELEASE_VERSION。"
@@ -362,6 +377,24 @@ jobs:
           cp .github/workflows/automation-alert.yml "$GENERATED_DIR/.github/workflows/automation-alert.yml"
           cp .github/workflows/sync-watchdog.yml "$GENERATED_DIR/.github/workflows/sync-watchdog.yml"
 
+      - name: Carry non-negative balance migration
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_MIGRATION="backend/migrations/192_enforce_non_negative_user_balance.sql"
+          TARGET_MIGRATION="$GENERATED_DIR/$SOURCE_MIGRATION"
+          if [[ ! -f "$SOURCE_MIGRATION" ]]; then
+            echo "Missing balance migration source: $SOURCE_MIGRATION" >&2
+            exit 1
+          fi
+          if [[ -e "$TARGET_MIGRATION" ]] && ! cmp -s "$SOURCE_MIGRATION" "$TARGET_MIGRATION"; then
+            echo "Upstream migration conflicts with $SOURCE_MIGRATION; reconcile it before publishing." >&2
+            exit 1
+          fi
+          mkdir -p "$(dirname "$TARGET_MIGRATION")"
+          cp "$SOURCE_MIGRATION" "$TARGET_MIGRATION"
+
       - name: Restore preserved workflow snapshots
         if: env.SHOULD_PUBLISH == 'true'
         shell: bash
@@ -370,6 +403,11 @@ jobs:
       - name: Apply theme overlay
         if: env.SHOULD_PUBLISH == 'true'
         run: node scripts/apply-theme.mjs --root .
+        working-directory: ${{ env.GENERATED_DIR }}
+
+      - name: Apply non-negative balance guard
+        if: env.SHOULD_PUBLISH == 'true'
+        run: node scripts/apply-non-negative-balance.mjs --root .
         working-directory: ${{ env.GENERATED_DIR }}
 
       - name: Carry Infinite Canvas integration
@@ -569,6 +607,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/apply-theme.mjs --root . --check
+          node scripts/apply-non-negative-balance.mjs --root . --check
           node scripts/apply-sub2-infinite-canvas-integration.mjs --root . --check
           node scripts/check-encoding.mjs .
           node --test scripts/__tests__/*.test.mjs

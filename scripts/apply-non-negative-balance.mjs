@@ -1,0 +1,720 @@
+#!/usr/bin/env node
+
+import { readFile, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import process from 'node:process'
+import { fileURLToPath } from 'node:url'
+
+const lines = (...items) => items.join('\n')
+
+// These patches are deliberately exact. If upstream changes the same code, the
+// marker must be reconciled by hand instead of silently overwriting that fix.
+export const BALANCE_PATCHES = Object.freeze([
+  {
+    target: 'backend/internal/repository/user_repo.go',
+    marker: lines(
+      '\t"fmt"',
+      '\t"sort"',
+    ),
+    replacement: lines(
+      '\t"fmt"',
+      '\t"math"',
+      '\t"sort"',
+    ),
+    sentinel: '\t"math"',
+  },
+  {
+    target: 'backend/internal/repository/user_repo.go',
+    marker: 'var _ service.RedeemUserAdjustmentRepository = (*userRepository)(nil)',
+    replacement: lines(
+      'var _ service.RedeemUserAdjustmentRepository = (*userRepository)(nil)',
+      '',
+      'func invalidNonNegativeBalance(value float64) bool {',
+      '\treturn value < 0 || math.IsNaN(value) || math.IsInf(value, 0)',
+      '}',
+      '',
+      'func invalidBalanceDelta(delta float64) bool {',
+      '\treturn math.IsNaN(delta) || math.IsInf(delta, 0)',
+      '}',
+    ),
+    sentinel: 'func invalidNonNegativeBalance(value float64) bool {',
+  },
+  {
+    target: 'backend/internal/repository/user_repo.go',
+    marker: lines(
+      '\tif userIn == nil {',
+      '\t\treturn nil',
+      '\t}',
+      '',
+      '\t// 统一使用 ent 的事务：保证用户与允许分组的更新原子化，',
+    ),
+    replacement: lines(
+      '\tif userIn == nil {',
+      '\t\treturn nil',
+      '\t}',
+      '\t// sub2aouter: non-negative-balance-create-v1',
+      '\tif invalidNonNegativeBalance(userIn.Balance) {',
+      '\t\treturn service.ErrBalanceNegative',
+      '\t}',
+      '',
+      '\t// 统一使用 ent 的事务：保证用户与允许分组的更新原子化，',
+    ),
+    sentinel: '// sub2aouter: non-negative-balance-create-v1',
+  },
+  {
+    target: 'backend/internal/repository/user_repo.go',
+    marker: lines(
+      'func (r *userRepository) UpdateBalance(ctx context.Context, id int64, amount float64) error {',
+      '\tclient := clientFromContext(ctx, r.client)',
+    ),
+    replacement: lines(
+      'func (r *userRepository) UpdateBalance(ctx context.Context, id int64, amount float64) error {',
+      '\tif invalidBalanceDelta(amount) {',
+      '\t\treturn service.ErrBalanceNegative',
+      '\t}',
+      '\tclient := clientFromContext(ctx, r.client)',
+    ),
+    sentinel: 'if invalidBalanceDelta(amount) {',
+  },
+  {
+    target: 'backend/internal/repository/user_repo.go',
+    marker: '\tupdate := client.User.Update().Where(dbuser.IDEQ(id)).AddBalance(amount)',
+    replacement: lines(
+      '\tupdate := client.User.Update().Where(dbuser.IDEQ(id))',
+      '\t// sub2aouter: non-negative-balance-update-v1',
+      '\tif amount < 0 {',
+      '\t\t// Keep the balance floor in the same atomic UPDATE as the increment so',
+      '\t\t// concurrent deductions cannot race through a read-then-write check.',
+      '\t\tupdate = update.Where(dbuser.BalanceGTE(-amount))',
+      '\t}',
+      '\tupdate = update.AddBalance(amount)',
+    ),
+    sentinel: '// sub2aouter: non-negative-balance-update-v1',
+  },
+  {
+    target: 'backend/internal/repository/user_repo.go',
+    marker: 'func (r *userRepository) ApplyRedeemBalanceAdjustment(ctx context.Context, id int64, delta float64) error {',
+    replacement: lines(
+      '// CreditBalance atomically grants balance without changing the recharge total.',
+      '// It is used for non-purchase grants such as first-provider-bind defaults.',
+      'func (r *userRepository) CreditBalance(ctx context.Context, id int64, amount float64) error {',
+      '\tif invalidNonNegativeBalance(amount) {',
+      '\t\treturn service.ErrBalanceNegative',
+      '\t}',
+      '\tclient := clientFromContext(ctx, r.client)',
+      '\tn, err := client.User.Update().',
+      '\t\tWhere(dbuser.IDEQ(id)).',
+      '\t\tAddBalance(amount).',
+      '\t\tSave(ctx)',
+      '\tif err != nil {',
+      '\t\treturn translatePersistenceError(err, service.ErrUserNotFound, nil)',
+      '\t}',
+      '\tif n == 0 {',
+      '\t\treturn service.ErrUserNotFound',
+      '\t}',
+      '\treturn nil',
+      '}',
+      '',
+      'func (r *userRepository) ApplyRedeemBalanceAdjustment(ctx context.Context, id int64, delta float64) error {',
+    ),
+    sentinel: 'func (r *userRepository) CreditBalance(ctx context.Context, id int64, amount float64) error {',
+  },
+  {
+    target: 'backend/internal/repository/user_repo.go',
+    marker: lines(
+      '\tif n == 0 {',
+      '\t\treturn service.ErrUserNotFound',
+      '\t}',
+      '\treturn nil',
+    ),
+    replacement: lines(
+      '\tif n > 0 {',
+      '\t\treturn nil',
+      '\t}',
+      '\t// sub2aouter: non-negative-balance-update-result-v1',
+      '\tif amount < 0 {',
+      '\t\tif _, queryErr := client.User.Query().Where(dbuser.IDEQ(id)).Only(ctx); queryErr != nil {',
+      '\t\t\treturn translatePersistenceError(queryErr, service.ErrUserNotFound, nil)',
+      '\t\t}',
+      '\t\treturn service.ErrBalanceNegative',
+      '\t}',
+      '\treturn service.ErrUserNotFound',
+    ),
+    sentinel: '// sub2aouter: non-negative-balance-update-result-v1',
+  },
+  {
+    target: 'backend/internal/repository/user_repo.go',
+    marker: lines(
+      'func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount float64) error {',
+      '\tclient := clientFromContext(ctx, r.client)',
+    ),
+    replacement: lines(
+      'func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount float64) error {',
+      '\t// sub2aouter: non-negative-balance-deduct-input-v1',
+      '\tif invalidBalanceDelta(amount) || amount < 0 {',
+      '\t\tif amount == 0 {',
+      '\t\t\treturn nil',
+      '\t\t}',
+      '\t\treturn fmt.Errorf("deduct balance amount must be positive")',
+      '\t}',
+      '\tclient := clientFromContext(ctx, r.client)',
+    ),
+    sentinel: '// sub2aouter: non-negative-balance-deduct-input-v1',
+  },
+  {
+    target: 'backend/internal/repository/user_repo.go',
+    marker: lines(
+      'func (r *userRepository) AdjustBalance(ctx context.Context, id int64, delta float64) (service.BalanceChange, error) {',
+      '\tconst updateSQL = `',
+    ),
+    replacement: lines(
+      'func (r *userRepository) AdjustBalance(ctx context.Context, id int64, delta float64) (service.BalanceChange, error) {',
+      '\t// sub2aouter: non-negative-balance-adjust-input-v1',
+      '\tif invalidBalanceDelta(delta) {',
+      '\t\treturn service.BalanceChange{}, service.ErrBalanceNegative',
+      '\t}',
+      '\tconst updateSQL = `',
+    ),
+    sentinel: '// sub2aouter: non-negative-balance-adjust-input-v1',
+  },
+  {
+    target: 'backend/internal/repository/user_repo.go',
+    marker: lines(
+      'func (r *userRepository) SetBalance(ctx context.Context, id int64, value float64) (service.BalanceChange, error) {',
+      '\tif value < 0 {',
+    ),
+    replacement: lines(
+      'func (r *userRepository) SetBalance(ctx context.Context, id int64, value float64) (service.BalanceChange, error) {',
+      '\tif invalidNonNegativeBalance(value) {',
+    ),
+    sentinel: 'if invalidNonNegativeBalance(value) {',
+  },
+  {
+    target: 'backend/internal/repository/user_repo.go',
+    marker: lines(
+      '\tn, err = client.User.Update().',
+      '\t\tWhere(dbuser.IDEQ(id)).',
+      '\t\tAddBalance(-amount).',
+      '\t\tSave(ctx)',
+      '\tif err != nil {',
+      '\t\treturn err',
+      '\t}',
+      '\tif n == 0 {',
+      '\t\treturn service.ErrUserNotFound',
+      '\t}',
+      '\treturn nil',
+    ),
+    replacement: lines(
+      '\t// sub2aouter: non-negative-balance-deduct-floor-v1',
+      '\tif _, queryErr := client.User.Query().Where(dbuser.IDEQ(id)).Only(ctx); queryErr != nil {',
+      '\t\treturn translatePersistenceError(queryErr, service.ErrUserNotFound, nil)',
+      '\t}',
+      '\treturn service.ErrBalanceNegative',
+    ),
+    sentinel: '// sub2aouter: non-negative-balance-deduct-floor-v1',
+  },
+  {
+    target: 'backend/internal/repository/usage_billing_repo.go',
+    marker: lines(
+      '\terr = tx.QueryRowContext(ctx, `',
+      '\t\tUPDATE users',
+      '\t\tSET balance = balance - $1,',
+      '\t\t\tupdated_at = NOW()',
+      '\t\tWHERE id = $2 AND deleted_at IS NULL',
+      '\t\tRETURNING balance',
+      '\t`, amount, userID).Scan(&newBalance)',
+      '\tif errors.Is(err, sql.ErrNoRows) {',
+      '\t\treturn 0, false, service.ErrUserNotFound',
+      '\t}',
+      '\tif err != nil {',
+      '\t\treturn 0, false, err',
+      '\t}',
+      '\treturn newBalance, false, nil',
+    ),
+    replacement: lines(
+      '\t// sub2aouter: non-negative-balance-unified-billing-v1',
+      '\tif exists, existsErr := userExistsForBilling(ctx, tx, userID); existsErr != nil {',
+      '\t\treturn 0, false, existsErr',
+      '\t} else if !exists {',
+      '\t\treturn 0, false, service.ErrUserNotFound',
+      '\t}',
+      '\treturn 0, false, service.ErrInsufficientBalance',
+    ),
+    sentinel: '// sub2aouter: non-negative-balance-unified-billing-v1',
+  },
+  {
+    target: 'backend/internal/repository/usage_billing_repo_unit_test.go',
+    marker: lines(
+      'func TestDeductUsageBillingBalance_RecordsOverdraftWhenGuardMisses(t *testing.T) {',
+      '\tctx := context.Background()',
+      '\tdb, mock, err := sqlmock.New()',
+      '\trequire.NoError(t, err)',
+      '\tdefer func() { _ = db.Close() }()',
+      '',
+      '\tmock.ExpectBegin()',
+      '\ttx, err := db.BeginTx(ctx, nil)',
+      '\trequire.NoError(t, err)',
+      '\tmock.ExpectQuery(conditionalBalanceDeductSQL).',
+      '\t\tWithArgs(10.0, int64(42)).',
+      '\t\tWillReturnError(sql.ErrNoRows)',
+      '\tmock.ExpectQuery(overdraftBalanceDeductSQL).',
+      '\t\tWithArgs(10.0, int64(42)).',
+      '\t\tWillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(-5.0))',
+      '\tmock.ExpectCommit()',
+      '',
+      '\tnewBalance, sufficient, err := deductUsageBillingBalance(ctx, tx, 42, 10)',
+      '\trequire.NoError(t, err)',
+      '\trequire.False(t, sufficient)',
+      '\trequire.InDelta(t, -5.0, newBalance, 0.000001)',
+      '\trequire.NoError(t, tx.Commit())',
+      '\trequire.NoError(t, mock.ExpectationsWereMet())',
+      '}',
+    ),
+    replacement: lines(
+      'func TestDeductUsageBillingBalance_RejectsInsufficientBalance(t *testing.T) {',
+      '\tctx := context.Background()',
+      '\tdb, mock, err := sqlmock.New()',
+      '\trequire.NoError(t, err)',
+      '\tdefer func() { _ = db.Close() }()',
+      '',
+      '\tmock.ExpectBegin()',
+      '\ttx, err := db.BeginTx(ctx, nil)',
+      '\trequire.NoError(t, err)',
+      '\tmock.ExpectQuery(conditionalBalanceDeductSQL).',
+      '\t\tWithArgs(10.0, int64(42)).',
+      '\t\tWillReturnError(sql.ErrNoRows)',
+      '\tmock.ExpectQuery(userExistsForBillingSQL).',
+      '\t\tWithArgs(int64(42)).',
+      '\t\tWillReturnRows(sqlmock.NewRows([]string{"?column?"}).AddRow(1))',
+      '\tmock.ExpectCommit()',
+      '',
+      '\tnewBalance, sufficient, err := deductUsageBillingBalance(ctx, tx, 42, 10)',
+      '\trequire.ErrorIs(t, err, service.ErrInsufficientBalance)',
+      '\trequire.False(t, sufficient)',
+      '\trequire.Zero(t, newBalance)',
+      '\trequire.NoError(t, tx.Commit())',
+      '\trequire.NoError(t, mock.ExpectationsWereMet())',
+      '}',
+    ),
+    sentinel: 'func TestDeductUsageBillingBalance_RejectsInsufficientBalance(t *testing.T) {',
+  },
+  {
+    target: 'backend/internal/repository/usage_billing_repo_unit_test.go',
+    marker: lines(
+      'func TestApplyUsageBillingEffects_FlagsBalanceOverdraft(t *testing.T) {',
+      '\tctx := context.Background()',
+      '\tdb, mock, err := sqlmock.New()',
+      '\trequire.NoError(t, err)',
+      '\tdefer func() { _ = db.Close() }()',
+      '',
+      '\tmock.ExpectBegin()',
+      '\ttx, err := db.BeginTx(ctx, nil)',
+      '\trequire.NoError(t, err)',
+      '\tmock.ExpectQuery(conditionalBalanceDeductSQL).',
+      '\t\tWithArgs(10.0, int64(42)).',
+      '\t\tWillReturnError(sql.ErrNoRows)',
+      '\tmock.ExpectQuery(overdraftBalanceDeductSQL).',
+      '\t\tWithArgs(10.0, int64(42)).',
+      '\t\tWillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(-5.0))',
+      '\tmock.ExpectCommit()',
+      '',
+      '\tresult := &service.UsageBillingApplyResult{Applied: true}',
+      '\terr = (&usageBillingRepository{}).applyUsageBillingEffects(ctx, tx, &service.UsageBillingCommand{',
+      '\t\tUserID:      42,',
+      '\t\tBalanceCost: 10,',
+      '\t}, result)',
+      '\trequire.NoError(t, err)',
+      '\trequire.NotNil(t, result.NewBalance)',
+      '\trequire.InDelta(t, -5.0, *result.NewBalance, 0.000001)',
+      '\trequire.True(t, result.BalanceOverdrafted)',
+      '\trequire.NoError(t, tx.Commit())',
+      '\trequire.NoError(t, mock.ExpectationsWereMet())',
+      '}',
+    ),
+    replacement: lines(
+      'func TestApplyUsageBillingEffects_RejectsInsufficientBalance(t *testing.T) {',
+      '\tctx := context.Background()',
+      '\tdb, mock, err := sqlmock.New()',
+      '\trequire.NoError(t, err)',
+      '\tdefer func() { _ = db.Close() }()',
+      '',
+      '\tmock.ExpectBegin()',
+      '\ttx, err := db.BeginTx(ctx, nil)',
+      '\trequire.NoError(t, err)',
+      '\tmock.ExpectQuery(conditionalBalanceDeductSQL).',
+      '\t\tWithArgs(10.0, int64(42)).',
+      '\t\tWillReturnError(sql.ErrNoRows)',
+      '\tmock.ExpectQuery(userExistsForBillingSQL).',
+      '\t\tWithArgs(int64(42)).',
+      '\t\tWillReturnRows(sqlmock.NewRows([]string{"?column?"}).AddRow(1))',
+      '\tmock.ExpectCommit()',
+      '',
+      '\tresult := &service.UsageBillingApplyResult{Applied: true}',
+      '\terr = (&usageBillingRepository{}).applyUsageBillingEffects(ctx, tx, &service.UsageBillingCommand{',
+      '\t\tUserID:      42,',
+      '\t\tBalanceCost: 10,',
+      '\t}, result)',
+      '\trequire.ErrorIs(t, err, service.ErrInsufficientBalance)',
+      '\trequire.Nil(t, result.NewBalance)',
+      '\trequire.False(t, result.BalanceOverdrafted)',
+      '\trequire.NoError(t, tx.Commit())',
+      '\trequire.NoError(t, mock.ExpectationsWereMet())',
+      '}',
+    ),
+    sentinel: 'func TestApplyUsageBillingEffects_RejectsInsufficientBalance(t *testing.T) {',
+  },
+  {
+    target: 'backend/internal/repository/usage_billing_repo_unit_test.go',
+    marker: lines(
+      'func TestDeductUsageBillingBalance_ReturnsUserNotFoundWhenNoUserUpdated(t *testing.T) {',
+      '\tctx := context.Background()',
+      '\tdb, mock, err := sqlmock.New()',
+      '\trequire.NoError(t, err)',
+      '\tdefer func() { _ = db.Close() }()',
+      '',
+      '\tmock.ExpectBegin()',
+      '\ttx, err := db.BeginTx(ctx, nil)',
+      '\trequire.NoError(t, err)',
+      '\tmock.ExpectQuery(conditionalBalanceDeductSQL).',
+      '\t\tWithArgs(10.0, int64(42)).',
+      '\t\tWillReturnError(sql.ErrNoRows)',
+      '\tmock.ExpectQuery(overdraftBalanceDeductSQL).',
+      '\t\tWithArgs(10.0, int64(42)).',
+      '\t\tWillReturnError(sql.ErrNoRows)',
+      '\tmock.ExpectRollback()',
+      '',
+      '\t_, _, err = deductUsageBillingBalance(ctx, tx, 42, 10)',
+      '\trequire.ErrorIs(t, err, service.ErrUserNotFound)',
+      '\trequire.NoError(t, tx.Rollback())',
+      '\trequire.NoError(t, mock.ExpectationsWereMet())',
+      '}',
+    ),
+    replacement: lines(
+      'func TestDeductUsageBillingBalance_ReturnsUserNotFoundWhenNoUserUpdated(t *testing.T) {',
+      '\t// sub2aouter: non-negative-balance-test-user-not-found-v1',
+      '\tctx := context.Background()',
+      '\tdb, mock, err := sqlmock.New()',
+      '\trequire.NoError(t, err)',
+      '\tdefer func() { _ = db.Close() }()',
+      '',
+      '\tmock.ExpectBegin()',
+      '\ttx, err := db.BeginTx(ctx, nil)',
+      '\trequire.NoError(t, err)',
+      '\tmock.ExpectQuery(conditionalBalanceDeductSQL).',
+      '\t\tWithArgs(10.0, int64(42)).',
+      '\t\tWillReturnError(sql.ErrNoRows)',
+      '\tmock.ExpectQuery(userExistsForBillingSQL).',
+      '\t\tWithArgs(int64(42)).',
+      '\t\tWillReturnRows(sqlmock.NewRows([]string{"?column?"}))',
+      '\tmock.ExpectRollback()',
+      '',
+      '\t_, _, err = deductUsageBillingBalance(ctx, tx, 42, 10)',
+      '\trequire.ErrorIs(t, err, service.ErrUserNotFound)',
+      '\trequire.NoError(t, tx.Rollback())',
+      '\trequire.NoError(t, mock.ExpectationsWereMet())',
+      '}',
+    ),
+    sentinel: '// sub2aouter: non-negative-balance-test-user-not-found-v1',
+  },
+  {
+    target: 'backend/internal/service/auth_oauth_first_bind.go',
+    marker: lines(
+      '\t\tif err := client.User.UpdateOneID(userID).AddBalance(providerDefaults.Balance).Exec(ctx); err != nil {',
+      '\t\t\treturn fmt.Errorf("apply first bind balance default: %w", err)',
+      '\t\t}',
+    ),
+    replacement: lines(
+      '\t\t// sub2aouter: non-negative-balance-first-bind-v1',
+      '\t\tif s.userRepo == nil {',
+      '\t\t\treturn fmt.Errorf("apply first bind balance default: user repository is nil")',
+      '\t\t}',
+      '\t\tvar balanceErr error',
+      '\t\tif creditor, ok := s.userRepo.(interface {',
+      '\t\t\tCreditBalance(context.Context, int64, float64) error',
+      '\t\t}); ok {',
+      '\t\t\tbalanceErr = creditor.CreditBalance(ctx, userID, providerDefaults.Balance)',
+      '\t\t} else {',
+      '\t\t\t// Keep compatibility with repository implementations from older releases.',
+      '\t\t\tbalanceErr = client.User.UpdateOneID(userID).AddBalance(providerDefaults.Balance).Exec(ctx)',
+      '\t\t}',
+      '\t\tif balanceErr != nil {',
+      '\t\t\treturn fmt.Errorf("apply first bind balance default: %w", balanceErr)',
+      '\t\t}',
+    ),
+    sentinel: '// sub2aouter: non-negative-balance-first-bind-v1',
+  },
+  {
+    target: 'backend/internal/repository/billing_cache.go',
+    marker: '\t"log"',
+    replacement: lines('\t"log"', '\t"math"'),
+    sentinel: '\t"math"',
+  },
+  {
+    target: 'backend/internal/repository/billing_cache.go',
+    marker: lines(
+      '\t\tlocal newVal = tonumber(current) - tonumber(ARGV[1])',
+      "\t\tredis.call('SET', KEYS[1], newVal)",
+    ),
+    replacement: lines(
+      '\t\t-- sub2aouter: non-negative-balance-cache-script-v1',
+      '\t\tlocal currentVal = tonumber(current)',
+      '\t\tlocal amount = tonumber(ARGV[1])',
+      '\t\tif currentVal == nil or amount == nil or amount < 0 then',
+      '\t\t\treturn 0',
+      '\t\tend',
+      '\t\tlocal newVal = currentVal - amount',
+      '\t\tif newVal < 0 then',
+      '\t\t\tnewVal = 0',
+      '\t\tend',
+      "\t\tredis.call('SET', KEYS[1], newVal)",
+    ),
+    sentinel: '-- sub2aouter: non-negative-balance-cache-script-v1',
+  },
+  {
+    target: 'backend/internal/repository/billing_cache.go',
+    marker: lines(
+      'func (c *billingCache) SetUserBalance(ctx context.Context, userID int64, balance float64) error {',
+      '\tkey := billingBalanceKey(userID)',
+      '\treturn c.rdb.Set(ctx, key, balance, jitteredTTL()).Err()',
+      '}',
+    ),
+    replacement: lines(
+      'func (c *billingCache) SetUserBalance(ctx context.Context, userID int64, balance float64) error {',
+      '\t// sub2aouter: non-negative-balance-cache-set-v1',
+      '\tif balance < 0 || math.IsNaN(balance) || math.IsInf(balance, 0) {',
+      '\t\treturn service.ErrBalanceNegative',
+      '\t}',
+      '\tkey := billingBalanceKey(userID)',
+      '\treturn c.rdb.Set(ctx, key, balance, jitteredTTL()).Err()',
+      '}',
+    ),
+    sentinel: '// sub2aouter: non-negative-balance-cache-set-v1',
+  },
+  {
+    target: 'backend/internal/repository/billing_cache.go',
+    marker: lines(
+      'func (c *billingCache) DeductUserBalance(ctx context.Context, userID int64, amount float64) error {',
+      '\tkey := billingBalanceKey(userID)',
+      '\t_, err := deductBalanceScript.Run(ctx, c.rdb, []string{key}, amount, int(jitteredTTL().Seconds())).Result()',
+      '\tif err != nil && !errors.Is(err, redis.Nil) {',
+      '\t\tlog.Printf("Warning: deduct balance cache failed for user %d: %v", userID, err)',
+      '\t\treturn err',
+      '\t}',
+      '\treturn nil',
+      '}',
+    ),
+    replacement: lines(
+      'func (c *billingCache) DeductUserBalance(ctx context.Context, userID int64, amount float64) error {',
+      '\t// sub2aouter: non-negative-balance-cache-deduct-v1',
+      '\tif amount < 0 || math.IsNaN(amount) || math.IsInf(amount, 0) {',
+      '\t\treturn fmt.Errorf("deduct balance amount must be non-negative and finite")',
+      '\t}',
+      '\tif amount == 0 {',
+      '\t\treturn nil',
+      '\t}',
+      '\tkey := billingBalanceKey(userID)',
+      '\t_, err := deductBalanceScript.Run(ctx, c.rdb, []string{key}, amount, int(jitteredTTL().Seconds())).Result()',
+      '\tif err != nil && !errors.Is(err, redis.Nil) {',
+      '\t\tlog.Printf("Warning: deduct balance cache failed for user %d: %v", userID, err)',
+      '\t\treturn err',
+      '\t}',
+      '\treturn nil',
+      '}',
+    ),
+    sentinel: '// sub2aouter: non-negative-balance-cache-deduct-v1',
+  },
+  {
+    target: 'backend/internal/service/usage_billing.go',
+    marker: lines(
+      '\t"fmt"',
+      '\t"strings"',
+    ),
+    replacement: lines(
+      '\t"fmt"',
+      '\t"math"',
+      '\t"strings"',
+    ),
+    sentinel: '\t"math"',
+  },
+  {
+    target: 'backend/internal/service/usage_billing.go',
+    marker: 'var ErrUsageBillingRequestConflict = errors.New("usage billing request fingerprint conflict")',
+    replacement: lines(
+      'var ErrUsageBillingRequestConflict = errors.New("usage billing request fingerprint conflict")',
+      'var ErrUsageBillingAmountInvalid = errors.New("usage billing balance amount must be finite and non-negative")',
+      '',
+      'func validUsageBillingAmount(value float64) bool {',
+      '\treturn value >= 0 && !math.IsNaN(value) && !math.IsInf(value, 0)',
+      '}',
+    ),
+    sentinel: 'var ErrUsageBillingAmountInvalid = errors.New("usage billing balance amount must be finite and non-negative")',
+  },
+  {
+    target: 'backend/internal/service/usage_billing.go',
+    marker: lines(
+      '\tAccountQuotaCost    float64',
+      '}',
+      '',
+      'func (c *UsageBillingCommand) Normalize() {',
+    ),
+    replacement: lines(
+      '\tAccountQuotaCost    float64',
+      '}',
+      '',
+      '// Validate rejects malformed balance costs before they reach SQL.',
+      'func (c *UsageBillingCommand) Validate() error {',
+      '\tif c == nil {',
+      '\t\treturn nil',
+      '\t}',
+      '\tif !validUsageBillingAmount(c.BalanceCost) {',
+      '\t\treturn ErrUsageBillingAmountInvalid',
+      '\t}',
+      '\treturn nil',
+      '}',
+      '',
+      '// ValidateAmounts is kept as the explicit amount-validation entry point for',
+      '// callers that do not need to validate request identity fields.',
+      'func (c *UsageBillingCommand) ValidateAmounts() error {',
+      '\treturn c.Validate()',
+      '}',
+      '',
+      'func (c *UsageBillingCommand) Normalize() {',
+    ),
+    sentinel: 'func (c *UsageBillingCommand) Validate() error {',
+  },
+  {
+    target: 'backend/internal/service/usage_billing.go',
+    marker: lines(
+      '\tActualAmount       float64',
+      '}',
+      '',
+      'func (c *BatchImageBalanceHoldCommand) Normalize() {',
+    ),
+    replacement: lines(
+      '\tActualAmount       float64',
+      '}',
+      '',
+      '// Validate rejects malformed hold/settlement amounts before they reach SQL.',
+      'func (c *BatchImageBalanceHoldCommand) Validate() error {',
+      '\tif c == nil {',
+      '\t\treturn nil',
+      '\t}',
+      '\tif !validUsageBillingAmount(c.HoldAmount) || !validUsageBillingAmount(c.ActualAmount) {',
+      '\t\treturn ErrUsageBillingAmountInvalid',
+      '\t}',
+      '\treturn nil',
+      '}',
+      '',
+      '// ValidateAmounts is kept as the explicit amount-validation entry point for',
+      '// batch hold callers.',
+      'func (c *BatchImageBalanceHoldCommand) ValidateAmounts() error {',
+      '\treturn c.Validate()',
+      '}',
+      '',
+      'func (c *BatchImageBalanceHoldCommand) Normalize() {',
+    ),
+    sentinel: 'func (c *BatchImageBalanceHoldCommand) Validate() error {',
+  },
+  {
+    target: 'backend/internal/repository/usage_billing_repo.go',
+    marker: lines(
+      '\tif cmd.RequestID == "" {',
+      '\t\treturn nil, service.ErrUsageBillingRequestIDRequired',
+      '\t}',
+      '',
+      '\ttx, err := r.db.BeginTx(ctx, nil)',
+    ),
+    replacement: lines(
+      '\tif cmd.RequestID == "" {',
+      '\t\treturn nil, service.ErrUsageBillingRequestIDRequired',
+      '\t}',
+      '\t// sub2aouter: validate-usage-command-v1',
+      '\tif err := cmd.Validate(); err != nil {',
+      '\t\treturn nil, err',
+      '\t}',
+      '',
+      '\ttx, err := r.db.BeginTx(ctx, nil)',
+    ),
+    sentinel: '// sub2aouter: validate-usage-command-v1',
+  },
+  {
+    target: 'backend/internal/repository/usage_billing_repo.go',
+    marker: lines(
+      '\tif cmd.RequestID == "" {',
+      '\t\treturn nil, service.ErrUsageBillingRequestIDRequired',
+      '\t}',
+      '',
+      '\ttx, err := r.db.BeginTx(ctx, nil)',
+    ),
+    replacement: lines(
+      '\tif cmd.RequestID == "" {',
+      '\t\treturn nil, service.ErrUsageBillingRequestIDRequired',
+      '\t}',
+      '\t// sub2aouter: validate-usage-batch-v1',
+      '\tif err := cmd.Validate(); err != nil {',
+      '\t\treturn nil, err',
+      '\t}',
+      '',
+      '\ttx, err := r.db.BeginTx(ctx, nil)',
+    ),
+    sentinel: '// sub2aouter: validate-usage-batch-v1',
+  },
+])
+
+function withDetectedLineEndings(content, value) {
+  return content.includes('\r\n') ? value.replaceAll('\n', '\r\n') : value
+}
+
+async function applyPatch(root, patch, check) {
+  const file = path.join(root, patch.target)
+  const content = await readFile(file, 'utf8')
+  const replacement = withDetectedLineEndings(content, patch.replacement)
+  if (content.includes(patch.sentinel)) {
+    const sentinelIndex = content.indexOf(patch.sentinel)
+    const replacementSentinelIndex = replacement.indexOf(patch.sentinel)
+    const replacementStart = sentinelIndex - replacementSentinelIndex
+    if (
+      replacementSentinelIndex < 0 ||
+      replacementStart < 0 ||
+      content.slice(replacementStart, replacementStart + replacement.length) !== replacement
+    ) {
+      throw new Error(`Non-negative balance patch sentinel drift detected in ${patch.target}: ${patch.sentinel}`)
+    }
+    return false
+  }
+
+  const marker = withDetectedLineEndings(content, patch.marker)
+  const index = content.indexOf(marker)
+  if (index < 0) {
+    throw new Error(`Non-negative balance patch marker not found in ${patch.target}: ${patch.marker.slice(0, 120)}`)
+  }
+  if (check) throw new Error(`Non-negative balance patch drift detected in ${patch.target}`)
+
+  await writeFile(file, `${content.slice(0, index)}${replacement}${content.slice(index + marker.length)}`, 'utf8')
+  return true
+}
+
+export async function applyNonNegativeBalance({ root, check = false }) {
+  const resolvedRoot = path.resolve(root)
+  let changed = false
+  for (const patch of BALANCE_PATCHES) {
+    changed = (await applyPatch(resolvedRoot, patch, check)) || changed
+  }
+  return { changed }
+}
+
+async function main() {
+  const args = process.argv.slice(2)
+  const rootIndex = args.indexOf('--root')
+  const root = rootIndex >= 0 ? args[rootIndex + 1] : args[0]
+  if (!root) throw new Error('Usage: node scripts/apply-non-negative-balance.mjs --root <path> [--check]')
+  const result = await applyNonNegativeBalance({ root, check: args.includes('--check') })
+  console.log(result.changed ? 'Applied non-negative balance guard.' : 'Non-negative balance guard already current.')
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : error)
+    process.exitCode = 1
+  })
+}

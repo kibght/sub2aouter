@@ -31,6 +31,10 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 	if cmd.RequestID == "" {
 		return nil, service.ErrUsageBillingRequestIDRequired
 	}
+	// sub2aouter: validate-usage-command-v1
+	if err := cmd.Validate(); err != nil {
+		return nil, err
+	}
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -135,6 +139,10 @@ func (r *usageBillingRepository) applyBatchImageBalanceHold(
 	cmd.Normalize()
 	if cmd.RequestID == "" {
 		return nil, service.ErrUsageBillingRequestIDRequired
+	}
+	// sub2aouter: validate-usage-batch-v1
+	if err := cmd.Validate(); err != nil {
+		return nil, err
 	}
 
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -256,20 +264,13 @@ func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, am
 		return 0, false, err
 	}
 
-	err = tx.QueryRowContext(ctx, `
-		UPDATE users
-		SET balance = balance - $1,
-			updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL
-		RETURNING balance
-	`, amount, userID).Scan(&newBalance)
-	if errors.Is(err, sql.ErrNoRows) {
+	// sub2aouter: non-negative-balance-unified-billing-v1
+	if exists, existsErr := userExistsForBilling(ctx, tx, userID); existsErr != nil {
+		return 0, false, existsErr
+	} else if !exists {
 		return 0, false, service.ErrUserNotFound
 	}
-	if err != nil {
-		return 0, false, err
-	}
-	return newBalance, false, nil
+	return 0, false, service.ErrInsufficientBalance
 }
 
 func reserveUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {

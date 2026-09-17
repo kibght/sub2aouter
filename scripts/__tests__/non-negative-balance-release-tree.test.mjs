@@ -15,3 +15,10 @@ test('generated release contract rejects a source tree without the balance migra
   const contract = await readFile(new URL('scripts/lib/release-pipeline-contract.mjs', root), 'utf8')
   assert.match(contract, /sync\.balance_guard/)
 })
+
+test('repository release can explicitly republish a deleted version', async () => {
+  const workflow = await readFile(new URL('.github/workflows/upstream-theme-sync.yml', root), 'utf8')
+  assert.match(workflow, /release_version:/)
+  assert.match(workflow, /RELEASE_VERSION_OVERRIDE/)
+  assert.match(workflow, /RELEASE_VERSION_OVERRIDE.*RELEASE_VERSION=/s)
+})
