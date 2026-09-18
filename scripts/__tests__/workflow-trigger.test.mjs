@@ -43,10 +43,10 @@ test('upstream sync verifies the release contract before fetching upstream', asy
 })
 
 
-test('manual repository releases reuse the existing themed release without fetching upstream', async () => {
+test('manual repository releases build the checked out main commit without fetching upstream', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
   assert.match(workflow, /REPOSITORY_RELEASE.*true/)
-  assert.match(workflow, /git worktree add --detach "\$GENERATED_DIR" origin\/themed-release/)
+  assert.match(workflow, /git worktree add --detach "\$GENERATED_DIR" "\$\{\{ github\.sha \}\}"/)
   assert.match(workflow, /RELEASE_KIND="repository"/)
   assert.match(workflow, /\u4ed3\u5e93\u4fee\u590d/)
   assert.match(workflow, /\.apophis-release-notes\.md/)
