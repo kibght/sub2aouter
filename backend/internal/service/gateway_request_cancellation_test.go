@@ -155,7 +155,7 @@ func TestOverdraftCancellationStopsHTTPAfterClientDisconnect(t *testing.T) {
 	go func() {
 		response, requestErr := server.Client().Do(httpRequest)
 		if response != nil {
-			response.Body.Close()
+			_ = response.Body.Close()
 		}
 		finished <- requestErr
 	}()

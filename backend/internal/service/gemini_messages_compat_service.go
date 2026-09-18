@@ -1061,6 +1061,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	if req.Stream {
 		streamRes, err := s.handleStreamingResponse(c, resp, startTime, originalModel)
 		if err != nil {
+			// sub2aouter: billing-overdraft-gemini-1-v1
 			if IsGatewayBalanceOverdraft(ctx) && streamRes != nil && hasClaudeUsage(streamRes.usage) {
 				return &ForwardResult{RequestID: requestID, Usage: *streamRes.usage, Model: originalModel,
 					UpstreamModel: mappedModel, Stream: true, Duration: time.Since(startTime),
@@ -1601,6 +1602,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	if stream {
 		streamRes, err := s.handleNativeStreamingResponse(c, resp, startTime, isOAuth)
 		if err != nil {
+			// sub2aouter: billing-overdraft-gemini-2-v1
 			if IsGatewayBalanceOverdraft(ctx) && streamRes != nil && hasClaudeUsage(streamRes.usage) {
 				return &ForwardResult{RequestID: requestID, Usage: *streamRes.usage, Model: originalModel,
 					UpstreamModel: mappedModel, Stream: true, Duration: time.Since(startTime),
@@ -2079,6 +2081,7 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
+			// sub2aouter: billing-overdraft-gemini-3-v1
 			return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream read error: %w", err)
 		}
 
@@ -2414,6 +2417,7 @@ func collectGeminiSSE(body io.Reader, isOAuth bool) (map[string]any, *ClaudeUsag
 			break
 		}
 		if err != nil {
+			// sub2aouter: billing-overdraft-gemini-4-v1
 			return mergeCollectedTextParts(pickGeminiCollectResult(last, lastWithParts), collectedTextParts), usage, err
 		}
 	}
@@ -2704,6 +2708,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 			break
 		}
 		if err != nil {
+			// sub2aouter: billing-overdraft-gemini-5-v1
 			return &geminiNativeStreamResult{usage: usage, firstTokenMs: firstTokenMs}, err
 		}
 	}

@@ -179,8 +179,12 @@ jobs:
           fi
           echo "Processing tag: $TAG_NAME"
 
-          # 获取完整的 tag message（跳过第一行标题）
-          TAG_MESSAGE=$(git tag -l --format='%(contents:body)' "$TAG_NAME")
+          # Prefer the synchronized concrete fix notes, falling back to the tag message.
+          if [ -s .apophis-release-notes.md ]; then
+            TAG_MESSAGE=$(cat .apophis-release-notes.md)
+          else
+            TAG_MESSAGE=$(git tag -l --format='%(contents:body)' "$TAG_NAME")
+          fi
 
           # 调试输出
           echo "Tag message length: ${#TAG_MESSAGE}"
@@ -191,6 +195,29 @@ jobs:
           echo "message<<EOF" >> $GITHUB_OUTPUT
           echo "$TAG_MESSAGE" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Enable idempotent GoReleaser asset replacement
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          for name in ('.goreleaser.yaml', '.goreleaser.simple.yaml'):
+              path = Path(name)
+              if not path.exists():
+                  continue
+              text = path.read_text(encoding='utf-8')
+              if 'replace_existing_artifacts:' in text:
+                  continue
+              marker = '  draft: false\n'
+              if marker not in text:
+                  raise SystemExit(f'release config has no draft marker: {name}')
+              path.write_text(
+                  text.replace(marker, '  replace_existing_artifacts: true\n' + marker, 1),
+                  encoding='utf-8',
+              )
+          PY
 
       - name: Set lowercase owner for GHCR
         id: lowercase

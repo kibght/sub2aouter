@@ -143,7 +143,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     'Explicit repository releases must build the checked out main commit without fetching upstream source.')
   check('sync.repository_checkout', syncPath, hasPattern(sync, /name: Checkout theme source[\s\S]{0,300}ref: main/) && !sync.includes("github.event_name == 'push'"), 'Manual and coordinated publication must checkout main explicitly.')
   check('sync.repository_source_sha', syncPath, sync.includes('RELEASE_SOURCE_SHA="$(git rev-parse HEAD)"') && !sync.includes('RELEASE_SOURCE_SHA="${{ github.sha }}"'), 'Repository release metadata must come from the commit actually checked out and built.')
-  check('sync.repository_notes', syncPath, sync.includes('## \u4ed3\u5e93\u4fee\u590d') && sync.includes('Capture repository release notes'), 'Explicit repository releases must publish repository fix notes.')
+  check('sync.repository_notes', syncPath, sync.includes('## \u672c\u6b21\u4fee\u590d\u5185\u5bb9') && sync.includes('Capture repository release notes') && sync.includes('具体修复内容见本次发布提交说明'), 'Explicit repository releases must publish concrete fix notes.')
   check('sync.release_version', syncPath, sync.includes('PREVIOUS_RELEASE_VERSION') && sync.includes('node scripts/next-release-version.mjs \"$PREVIOUS_RELEASE_VERSION\"'), 'Sync must migrate the next release to v0.1.200 and increment the persisted version.')
   check('sync.explicit_release_version', syncPath,
     sync.includes('release_version:') &&

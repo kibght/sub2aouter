@@ -7,7 +7,12 @@ export function applySourceHunks(content, hunks, target, { fuzzy = false } = {})
     const changed = changedMiddle(hunk.before, hunk.after)
     if (changed) repeatedChanged.set(changed, (repeatedChanged.get(changed) || 0) + 1)
   }
-  for (const { before, after } of hunks) {
+  for (const { before, after, marker: configuredMarker } of hunks) {
+    // A maintained hunk may be applied once even when an upstream edit changes
+    // the surrounding context.  Keep the second verification pass idempotent
+    // by recognizing the stable marker embedded in the replacement.
+    const marker = configuredMarker || ''
+    if (marker && result.includes(marker)) continue
     if (result.includes(after)) {
       if (result.indexOf(after) !== result.lastIndexOf(after)) {
         throw new Error(`Ambiguous overlay replacement in ${target}`)

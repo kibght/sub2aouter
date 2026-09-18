@@ -48,7 +48,7 @@ test('manual repository releases build the checked out main commit without fetch
   assert.match(workflow, /REPOSITORY_RELEASE.*true/)
   assert.match(workflow, /git worktree add --detach "\$GENERATED_DIR" "\$\{\{ github\.sha \}\}"/)
   assert.match(workflow, /RELEASE_KIND="repository"/)
-  assert.match(workflow, /\u4ed3\u5e93\u4fee\u590d/)
+  assert.match(workflow, /\u672c\u6b21\u4fee\u590d\u5185\u5bb9/)
   assert.match(workflow, /\.apophis-release-notes\.md/)
   assert.match(workflow, /rm -rf \"\$GENERATED_DIR\/theme\" \"\$GENERATED_DIR\/scripts\"/)
 })
