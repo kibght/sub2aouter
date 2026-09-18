@@ -48,14 +48,14 @@ func TestUsageBillingRepositoryBatchHoldRejectsNonFiniteAmount(t *testing.T) {
 }
 
 const (
-	conditionalBalanceDeductSQL = `(?s)UPDATE users\s+SET balance = balance - \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$2 AND deleted_at IS NULL AND balance >= \$1\s+RETURNING balance`
+	conditionalBalanceDeductSQL = `(?s)UPDATE users\s+SET balance = balance - \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$2 AND deleted_at IS NULL\s+RETURNING balance`
 	reserveBatchImageHoldSQL    = `(?s)UPDATE users\s+SET balance = balance - \$1,\s+frozen_balance = COALESCE\(frozen_balance, 0\) \+ \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$2 AND deleted_at IS NULL AND balance >= \$1\s+RETURNING balance, frozen_balance`
 	captureBatchImageHoldSQL    = `(?s)UPDATE users\s+SET balance = balance\s+\+ CASE WHEN \$1 > \$2 THEN \$1 - \$2 ELSE 0 END\s+- CASE WHEN \$2 > \$1 THEN \$2 - \$1 ELSE 0 END,\s+frozen_balance = COALESCE\(frozen_balance, 0\) - \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$3 AND deleted_at IS NULL AND COALESCE\(frozen_balance, 0\) >= \$1\s+RETURNING balance, frozen_balance`
 	releaseBatchImageHoldSQL    = `(?s)UPDATE users\s+SET balance = balance \+ \$1,\s+frozen_balance = COALESCE\(frozen_balance, 0\) - \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$2 AND deleted_at IS NULL AND COALESCE\(frozen_balance, 0\) >= \$1\s+RETURNING balance, frozen_balance`
 	userExistsForBillingSQL     = `(?s)SELECT 1\s+FROM users\s+WHERE id = \$1 AND deleted_at IS NULL`
 )
 
-func TestDeductUsageBillingBalance_UsesSufficientBalanceGuard(t *testing.T) {
+func TestDeductUsageBillingBalanceAllowsOverdraft(t *testing.T) {
 	ctx := context.Background()
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -77,7 +77,7 @@ func TestDeductUsageBillingBalance_UsesSufficientBalanceGuard(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestDeductUsageBillingBalance_RejectsInsufficientBalance(t *testing.T) {
+func TestDeductUsageBillingBalanceReturnsNegativeBalance(t *testing.T) {
 	ctx := context.Background()
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -88,21 +88,18 @@ func TestDeductUsageBillingBalance_RejectsInsufficientBalance(t *testing.T) {
 	require.NoError(t, err)
 	mock.ExpectQuery(conditionalBalanceDeductSQL).
 		WithArgs(10.0, int64(42)).
-		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery(userExistsForBillingSQL).
-		WithArgs(int64(42)).
-		WillReturnRows(sqlmock.NewRows([]string{"?column?"}).AddRow(1))
+		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(-2.5))
 	mock.ExpectCommit()
 
 	newBalance, sufficient, err := deductUsageBillingBalance(ctx, tx, 42, 10)
-	require.ErrorIs(t, err, service.ErrInsufficientBalance)
+	require.NoError(t, err)
 	require.False(t, sufficient)
-	require.Zero(t, newBalance)
+	require.InDelta(t, -2.5, newBalance, 0.000001)
 	require.NoError(t, tx.Commit())
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestApplyUsageBillingEffects_RejectsInsufficientBalance(t *testing.T) {
+func TestApplyUsageBillingEffectsMarksOverdraft(t *testing.T) {
 	ctx := context.Background()
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -113,10 +110,7 @@ func TestApplyUsageBillingEffects_RejectsInsufficientBalance(t *testing.T) {
 	require.NoError(t, err)
 	mock.ExpectQuery(conditionalBalanceDeductSQL).
 		WithArgs(10.0, int64(42)).
-		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery(userExistsForBillingSQL).
-		WithArgs(int64(42)).
-		WillReturnRows(sqlmock.NewRows([]string{"?column?"}).AddRow(1))
+		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(-2.5))
 	mock.ExpectCommit()
 
 	result := &service.UsageBillingApplyResult{Applied: true}
@@ -124,9 +118,9 @@ func TestApplyUsageBillingEffects_RejectsInsufficientBalance(t *testing.T) {
 		UserID:      42,
 		BalanceCost: 10,
 	}, result)
-	require.ErrorIs(t, err, service.ErrInsufficientBalance)
-	require.Nil(t, result.NewBalance)
-	require.False(t, result.BalanceOverdrafted)
+	require.NoError(t, err)
+	require.InDelta(t, -2.5, *result.NewBalance, 0.000001)
+	require.True(t, result.BalanceOverdrafted)
 	require.NoError(t, tx.Commit())
 	require.NoError(t, mock.ExpectationsWereMet())
 }

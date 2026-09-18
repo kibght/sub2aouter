@@ -48,6 +48,9 @@ test('non-negative balance guard applies cleanly to the previous upstream layout
   // remains self-contained and does not depend on a git executable.
   for (const patch of [...BALANCE_PATCHES].reverse()) {
     const content = contents.get(patch.target)
+    if (patch.skipWhen && content.includes(patch.skipWhen)) {
+      continue
+    }
     const replacement = patch.replacement.replaceAll('\r\n', '\n')
     const marker = patch.marker.replaceAll('\r\n', '\n')
     assert.ok(content.includes(replacement), `fixture is missing current replacement for ${patch.target}`)
@@ -120,16 +123,16 @@ test('non-negative balance guard fails closed when a sentinel implementation dri
   )
 })
 
-test('runtime balance paths do not retain overdraft fallbacks', async () => {
+test('usage settlement preserves overdraft while administrative paths stay guarded', async () => {
   const userRepo = await readFile(path.join(root, 'backend/internal/repository/user_repo.go'), 'utf8')
   const usageRepo = await readFile(path.join(root, 'backend/internal/repository/usage_billing_repo.go'), 'utf8')
   const cacheRepo = await readFile(path.join(root, 'backend/internal/repository/billing_cache.go'), 'utf8')
 
-  assert.match(userRepo, /BalanceGTE\(amount\)/)
-  assert.doesNotMatch(userRepo, /n, err = client\.User\.Update\(\)[\s\S]*AddBalance\(-amount\)/)
-  assert.doesNotMatch(
-    usageRepo,
-    /WHERE id = \$2 AND deleted_at IS NULL\s+RETURNING balance/,
-  )
-  assert.match(cacheRepo, /if newVal < 0/)
+  const deductStart = userRepo.indexOf('func (r *userRepository) DeductBalance')
+  const deductEnd = userRepo.indexOf('\n}', deductStart)
+  const deduct = userRepo.slice(deductStart, deductEnd)
+  assert.doesNotMatch(deduct, /BalanceGTE\(amount\)/)
+  assert.match(deduct, /billing-overdraft-deduct-v1/)
+  assert.match(usageRepo, /WHERE id = \$2 AND deleted_at IS NULL\s+RETURNING balance/)
+  assert.doesNotMatch(cacheRepo, /if newVal < 0/)
 })

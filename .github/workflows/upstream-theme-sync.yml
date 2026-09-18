@@ -410,6 +410,13 @@ jobs:
         run: node scripts/apply-non-negative-balance.mjs --root .
         working-directory: ${{ env.GENERATED_DIR }}
 
+      - name: Apply billing overdraft settlement policy
+        if: env.SHOULD_PUBLISH == 'true'
+        env:
+          SOURCE_ROOT: ${{ github.workspace }}
+        run: node scripts/apply-billing-overdraft.mjs --root . --source "$SOURCE_ROOT"
+        working-directory: ${{ env.GENERATED_DIR }}
+
       - name: Carry Infinite Canvas integration
         if: env.SHOULD_PUBLISH == 'true'
         shell: bash
@@ -608,6 +615,7 @@ jobs:
           set -euo pipefail
           node scripts/apply-theme.mjs --root . --check
           node scripts/apply-non-negative-balance.mjs --root . --check
+          node scripts/apply-billing-overdraft.mjs --root . --source "$GITHUB_WORKSPACE" --check
           node scripts/apply-sub2-infinite-canvas-integration.mjs --root . --check
           node scripts/check-encoding.mjs .
           node --test scripts/__tests__/*.test.mjs

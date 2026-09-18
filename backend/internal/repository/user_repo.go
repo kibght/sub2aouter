@@ -880,9 +880,10 @@ func (r *userRepository) ApplyRedeemBalanceAdjustment(ctx context.Context, id in
 	return nil
 }
 
-// DeductBalance 扣除用户余额，并在余额不足时拒绝写入。
+// DeductBalance 扣除用户余额。正常用量结算允许余额透支；入口资格检查
+// 会阻止透支用户发起后续请求，结算完成后由网关取消其余在途请求。
 func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount float64) error {
-	// sub2aouter: non-negative-balance-deduct-input-v1
+	// sub2aouter: billing-overdraft-deduct-v1
 	if invalidBalanceDelta(amount) || amount < 0 {
 		if amount == 0 {
 			return nil
@@ -891,7 +892,7 @@ func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount flo
 	}
 	client := clientFromContext(ctx, r.client)
 	n, err := client.User.Update().
-		Where(dbuser.IDEQ(id), dbuser.BalanceGTE(amount)).
+		Where(dbuser.IDEQ(id)).
 		AddBalance(-amount).
 		Save(ctx)
 	if err != nil {
@@ -900,11 +901,10 @@ func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount flo
 	if n > 0 {
 		return nil
 	}
-	// sub2aouter: non-negative-balance-deduct-floor-v1
 	if _, queryErr := client.User.Query().Where(dbuser.IDEQ(id)).Only(ctx); queryErr != nil {
 		return translatePersistenceError(queryErr, service.ErrUserNotFound, nil)
 	}
-	return service.ErrBalanceNegative
+	return nil
 }
 
 // AdjustBalance 原子地把 delta 累加到余额上，结果为负时整条语句不生效。

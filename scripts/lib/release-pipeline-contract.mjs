@@ -15,7 +15,9 @@ export const RELEASE_PIPELINE_FILES = Object.freeze([
   'scripts/lib/github-release.mjs',
   'scripts/lib/sync-health.mjs',
   'scripts/apply-non-negative-balance.mjs',
+  'scripts/apply-billing-overdraft.mjs',
   'backend/migrations/192_enforce_non_negative_user_balance.sql',
+  'backend/migrations/193_restore_usage_balance_overdraft.sql',
   'backend/internal/service/update_service.go',
   'Dockerfile',
   'frontend/src/components/common/VersionBadge.vue',
@@ -122,6 +124,11 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     sync.includes('node scripts/apply-non-negative-balance.mjs --root .') &&
     sync.includes('node scripts/apply-non-negative-balance.mjs --root . --check'),
     'Sync must carry the non-negative balance migration and apply/check the fail-closed balance guard.')
+  check('sync.billing_overdraft_overlay', syncPath,
+    sync.includes('name: Apply billing overdraft settlement policy') &&
+    sync.includes('node scripts/apply-billing-overdraft.mjs --root . --source') &&
+    sync.includes('node scripts/apply-billing-overdraft.mjs --root . --source "$GITHUB_WORKSPACE" --check'),
+    'Sync must apply and check the persistent billing overdraft settlement overlay.')
   check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-canvas-sha') && sync.includes('.apophis-release-notes.md'), 'Sync must persist upstream, repository, Canvas, and release notes metadata.')
   check('sync.repository_recovery', syncPath, sync.includes('repository_release:') && sync.includes('PREVIOUS_CANVAS_SHA') && sync.includes('Repository source drift is intentionally not published') && sync.includes('UPSTREAM_ALREADY_SYNCHRONIZED'), 'Scheduled syncs may publish Canvas drift, while repository-only changes require explicit repository_release=true.')
   check('sync.canvas_freshness', syncPath, sync.includes('name: Verify Infinite Canvas dependency is current') && sync.includes('LATEST_CANVAS_SHA') && sync.includes('node scripts/resolve-github-release.mjs') && sync.includes('--repository basketikun/infinite-canvas'), 'Theme publication must stop when main is behind the latest published Infinite Canvas release.')

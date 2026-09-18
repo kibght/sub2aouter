@@ -453,15 +453,15 @@ func (s *UserRepoSuite) TestDeductBalance() {
 	s.Require().InDelta(5.0, got.Balance, 1e-6)
 }
 
-func (s *UserRepoSuite) TestDeductBalance_InsufficientFunds() {
+func (s *UserRepoSuite) TestDeductBalance_AllowsOverdraft() {
 	user := s.mustCreateUser(&service.User{Email: "insuf@test.com", Balance: 5})
 
 	err := s.repo.DeductBalance(s.ctx, user.ID, 999)
-	s.Require().ErrorIs(err, service.ErrBalanceNegative)
+	s.Require().NoError(err)
 
 	got, err := s.repo.GetByID(s.ctx, user.ID)
 	s.Require().NoError(err)
-	s.Require().InDelta(5.0, got.Balance, 1e-6, "insufficient deduction must leave balance unchanged")
+	s.Require().InDelta(-994.0, got.Balance, 1e-6, "usage deduction must preserve overdraft")
 }
 
 func (s *UserRepoSuite) TestDeductBalance_ExactAmount() {
@@ -475,15 +475,15 @@ func (s *UserRepoSuite) TestDeductBalance_ExactAmount() {
 	s.Require().InDelta(0.0, got.Balance, 1e-6)
 }
 
-func (s *UserRepoSuite) TestDeductBalance_RejectsOverdraft() {
+func (s *UserRepoSuite) TestDeductBalance_AllowsOverdraftFromPositiveBalance() {
 	user := s.mustCreateUser(&service.User{Email: "overdraft@test.com", Balance: 5.0})
 
 	err := s.repo.DeductBalance(s.ctx, user.ID, 10.0)
-	s.Require().ErrorIs(err, service.ErrBalanceNegative)
+	s.Require().NoError(err)
 
 	got, err := s.repo.GetByID(s.ctx, user.ID)
 	s.Require().NoError(err)
-	s.Require().InDelta(5.0, got.Balance, 1e-6, "insufficient deduction must leave balance unchanged")
+	s.Require().InDelta(-5.0, got.Balance, 1e-6, "usage deduction must preserve overdraft")
 }
 
 // --- Concurrency ---
@@ -681,10 +681,10 @@ func (s *UserRepoSuite) TestCRUD_And_Filters_And_AtomicUpdates() {
 	s.Require().InDelta(7.5, got4.Balance, 1e-6)
 
 	err = s.repo.DeductBalance(s.ctx, user1.ID, 999)
-	s.Require().ErrorIs(err, service.ErrBalanceNegative)
-	gotAfterRejectedDeduction, err := s.repo.GetByID(s.ctx, user1.ID)
-	s.Require().NoError(err, "GetByID after rejected deduction")
-	s.Require().GreaterOrEqual(gotAfterRejectedDeduction.Balance, 0.0, "rejected deduction must preserve a non-negative balance")
+	s.Require().NoError(err, "DeductBalance overdraft")
+	gotAfterOverdraft, err := s.repo.GetByID(s.ctx, user1.ID)
+	s.Require().NoError(err, "GetByID after overdraft deduction")
+	s.Require().InDelta(-991.5, gotAfterOverdraft.Balance, 1e-6, "usage deduction must preserve overdraft")
 
 	s.Require().NoError(s.repo.UpdateConcurrency(s.ctx, user1.ID, 3), "UpdateConcurrency")
 	got5, err := s.repo.GetByID(s.ctx, user1.ID)

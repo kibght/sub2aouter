@@ -160,6 +160,7 @@ export const BALANCE_PATCHES = Object.freeze([
       '\tclient := clientFromContext(ctx, r.client)',
     ),
     sentinel: '// sub2aouter: non-negative-balance-deduct-input-v1',
+    skipWhen: '// sub2aouter: billing-overdraft-deduct-v1',
   },
   {
     target: 'backend/internal/repository/user_repo.go',
@@ -212,6 +213,7 @@ export const BALANCE_PATCHES = Object.freeze([
       '\treturn service.ErrBalanceNegative',
     ),
     sentinel: '// sub2aouter: non-negative-balance-deduct-floor-v1',
+    skipWhen: '// sub2aouter: billing-overdraft-deduct-v1',
   },
   {
     target: 'backend/internal/repository/usage_billing_repo.go',
@@ -241,6 +243,7 @@ export const BALANCE_PATCHES = Object.freeze([
       '\treturn 0, false, service.ErrInsufficientBalance',
     ),
     sentinel: '// sub2aouter: non-negative-balance-unified-billing-v1',
+    skipWhen: '// sub2aouter: billing-overdraft-unified-v1',
   },
   {
     target: 'backend/internal/repository/usage_billing_repo_unit_test.go',
@@ -297,6 +300,7 @@ export const BALANCE_PATCHES = Object.freeze([
       '}',
     ),
     sentinel: 'func TestDeductUsageBillingBalance_RejectsInsufficientBalance(t *testing.T) {',
+    skipWhen: 'func TestDeductUsageBillingBalanceReturnsNegativeBalance(t *testing.T) {',
   },
   {
     target: 'backend/internal/repository/usage_billing_repo_unit_test.go',
@@ -362,6 +366,7 @@ export const BALANCE_PATCHES = Object.freeze([
       '}',
     ),
     sentinel: 'func TestApplyUsageBillingEffects_RejectsInsufficientBalance(t *testing.T) {',
+    skipWhen: 'func TestApplyUsageBillingEffectsMarksOverdraft(t *testing.T) {',
   },
   {
     target: 'backend/internal/repository/usage_billing_repo_unit_test.go',
@@ -469,6 +474,7 @@ export const BALANCE_PATCHES = Object.freeze([
       "\t\tredis.call('SET', KEYS[1], newVal)",
     ),
     sentinel: '-- sub2aouter: non-negative-balance-cache-script-v1',
+    skipWhen: '-- sub2aouter: billing-overdraft-cache-script-v1',
   },
   {
     target: 'backend/internal/repository/billing_cache.go',
@@ -489,6 +495,7 @@ export const BALANCE_PATCHES = Object.freeze([
       '}',
     ),
     sentinel: '// sub2aouter: non-negative-balance-cache-set-v1',
+    skipWhen: '// sub2aouter: billing-overdraft-cache-set-v1',
   },
   {
     target: 'backend/internal/repository/billing_cache.go',
@@ -522,6 +529,7 @@ export const BALANCE_PATCHES = Object.freeze([
       '}',
     ),
     sentinel: '// sub2aouter: non-negative-balance-cache-deduct-v1',
+    skipWhen: '// sub2aouter: billing-overdraft-cache-deduct-v1',
   },
   {
     target: 'backend/internal/service/usage_billing.go',
@@ -668,6 +676,9 @@ function withDetectedLineEndings(content, value) {
 async function applyPatch(root, patch, check) {
   const file = path.join(root, patch.target)
   const content = await readFile(file, 'utf8')
+  if (patch.skipWhen && content.includes(patch.skipWhen)) {
+    return false
+  }
   const replacement = withDetectedLineEndings(content, patch.replacement)
   if (content.includes(patch.sentinel)) {
     const sentinelIndex = content.indexOf(patch.sentinel)

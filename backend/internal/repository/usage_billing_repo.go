@@ -249,28 +249,28 @@ func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscrip
 }
 
 func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, amount float64) (float64, bool, error) {
+	// sub2aouter: billing-overdraft-unified-v1
 	var newBalance float64
 	err := tx.QueryRowContext(ctx, `
 		UPDATE users
 		SET balance = balance - $1,
 			updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL AND balance >= $1
+		WHERE id = $2 AND deleted_at IS NULL
 		RETURNING balance
 	`, amount, userID).Scan(&newBalance)
 	if err == nil {
-		return newBalance, true, nil
+		return newBalance, newBalance >= 0, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return 0, false, err
 	}
 
-	// sub2aouter: non-negative-balance-unified-billing-v1
 	if exists, existsErr := userExistsForBilling(ctx, tx, userID); existsErr != nil {
 		return 0, false, existsErr
 	} else if !exists {
 		return 0, false, service.ErrUserNotFound
 	}
-	return 0, false, service.ErrInsufficientBalance
+	return 0, false, service.ErrUserNotFound
 }
 
 func reserveUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {

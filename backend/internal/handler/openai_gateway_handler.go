@@ -1829,6 +1829,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			MaxReasoningEffort:      maxReasoningEffort,
 			ReasoningEffortMappings: reasoningEffortMappings,
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
+				if err := ctx.Err(); err != nil {
+					// sub2aouter: billing-overdraft-ws-before-request-v1
+					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "request cancelled after balance overdraft", err)
+				}
 				if turn == 1 {
 					return nil
 				}
@@ -1865,6 +1869,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return mapping.MappedModel, nil
 			},
 			BeforeTurn: func(turn int) error {
+				if err := ctx.Err(); err != nil {
+					// sub2aouter: billing-overdraft-ws-before-turn-v1
+					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "request cancelled after balance overdraft", err)
+				}
 				// turn==1 的会话屏蔽已由握手层检查覆盖；连接内 flag 只拦截后续 turn。
 				if cyberBlockedThisConn {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)

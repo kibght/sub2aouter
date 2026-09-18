@@ -79,16 +79,13 @@ var (
 		if current == false then
 			return 0
 		end
-		-- sub2aouter: non-negative-balance-cache-script-v1
+		-- sub2aouter: billing-overdraft-cache-script-v1
 		local currentVal = tonumber(current)
 		local amount = tonumber(ARGV[1])
 		if currentVal == nil or amount == nil or amount < 0 then
 			return 0
 		end
 		local newVal = currentVal - amount
-		if newVal < 0 then
-			newVal = 0
-		end
 		redis.call('SET', KEYS[1], newVal)
 		redis.call('EXPIRE', KEYS[1], ARGV[2])
 		return 1
@@ -164,16 +161,16 @@ func (c *billingCache) GetUserBalance(ctx context.Context, userID int64) (float6
 }
 
 func (c *billingCache) SetUserBalance(ctx context.Context, userID int64, balance float64) error {
-	// sub2aouter: non-negative-balance-cache-set-v1
-	if balance < 0 || math.IsNaN(balance) || math.IsInf(balance, 0) {
-		return service.ErrBalanceNegative
+	// sub2aouter: billing-overdraft-cache-set-v1
+	if math.IsNaN(balance) || math.IsInf(balance, 0) {
+		return fmt.Errorf("balance must be finite")
 	}
 	key := billingBalanceKey(userID)
 	return c.rdb.Set(ctx, key, balance, jitteredTTL()).Err()
 }
 
 func (c *billingCache) DeductUserBalance(ctx context.Context, userID int64, amount float64) error {
-	// sub2aouter: non-negative-balance-cache-deduct-v1
+	// sub2aouter: billing-overdraft-cache-deduct-v1
 	if amount < 0 || math.IsNaN(amount) || math.IsInf(amount, 0) {
 		return fmt.Errorf("deduct balance amount must be non-negative and finite")
 	}

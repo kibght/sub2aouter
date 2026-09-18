@@ -164,7 +164,13 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			return
 		}
 		ctx := context.WithValue(c.Request.Context(), ctxkey.UserID, apiKey.User.ID)
-		c.Request = c.Request.WithContext(ctx)
+		// Keep every authenticated gateway request cancellable by user. When a
+		// completed concurrent request commits a negative balance, billing calls
+		// CancelGatewayRequestsForUser and the derived context tears down all
+		// remaining upstream HTTP/stream/WebSocket work for this user.
+		requestCtx, unregisterGatewayRequest := service.RegisterGatewayRequest(ctx, apiKey.User.ID)
+		defer unregisterGatewayRequest()
+		c.Request = c.Request.WithContext(requestCtx)
 		billingInfoRequest := c.Request.URL.Path == "/v1/sub2api/billing"
 		// Async image task polling only reads data that already belongs to the
 		// authenticated key and must remain available after the completed
