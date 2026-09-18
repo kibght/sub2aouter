@@ -27,6 +27,17 @@ func (s *billingCacheMissStub) SetUserBalance(ctx context.Context, userID int64,
 	return nil
 }
 
+func (s *billingCacheMissStub) UserBalanceGeneration(context.Context, int64) (string, error) {
+	return "test-generation", nil
+}
+
+func (s *billingCacheMissStub) SetUserBalanceIfGeneration(ctx context.Context, userID int64, balance float64, generation string) error {
+	if generation != "test-generation" {
+		return errors.New("unexpected balance generation")
+	}
+	return s.SetUserBalance(ctx, userID, balance)
+}
+
 func (s *billingCacheMissStub) DeductUserBalance(ctx context.Context, userID int64, amount float64) error {
 	return nil
 }

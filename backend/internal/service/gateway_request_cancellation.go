@@ -11,6 +11,31 @@ import (
 // ordinary client disconnects keep their existing behavior.
 var ErrGatewayBalanceOverdraft = errors.New("gateway request cancelled after balance overdraft")
 
+type gatewayRequestCancellationKey struct{}
+
+// gatewayUpstreamContext uses the request's independent lifecycle token for
+// cancellation while retaining values added anywhere along the request chain.
+// Looking up cancellation values on Context first also preserves context.Cause.
+type gatewayUpstreamContext struct {
+	context.Context
+	values context.Context
+}
+
+func (c gatewayUpstreamContext) Value(key any) any {
+	if value := c.Context.Value(key); value != nil {
+		return value
+	}
+	return c.values.Value(key)
+}
+
+func gatewayRequestCancellationContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		return nil
+	}
+	token, _ := ctx.Value(gatewayRequestCancellationKey{}).(context.Context)
+	return token
+}
+
 // GatewayRequestCanceller tracks authenticated gateway requests by user.
 // A completed billing transaction can cancel every other in-flight request for
 // the same user without affecting requests belonging to other users.
@@ -33,7 +58,15 @@ func (c *GatewayRequestCanceller) Register(parent context.Context, userID int64)
 	if parent == nil {
 		parent = context.Background()
 	}
-	ctx, cancel := context.WithCancelCause(parent)
+	// This token must outlive an ordinary client disconnect: detached upstream
+	// work is still active until authentication's unregister function runs.
+	// Keeping it in a context value also survives context.WithoutCancel.
+	token, cancelToken := context.WithCancelCause(context.Background())
+	ctx, cancelRequest := context.WithCancelCause(context.WithValue(parent, gatewayRequestCancellationKey{}, token))
+	cancel := func(cause error) {
+		cancelToken(cause)
+		cancelRequest(cause)
+	}
 	c.mu.Lock()
 	c.nextID++
 	id := c.nextID
@@ -79,7 +112,13 @@ func (c *GatewayRequestCanceller) CancelUser(userID int64) {
 }
 
 func IsGatewayBalanceOverdraft(ctx context.Context) bool {
-	return ctx != nil && errors.Is(context.Cause(ctx), ErrGatewayBalanceOverdraft)
+	if ctx == nil {
+		return false
+	}
+	if token := gatewayRequestCancellationContext(ctx); token != nil && errors.Is(context.Cause(token), ErrGatewayBalanceOverdraft) {
+		return true
+	}
+	return errors.Is(context.Cause(ctx), ErrGatewayBalanceOverdraft)
 }
 
 var defaultGatewayRequestCanceller = NewGatewayRequestCanceller()

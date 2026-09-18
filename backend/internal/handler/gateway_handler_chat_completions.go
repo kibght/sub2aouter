@@ -268,7 +268,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			accountReleaseFunc()
 		}
 
-		if err != nil {
+		if err != nil && !service.BillableOverdraftResult(c.Request.Context(), result) {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if c.Writer.Size() != writerSizeBeforeForward {

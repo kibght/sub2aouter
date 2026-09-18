@@ -324,6 +324,51 @@ func TestParseUsageAndEnrichCoverage(t *testing.T) {
 	enrichResult(nil, state, 0)
 }
 
+func TestEnrichResultCopiesOnlyActiveIncompleteTurn(t *testing.T) {
+	t.Parallel()
+
+	firstToken := 17
+	state := &relayState{
+		requestModel: "gpt-5",
+		usage:        Usage{InputTokens: 100, OutputTokens: 50},
+		incompleteTurn: &RelayTurnResult{
+			RequestModel: "gpt-5",
+			RequestID:    "resp-current",
+			Usage:        Usage{InputTokens: 3, OutputTokens: 2, CacheReadInputTokens: 1},
+			Duration:     25 * time.Millisecond,
+			FirstTokenMs: &firstToken,
+		},
+	}
+	result := &RelayResult{}
+	enrichResult(result, state, 40*time.Millisecond)
+	require.NotNil(t, result.IncompleteTurn)
+	require.Equal(t, "resp-current", result.IncompleteTurn.RequestID)
+	require.Equal(t, 3, result.IncompleteTurn.Usage.InputTokens)
+	require.Equal(t, 2, result.IncompleteTurn.Usage.OutputTokens)
+	require.Equal(t, 1, result.IncompleteTurn.Usage.CacheReadInputTokens)
+	require.Equal(t, 17, *result.IncompleteTurn.FirstTokenMs)
+
+	// The result is a snapshot; mutating relay state later cannot alter it.
+	state.incompleteTurn.Usage.InputTokens = 999
+	require.Equal(t, 3, result.IncompleteTurn.Usage.InputTokens)
+}
+
+func TestObserveUpstreamMessageClearsCompletedTurnSnapshot(t *testing.T) {
+	t.Parallel()
+
+	state := &relayState{requestModel: "gpt-5", currentTurnStart: time.Now()}
+	now := time.Now()
+	observed := observeUpstreamMessage(state, []byte(`{"type":"response.output_text.delta","response":{"id":"resp-current","usage":{"input_tokens":3,"output_tokens":2}},"delta":"hi"}`), time.Now(), func() time.Time { return now }, nil)
+	require.False(t, observed.terminal)
+	require.NotNil(t, state.incompleteTurn)
+	require.Equal(t, 3, state.incompleteTurn.Usage.InputTokens)
+
+	terminal := observeUpstreamMessage(state, []byte(`{"type":"response.completed","response":{"id":"resp-current"}}`), time.Now(), func() time.Time { return now }, nil)
+	require.True(t, terminal.terminal)
+	require.Equal(t, 3, terminal.usage.InputTokens)
+	require.Nil(t, state.incompleteTurn, "completed turn must be settled once and cleared")
+}
+
 func TestParseUsageAndAccumulateAcceptsChatUsageAliases(t *testing.T) {
 	t.Parallel()
 

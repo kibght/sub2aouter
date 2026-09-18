@@ -392,6 +392,12 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 		}
 	}
 
+	if IsGatewayBalanceOverdraft(gatewayGinRequestContext(c)) {
+		return &ForwardResult{RequestID: requestID, Usage: usage, Model: originalModel,
+			UpstreamModel: mappedModel, ReasoningEffort: reasoningEffort,
+			Duration: time.Since(startTime), ClientDisconnect: true}, ErrGatewayBalanceOverdraft
+	}
+
 	if finalResp == nil {
 		writeResponsesError(c, http.StatusBadGateway, "server_error", "Upstream stream ended without a response")
 		return nil, fmt.Errorf("upstream stream ended without response")
@@ -601,6 +607,9 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 		}
 	}
 
+	if IsGatewayBalanceOverdraft(gatewayGinRequestContext(c)) {
+		return resultWithUsage(), ErrGatewayBalanceOverdraft
+	}
 	return finalizeStream()
 }
 

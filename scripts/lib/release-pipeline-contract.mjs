@@ -16,6 +16,8 @@ export const RELEASE_PIPELINE_FILES = Object.freeze([
   'scripts/lib/sync-health.mjs',
   'scripts/apply-non-negative-balance.mjs',
   'scripts/apply-billing-overdraft.mjs',
+  'scripts/lib/source-overlay.mjs',
+  'scripts/lib/billing-overdraft-patches.json',
   'backend/migrations/192_enforce_non_negative_user_balance.sql',
   'backend/migrations/193_restore_usage_balance_overdraft.sql',
   'backend/internal/service/update_service.go',

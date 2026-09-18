@@ -355,6 +355,25 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	lastEventType := ""
 	upstreamTerminalEvent := ""
 
+	resultWithUsage := func() *OpenAIForwardResult {
+		return &OpenAIForwardResult{
+			RequestID:             responseID,
+			Usage:                 *usage,
+			Model:                 originalModel,
+			UpstreamModel:         mappedModel,
+			ImageCount:            imageCounter.Count(),
+			ImageOutputSizes:      imageCounter.Sizes(),
+			ServiceTier:           extractOpenAIServiceTier(reqBody),
+			ReasoningEffort:       extractOpenAIReasoningEffort(reqBody, mappedModel, originalModel),
+			Stream:                reqStream,
+			OpenAIWSMode:          true,
+			UpstreamTerminalEvent: upstreamTerminalEvent,
+			ResponseHeaders:       lease.HandshakeHeaders(),
+			Duration:              time.Since(startTime),
+			FirstTokenMs:          firstTokenMs,
+		}
+	}
+
 	var flusher http.Flusher
 	if reqStream {
 		if s.responseHeaderFilter != nil {
@@ -378,7 +397,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	pendingFlushEvents := 0
 	lastFlushAt := time.Now()
 	flushStreamWriter := func(force bool) {
-		if clientDisconnected || flusher == nil || pendingFlushEvents <= 0 {
+		if IsGatewayBalanceOverdraft(ctx) || clientDisconnected || flusher == nil || pendingFlushEvents <= 0 {
 			return
 		}
 		if !force && flushBatchSize > 1 && pendingFlushEvents < flushBatchSize {
@@ -391,7 +410,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		lastFlushAt = time.Now()
 	}
 	emitStreamMessage := func(message []byte, forceFlush bool) {
-		if clientDisconnected {
+		if IsGatewayBalanceOverdraft(ctx) || clientDisconnected {
 			return
 		}
 		frame := make([]byte, 0, len(message)+8)
@@ -478,6 +497,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 		if readErr != nil {
 			lease.MarkBroken()
+			if IsGatewayBalanceOverdraft(ctx) {
+				return resultWithUsage(), ErrGatewayBalanceOverdraft
+			}
 			closeStatus, closeReason := summarizeOpenAIWSReadCloseError(readErr)
 			logOpenAIWSModeInfo(
 				"read_fail account_id=%d conn_id=%s wrote_downstream=%v close_status=%s close_reason=%s cause=%s events=%d token_events=%d terminal_events=%d buffered_pending=%d buffered_flushed=%d first_event=%s last_event=%s",
@@ -562,6 +584,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			parseOpenAIWSResponseUsageFromCompletedEvent(message, usage)
 		}
 		imageCounter.AddSSEData(message)
+		if IsGatewayBalanceOverdraft(ctx) {
+			lease.MarkBroken()
+			return resultWithUsage(), ErrGatewayBalanceOverdraft
+		}
 
 		if eventType == "response.failed" {
 			if hit, code, msg := detectOpenAICyberPolicy(message); hit {
@@ -685,6 +711,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 	}
 
+	if IsGatewayBalanceOverdraft(ctx) {
+		lease.MarkBroken()
+		return resultWithUsage(), ErrGatewayBalanceOverdraft
+	}
 	if !reqStream {
 		if len(finalResponse) == 0 {
 			logOpenAIWSModeInfo(
@@ -747,22 +777,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		clientDisconnected,
 	)
 
-	return &OpenAIForwardResult{
-		RequestID:             responseID,
-		Usage:                 *usage,
-		Model:                 originalModel,
-		UpstreamModel:         mappedModel,
-		ImageCount:            imageCounter.Count(),
-		ImageOutputSizes:      imageCounter.Sizes(),
-		ServiceTier:           extractOpenAIServiceTier(reqBody),
-		ReasoningEffort:       extractOpenAIReasoningEffort(reqBody, mappedModel, originalModel),
-		Stream:                reqStream,
-		OpenAIWSMode:          true,
-		UpstreamTerminalEvent: upstreamTerminalEvent,
-		ResponseHeaders:       lease.HandshakeHeaders(),
-		Duration:              time.Since(startTime),
-		FirstTokenMs:          firstTokenMs,
-	}, nil
+	return resultWithUsage(), nil
 }
 
 // ProxyResponsesWebSocketFromClient 处理客户端入站 WebSocket（OpenAI Responses WS Mode）并转发到上游。

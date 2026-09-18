@@ -817,10 +817,42 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				mappedModelBytes = []byte(mappedModel)
 			}
 		}
+		resultWithUsage := func(terminalEvent string) *OpenAIForwardResult {
+			imageCount := imageCounter.Count()
+			result := &OpenAIForwardResult{
+				RequestID:             responseID,
+				Usage:                 usage,
+				Model:                 originalModel,
+				UpstreamModel:         mappedModel,
+				ServiceTier:           extractOpenAIServiceTierFromBody(payload),
+				ReasoningEffort:       ApplyThinkingEnabledFallback(extractOpenAIReasoningEffortFromBody(payload, mappedModel, originalModel), payload, mappedModel),
+				Stream:                reqStream,
+				OpenAIWSMode:          true,
+				UpstreamTerminalEvent: terminalEvent,
+				ResponseHeaders:       lease.HandshakeHeaders(),
+				Duration:              time.Since(turnStart),
+				FirstTokenMs:          firstTokenMs,
+			}
+			if replayInput := replayCollector.Items(); len(replayInput) > 0 {
+				result.wsReplayInput = replayInput
+				result.wsReplayInputExists = true
+			}
+			if imageCount > 0 {
+				result.ImageCount = imageCount
+				result.ImageSize = imageSizeTier
+				result.ImageInputSize = imageInputSize
+				result.ImageOutputSizes = imageCounter.Sizes()
+				result.BillingModel = imageBillingModel
+			}
+			return result
+		}
 		for {
 			upstreamMessage, readErr := lease.ReadMessageWithContextTimeout(ctx, s.openAIWSReadTimeout())
 			if readErr != nil {
 				lease.MarkBroken()
+				if IsGatewayBalanceOverdraft(ctx) {
+					return resultWithUsage(""), ErrGatewayBalanceOverdraft
+				}
 				return nil, wrapOpenAIWSIngressTurnError(
 					"read_upstream",
 					fmt.Errorf("read upstream websocket event: %w", readErr),
@@ -929,6 +961,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				parseOpenAIWSResponseUsageFromCompletedEvent(upstreamMessage, &usage)
 			}
 			imageCounter.AddSSEData(upstreamMessage)
+			if IsGatewayBalanceOverdraft(ctx) {
+				lease.MarkBroken()
+				return resultWithUsage(""), ErrGatewayBalanceOverdraft
+			}
 
 			if eventType == "response.failed" {
 				if hit, code, msg := detectOpenAICyberPolicy(upstreamMessage); hit {
@@ -1004,33 +1040,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						clientDisconnected,
 					)
 				}
-				imageCount := imageCounter.Count()
-				result := &OpenAIForwardResult{
-					RequestID:             responseID,
-					Usage:                 usage,
-					Model:                 originalModel,
-					UpstreamModel:         mappedModel,
-					ServiceTier:           extractOpenAIServiceTierFromBody(payload),
-					ReasoningEffort:       ApplyThinkingEnabledFallback(extractOpenAIReasoningEffortFromBody(payload, mappedModel, originalModel), payload, mappedModel),
-					Stream:                reqStream,
-					OpenAIWSMode:          true,
-					UpstreamTerminalEvent: terminalEvent,
-					ResponseHeaders:       lease.HandshakeHeaders(),
-					Duration:              time.Since(turnStart),
-					FirstTokenMs:          firstTokenMs,
-				}
-				if replayInput := replayCollector.Items(); len(replayInput) > 0 {
-					result.wsReplayInput = replayInput
-					result.wsReplayInputExists = true
-				}
-				if imageCount > 0 {
-					result.ImageCount = imageCount
-					result.ImageSize = imageSizeTier
-					result.ImageInputSize = imageInputSize
-					result.ImageOutputSizes = imageCounter.Sizes()
-					result.BillingModel = imageBillingModel
-				}
-				return result, nil
+				return resultWithUsage(terminalEvent), nil
 			}
 		}
 	}
@@ -1128,6 +1138,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		preferredConnID = ""
 	}
 	recoverIngressPrevResponseNotFound := func(relayErr error, turn int, connID string) bool {
+		if IsGatewayBalanceOverdraft(ctx) {
+			return false
+		}
 		if !isOpenAIWSIngressPreviousResponseNotFound(relayErr) {
 			return false
 		}
@@ -1195,6 +1208,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		return true
 	}
 	retryIngressTurn := func(relayErr error, turn int, connID string) bool {
+		if IsGatewayBalanceOverdraft(ctx) {
+			return false
+		}
 		if !isOpenAIWSIngressTurnRetryable(relayErr) || turnRetry >= 1 {
 			return false
 		}
@@ -1221,6 +1237,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		return true
 	}
 	for {
+		if IsGatewayBalanceOverdraft(ctx) {
+			return ErrGatewayBalanceOverdraft
+		}
 		if turn > 1 && !skipBeforeTurn && hooks != nil && hooks.BeforeRequest != nil {
 			if err := hooks.BeforeRequest(turn, currentPayload, currentOriginalModel); err != nil {
 				return err
@@ -1542,7 +1561,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				finalErr = unwrapped
 			}
 			if hooks != nil && hooks.AfterTurn != nil {
-				hooks.AfterTurn(turn, nil, finalErr)
+				hooks.AfterTurn(turn, result, finalErr)
 			}
 			sessionLease.MarkBroken()
 			return finalErr

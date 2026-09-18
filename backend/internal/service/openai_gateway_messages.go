@@ -532,6 +532,11 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	requestID := resp.Header.Get("x-request-id")
 
 	finalResponse, usage, acc, err := s.readOpenAICompatBufferedTerminal(resp, "openai messages buffered", requestID)
+	if IsGatewayBalanceOverdraft(gatewayGinRequestContext(c)) {
+		return &OpenAIForwardResult{RequestID: requestID, Usage: usage, Model: originalModel,
+			BillingModel: billingModel, UpstreamModel: upstreamModel, Duration: time.Since(startTime),
+			ClientDisconnect: true}, ErrGatewayBalanceOverdraft
+	}
 	if err != nil {
 		return nil, err
 	}

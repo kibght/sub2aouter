@@ -301,6 +301,12 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 		}
 	}
 
+	if IsGatewayBalanceOverdraft(gatewayGinRequestContext(c)) {
+		return &ForwardResult{RequestID: requestID, Usage: usage, Model: originalModel,
+			UpstreamModel: mappedModel, ReasoningEffort: reasoningEffort,
+			Duration: time.Since(startTime), ClientDisconnect: true}, ErrGatewayBalanceOverdraft
+	}
+
 	if finalResp == nil {
 		writeGatewayCCError(c, http.StatusBadGateway, "server_error", "Upstream stream ended without a response")
 		return nil, fmt.Errorf("upstream stream ended without response")
@@ -480,6 +486,9 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 		}
 	}
 
+	if IsGatewayBalanceOverdraft(gatewayGinRequestContext(c)) {
+		return resultWithUsage(), ErrGatewayBalanceOverdraft
+	}
 	// Finalize both state machines
 	finalResEvents := apicompat.FinalizeAnthropicResponsesStream(anthState)
 	for _, resEvt := range finalResEvents {

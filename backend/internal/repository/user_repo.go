@@ -880,8 +880,9 @@ func (r *userRepository) ApplyRedeemBalanceAdjustment(ctx context.Context, id in
 	return nil
 }
 
-// DeductBalance 扣除用户余额。正常用量结算允许余额透支；入口资格检查
-// 会阻止透支用户发起后续请求，结算完成后由网关取消其余在途请求。
+// DeductBalance 扣除用户余额
+// 透支策略：允许余额变为负数，确保当前请求能够完成
+// 中间件会阻止余额 <= 0 的用户发起后续请求
 func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount float64) error {
 	// sub2aouter: billing-overdraft-deduct-v1
 	if invalidBalanceDelta(amount) || amount < 0 {

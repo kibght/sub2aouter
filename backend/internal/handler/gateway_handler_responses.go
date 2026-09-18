@@ -248,7 +248,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			accountReleaseFunc()
 		}
 
-		if err != nil {
+		if err != nil && !service.BillableOverdraftResult(c.Request.Context(), result) {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				// Can't failover if streaming content already sent
