@@ -134,6 +134,7 @@ jobs:
           echo "RELEASE_EXISTS=$RELEASE_EXISTS" >> "$GITHUB_ENV"
           echo "SHOULD_PUBLISH=true" >> "$GITHUB_ENV"
           git tag -f "$RELEASE_TAG"
+          retry_with_backoff 4 10 git push --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
 
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         if: env.SHOULD_PUBLISH == 'true'

@@ -301,6 +301,10 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('binary.notes', binaryPath, binary.includes('.apophis-release-title') && binary.includes('.apophis-release-notes.md') && binary.includes('--notes-file'), 'Binary release must include the generated repository or upstream notes file.')
   check('binary.artifacts', binaryPath, binary.includes('name: Verify GoReleaser artifacts') && binary.includes('linux_amd64.tar.gz') && binary.includes('linux_arm64.tar.gz') && binary.includes('windows_amd64.zip') && binary.includes('darwin_amd64.tar.gz') && binary.includes('darwin_arm64.tar.gz') && binary.includes('dist/checksums.txt'), 'Binary release must verify Linux, Windows, macOS, and checksum artifacts before publishing.')
   check('binary.release_recovery', binaryPath, binary.includes('RELEASE_EXISTS') && binary.includes('gh release upload "$RELEASE_TAG"') && binary.includes('--clobber') && binary.includes('gh release edit "$RELEASE_TAG"') && binary.includes('name: Verify published GitHub release') && binary.includes('Missing published release asset'), 'Binary publication must repair incomplete releases and verify the final GitHub Release state.')
+  check('binary.tag_alignment', binaryPath,
+    binary.includes('git tag -f "$RELEASE_TAG"') &&
+    binary.includes('git push --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"'),
+    'Binary publication must align an existing release tag with the generated themed commit before uploading assets.')
 
 
   const ownedWorkflowPaths = [
