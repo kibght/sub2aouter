@@ -135,7 +135,12 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.repository_recovery', syncPath, sync.includes('repository_release:') && sync.includes('PREVIOUS_CANVAS_SHA') && sync.includes('Repository source drift is intentionally not published') && sync.includes('UPSTREAM_ALREADY_SYNCHRONIZED'), 'Scheduled syncs may publish Canvas drift, while repository-only changes require explicit repository_release=true.')
   check('sync.canvas_freshness', syncPath, sync.includes('name: Verify Infinite Canvas dependency is current') && sync.includes('LATEST_CANVAS_SHA') && sync.includes('node scripts/resolve-github-release.mjs') && sync.includes('--repository basketikun/infinite-canvas'), 'Theme publication must stop when main is behind the latest published Infinite Canvas release.')
   check('sync.release_notes_encoding', syncPath, sync.includes('cat "$GENERATED_DIR/.apophis-upstream-release-notes.md"') && !/\?{4,}/.test(sync), 'Release notes must preserve readable text instead of emitting literal question-mark placeholders.')
-  check('sync.repository_source', syncPath, sync.includes('git worktree add --detach "$GENERATED_DIR" origin/themed-release') && sync.includes('RELEASE_KIND="repository"') && sync.includes('[[ "$REPOSITORY_RELEASE" == "true" ]]'), 'Explicit repository releases must reuse themed-release without fetching upstream.')
+  check('sync.repository_source', syncPath,
+    sync.includes('git worktree add --detach "$GENERATED_DIR" "${{ github.sha }}"') &&
+    sync.includes('RELEASE_KIND="repository"') &&
+    sync.includes('[[ "$REPOSITORY_RELEASE" == "true" ]]') &&
+    sync.includes('Repository push: reusing themed-release without fetching upstream.'),
+    'Explicit repository releases must build the checked out main commit without fetching upstream source.')
   check('sync.repository_checkout', syncPath, hasPattern(sync, /name: Checkout theme source[\s\S]{0,300}ref: main/) && !sync.includes("github.event_name == 'push'"), 'Manual and coordinated publication must checkout main explicitly.')
   check('sync.repository_source_sha', syncPath, sync.includes('RELEASE_SOURCE_SHA="$(git rev-parse HEAD)"') && !sync.includes('RELEASE_SOURCE_SHA="${{ github.sha }}"'), 'Repository release metadata must come from the commit actually checked out and built.')
   check('sync.repository_notes', syncPath, sync.includes('## \u4ed3\u5e93\u4fee\u590d') && sync.includes('Capture repository release notes'), 'Explicit repository releases must publish repository fix notes.')
