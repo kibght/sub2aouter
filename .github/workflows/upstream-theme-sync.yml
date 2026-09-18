@@ -119,8 +119,14 @@ jobs:
           retry_with_backoff 5 5 git fetch origin +refs/heads/themed-release:refs/remotes/origin/themed-release
 
           if [[ "$REPOSITORY_RELEASE" == "true" ]]; then
-            git worktree add --detach "$GENERATED_DIR" origin/themed-release
-            UPSTREAM_SHA="$(tr -d '[:space:]' < "$GENERATED_DIR/.apophis-upstream-sha")"
+            # Repository releases package the exact main tree. Reusing the
+            # generated upstream tree can contain newer code layouts that the
+            # maintained billing overlay cannot safely rewrite in place.
+            git worktree add --detach "$GENERATED_DIR" "${{ github.sha }}"
+            UPSTREAM_SHA="$(git show origin/themed-release:.apophis-upstream-sha 2>/dev/null | tr -d '[:space:]' || true)"
+            if [[ -z "$UPSTREAM_SHA" ]]; then
+              UPSTREAM_SHA="$(git -C "$GENERATED_DIR" rev-parse HEAD)"
+            fi
             RELEASE_SOURCE_SHA="$(git rev-parse HEAD)"
             RELEASE_KIND="repository"
             RELEASE_IMAGE_TAG="repository-${RELEASE_SOURCE_SHA:0:12}"
