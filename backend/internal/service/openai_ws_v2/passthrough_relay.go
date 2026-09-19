@@ -39,9 +39,6 @@ type RelayResult struct {
 	ClientToUpstreamFrames  int64
 	UpstreamToClientFrames  int64
 	DroppedDownstreamFrames int64
-	// IncompleteTurn contains only the latest real usage of the active turn.
-	// Completed turns are reported by OnTurnComplete and never appear here.
-	IncompleteTurn *RelayTurnResult
 }
 
 type RelayTurnResult struct {
@@ -89,7 +86,6 @@ type RelayTraceEvent struct {
 }
 
 type relayState struct {
-	mu                sync.Mutex
 	usage             Usage
 	requestModelMu    sync.RWMutex
 	requestModel      string
@@ -98,9 +94,6 @@ type relayState struct {
 	firstTokenMs      *int
 	turnTimingByID    map[string]*relayTurnTiming
 	activeTurn        *relayTurnTiming
-	incompleteTurn    *RelayTurnResult
-	currentResponseID string
-	currentTurnStart  time.Time
 }
 
 type relayExitSignal struct {
@@ -156,7 +149,7 @@ func Relay(
 		firstMessageType = coderws.MessageText
 	}
 	startAt := nowFn()
-	state := &relayState{requestModel: result.RequestModel, currentTurnStart: startAt}
+	state := &relayState{requestModel: result.RequestModel}
 	onTrace := options.OnTrace
 
 	relayCtx, relayCancel := context.WithCancel(ctx)
@@ -169,24 +162,13 @@ func Relay(
 	}
 
 	writeUpstream := func(msgType coderws.MessageType, payload []byte) error {
-		if err := relayCtx.Err(); err != nil {
-			return err
-		}
 		writeCtx, cancel := context.WithTimeout(relayCtx, writeTimeout)
 		defer cancel()
 		return upstreamConn.WriteFrame(writeCtx, msgType, payload)
 	}
 	writeClientFrameUpstream := func(msgType coderws.MessageType, payload []byte) error {
-		if err := relayCtx.Err(); err != nil {
-			return err
-		}
 		if msgType == coderws.MessageText && strings.TrimSpace(gjson.GetBytes(payload, "type").String()) == "response.create" {
-			state.mu.Lock()
-			state.incompleteTurn = nil
-			state.currentResponseID = ""
-			state.currentTurnStart = nowFn()
 			state.setRequestModel(strings.TrimSpace(gjson.GetBytes(payload, "model").String()))
-			state.mu.Unlock()
 		}
 		return writeUpstream(msgType, payload)
 	}
@@ -663,8 +645,6 @@ func observeUpstreamMessage(
 	if state == nil || len(message) == 0 {
 		return observedUpstreamEvent{}
 	}
-	state.mu.Lock()
-	defer state.mu.Unlock()
 	values := gjson.GetManyBytes(message, "type", "response.id", "response_id", "id")
 	eventType := strings.TrimSpace(values[0].String())
 	if eventType == "" {
@@ -692,29 +672,7 @@ func observeUpstreamMessage(
 			}
 		}
 	}
-	// Duplicate terminal frames or late frames from the previous response must
-	// not become the active turn's billable snapshot.
-	if responseID != "" && responseID == state.lastResponseID {
-		return observedUpstreamEvent{}
-	}
-	if responseID != "" {
-		state.currentResponseID = responseID
-	}
-	parsedUsage, usagePresent := parseUsageSnapshot(message, eventType, onUsageParseFailure)
-	if usagePresent {
-		state.incompleteTurn = &RelayTurnResult{
-			RequestModel: state.currentRequestModel(),
-			RequestID:    state.currentResponseID,
-			Usage:        parsedUsage,
-		}
-	}
-	if state.incompleteTurn != nil {
-		state.incompleteTurn.RequestID = state.currentResponseID
-		state.incompleteTurn.Duration = max(now.Sub(state.currentTurnStart), 0)
-		if state.activeTurn != nil {
-			state.incompleteTurn.FirstTokenMs = openAIWSRelayCloneIntPtr(state.activeTurn.firstTokenMs)
-		}
-	}
+	parsedUsage := parseUsageAndAccumulate(state, message, eventType, onUsageParseFailure)
 	observed := observedUpstreamEvent{
 		eventType:  eventType,
 		responseID: responseID,
@@ -733,12 +691,6 @@ func observeUpstreamMessage(
 		return observed
 	}
 	observed.terminal = true
-	if !usagePresent && state.incompleteTurn != nil {
-		observed.usage = state.incompleteTurn.Usage
-	}
-	accumulateUsage(state, observed.usage)
-	// Clear before OnTurnComplete: its billing callback may cancel this relay.
-	state.incompleteTurn = nil
 	state.terminalEventType = eventType
 	if responseID != "" {
 		state.lastResponseID = responseID
@@ -829,17 +781,9 @@ func parseUsageAndAccumulate(
 	if state == nil || len(message) == 0 || !shouldParseUsage(eventType) {
 		return Usage{}
 	}
-	usage, ok := parseUsageSnapshot(message, eventType, onParseFailure)
-	if ok {
-		accumulateUsage(state, usage)
-	}
-	return usage
-}
-
-func parseUsageSnapshot(message []byte, eventType string, onParseFailure func(eventType string, usageRaw string)) (Usage, bool) {
 	usageResult := gjson.GetBytes(message, "response.usage")
 	if !usageResult.Exists() {
-		return Usage{}, false
+		return Usage{}
 	}
 	usageRaw := strings.TrimSpace(usageResult.Raw)
 	if usageRaw == "" || !strings.HasPrefix(usageRaw, "{") {
@@ -847,7 +791,7 @@ func parseUsageSnapshot(message []byte, eventType string, onParseFailure func(ev
 		if onParseFailure != nil {
 			onParseFailure(eventType, usageRaw)
 		}
-		return Usage{}, false
+		return Usage{}
 	}
 
 	inputResult := gjson.GetBytes(message, "response.usage.input_tokens")
@@ -876,7 +820,7 @@ func parseUsageSnapshot(message []byte, eventType string, onParseFailure func(ev
 			onParseFailure(eventType, usageRaw)
 		}
 		// 解析失败时不做部分字段累加，避免计费 usage 出现“半有效”状态。
-		return Usage{}, false
+		return Usage{}
 	}
 	parsedUsage := Usage{
 		InputTokens:              inputTokens,
@@ -886,15 +830,12 @@ func parseUsageSnapshot(message []byte, eventType string, onParseFailure func(ev
 		ImageOutputTokens:        int(imageTokens),
 	}
 
-	return parsedUsage, true
-}
-
-func accumulateUsage(state *relayState, usage Usage) {
-	state.usage.InputTokens += usage.InputTokens
-	state.usage.OutputTokens += usage.OutputTokens
-	state.usage.CacheCreationInputTokens += usage.CacheCreationInputTokens
-	state.usage.CacheReadInputTokens += usage.CacheReadInputTokens
-	state.usage.ImageOutputTokens += usage.ImageOutputTokens
+	state.usage.InputTokens += parsedUsage.InputTokens
+	state.usage.OutputTokens += parsedUsage.OutputTokens
+	state.usage.CacheCreationInputTokens += parsedUsage.CacheCreationInputTokens
+	state.usage.CacheReadInputTokens += parsedUsage.CacheReadInputTokens
+	state.usage.ImageOutputTokens += parsedUsage.ImageOutputTokens
+	return parsedUsage
 }
 
 func parseUsageIntField(value gjson.Result, required bool) (int, bool) {
@@ -940,18 +881,11 @@ func enrichResult(result *RelayResult, state *relayState, duration time.Duration
 	if state == nil {
 		return
 	}
-	state.mu.Lock()
-	defer state.mu.Unlock()
 	result.RequestModel = state.currentRequestModel()
 	result.Usage = state.usage
 	result.RequestID = state.lastResponseID
 	result.TerminalEventType = state.terminalEventType
 	result.FirstTokenMs = state.firstTokenMs
-	if state.incompleteTurn != nil {
-		turn := *state.incompleteTurn
-		turn.FirstTokenMs = openAIWSRelayCloneIntPtr(turn.FirstTokenMs)
-		result.IncompleteTurn = &turn
-	}
 }
 
 func (s *relayState) setRequestModel(model string) {

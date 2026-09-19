@@ -5,7 +5,6 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"math"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -14,48 +13,16 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
-func TestUsageBillingRepositoryApplyRejectsNonFiniteBalanceCost(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-
-	repo := &usageBillingRepository{db: db}
-	_, err = repo.Apply(context.Background(), &service.UsageBillingCommand{
-		RequestID:   "non-finite-balance-cost",
-		APIKeyID:    42,
-		UserID:      7,
-		BalanceCost: math.NaN(),
-	})
-	require.ErrorIs(t, err, service.ErrUsageBillingAmountInvalid)
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestUsageBillingRepositoryBatchHoldRejectsNonFiniteAmount(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-
-	repo := &usageBillingRepository{db: db}
-	_, err = repo.ReserveBatchImageBalance(context.Background(), &service.BatchImageBalanceHoldCommand{
-		RequestID:  "non-finite-hold",
-		APIKeyID:   42,
-		UserID:     7,
-		BatchID:    "batch-1",
-		HoldAmount: math.Inf(1),
-	})
-	require.ErrorIs(t, err, service.ErrUsageBillingAmountInvalid)
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
 const (
-	conditionalBalanceDeductSQL = `(?s)UPDATE users\s+SET balance = balance - \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$2 AND deleted_at IS NULL\s+RETURNING balance`
+	conditionalBalanceDeductSQL = `(?s)UPDATE users\s+SET balance = balance - \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$2 AND deleted_at IS NULL AND balance >= \$1\s+RETURNING balance`
+	overdraftBalanceDeductSQL   = `(?s)UPDATE users\s+SET balance = balance - \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$2 AND deleted_at IS NULL\s+RETURNING balance`
 	reserveBatchImageHoldSQL    = `(?s)UPDATE users\s+SET balance = balance - \$1,\s+frozen_balance = COALESCE\(frozen_balance, 0\) \+ \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$2 AND deleted_at IS NULL AND balance >= \$1\s+RETURNING balance, frozen_balance`
 	captureBatchImageHoldSQL    = `(?s)UPDATE users\s+SET balance = balance\s+\+ CASE WHEN \$1 > \$2 THEN \$1 - \$2 ELSE 0 END\s+- CASE WHEN \$2 > \$1 THEN \$2 - \$1 ELSE 0 END,\s+frozen_balance = COALESCE\(frozen_balance, 0\) - \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$3 AND deleted_at IS NULL AND COALESCE\(frozen_balance, 0\) >= \$1\s+RETURNING balance, frozen_balance`
 	releaseBatchImageHoldSQL    = `(?s)UPDATE users\s+SET balance = balance \+ \$1,\s+frozen_balance = COALESCE\(frozen_balance, 0\) - \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$2 AND deleted_at IS NULL AND COALESCE\(frozen_balance, 0\) >= \$1\s+RETURNING balance, frozen_balance`
 	userExistsForBillingSQL     = `(?s)SELECT 1\s+FROM users\s+WHERE id = \$1 AND deleted_at IS NULL`
 )
 
-func TestDeductUsageBillingBalanceAllowsOverdraft(t *testing.T) {
+func TestDeductUsageBillingBalance_UsesSufficientBalanceGuard(t *testing.T) {
 	ctx := context.Background()
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -77,56 +44,7 @@ func TestDeductUsageBillingBalanceAllowsOverdraft(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestDeductUsageBillingBalanceReturnsNegativeBalance(t *testing.T) {
-	ctx := context.Background()
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-
-	mock.ExpectBegin()
-	tx, err := db.BeginTx(ctx, nil)
-	require.NoError(t, err)
-	mock.ExpectQuery(conditionalBalanceDeductSQL).
-		WithArgs(10.0, int64(42)).
-		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(-2.5))
-	mock.ExpectCommit()
-
-	newBalance, sufficient, err := deductUsageBillingBalance(ctx, tx, 42, 10)
-	require.NoError(t, err)
-	require.False(t, sufficient)
-	require.InDelta(t, -2.5, newBalance, 0.000001)
-	require.NoError(t, tx.Commit())
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestApplyUsageBillingEffectsMarksOverdraft(t *testing.T) {
-	ctx := context.Background()
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-
-	mock.ExpectBegin()
-	tx, err := db.BeginTx(ctx, nil)
-	require.NoError(t, err)
-	mock.ExpectQuery(conditionalBalanceDeductSQL).
-		WithArgs(10.0, int64(42)).
-		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(-2.5))
-	mock.ExpectCommit()
-
-	result := &service.UsageBillingApplyResult{Applied: true}
-	err = (&usageBillingRepository{}).applyUsageBillingEffects(ctx, tx, &service.UsageBillingCommand{
-		UserID:      42,
-		BalanceCost: 10,
-	}, result)
-	require.NoError(t, err)
-	require.InDelta(t, -2.5, *result.NewBalance, 0.000001)
-	require.True(t, result.BalanceOverdrafted)
-	require.NoError(t, tx.Commit())
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestDeductUsageBillingBalance_ReturnsUserNotFoundWhenNoUserUpdated(t *testing.T) {
-	// sub2aouter: non-negative-balance-test-user-not-found-v1
+func TestDeductUsageBillingBalance_RecordsOverdraftWhenGuardMisses(t *testing.T) {
 	ctx := context.Background()
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -138,9 +56,64 @@ func TestDeductUsageBillingBalance_ReturnsUserNotFoundWhenNoUserUpdated(t *testi
 	mock.ExpectQuery(conditionalBalanceDeductSQL).
 		WithArgs(10.0, int64(42)).
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery(userExistsForBillingSQL).
-		WithArgs(int64(42)).
-		WillReturnRows(sqlmock.NewRows([]string{"?column?"}))
+	mock.ExpectQuery(overdraftBalanceDeductSQL).
+		WithArgs(10.0, int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(-5.0))
+	mock.ExpectCommit()
+
+	newBalance, sufficient, err := deductUsageBillingBalance(ctx, tx, 42, 10)
+	require.NoError(t, err)
+	require.False(t, sufficient)
+	require.InDelta(t, -5.0, newBalance, 0.000001)
+	require.NoError(t, tx.Commit())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestApplyUsageBillingEffects_FlagsBalanceOverdraft(t *testing.T) {
+	ctx := context.Background()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	mock.ExpectQuery(conditionalBalanceDeductSQL).
+		WithArgs(10.0, int64(42)).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(overdraftBalanceDeductSQL).
+		WithArgs(10.0, int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(-5.0))
+	mock.ExpectCommit()
+
+	result := &service.UsageBillingApplyResult{Applied: true}
+	err = (&usageBillingRepository{}).applyUsageBillingEffects(ctx, tx, &service.UsageBillingCommand{
+		UserID:      42,
+		BalanceCost: 10,
+	}, result)
+	require.NoError(t, err)
+	require.NotNil(t, result.NewBalance)
+	require.InDelta(t, -5.0, *result.NewBalance, 0.000001)
+	require.True(t, result.BalanceOverdrafted)
+	require.NoError(t, tx.Commit())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDeductUsageBillingBalance_ReturnsUserNotFoundWhenNoUserUpdated(t *testing.T) {
+	ctx := context.Background()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	mock.ExpectQuery(conditionalBalanceDeductSQL).
+		WithArgs(10.0, int64(42)).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(overdraftBalanceDeductSQL).
+		WithArgs(10.0, int64(42)).
+		WillReturnError(sql.ErrNoRows)
 	mock.ExpectRollback()
 
 	_, _, err = deductUsageBillingBalance(ctx, tx, 42, 10)

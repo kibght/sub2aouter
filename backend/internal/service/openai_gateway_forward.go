@@ -650,7 +650,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				wsLastFailureReason,
 				&agentTaskRecoveryTried,
 			)
-			if wsErr == nil || IsGatewayBalanceOverdraft(ctx) {
+			if wsErr == nil {
 				break
 			}
 			if c != nil && c.Writer != nil && c.Writer.Written() {
@@ -730,20 +730,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				)
 			}
 			break
-		}
-		if IsGatewayBalanceOverdraft(ctx) {
-			if wsResult != nil {
-				wsResult.UpstreamModel = upstreamModel
-				if wsResult.BillingModel == "" {
-					wsResult.BillingModel = billingModel
-				}
-				if wsResult.ImageCount > 0 {
-					wsResult.ImageSize = imageSizeTier
-					wsResult.ImageInputSize = imageInputSize
-					wsResult.BillingModel = imageBillingModel
-				}
-			}
-			return wsResult, ErrGatewayBalanceOverdraft
 		}
 		if wsErr == nil {
 			firstTokenMs := int64(0)
@@ -933,7 +919,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		reqBody = nil
 
 		// Handle normal response
-		var responseErr error
 		var usage *OpenAIUsage
 		var firstTokenMs *int
 		responseID := ""
@@ -942,10 +927,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if reqStream {
 			streamResult, err := s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, upstreamModel, reasoningEffortValue)
 			if err != nil {
-				if !IsGatewayBalanceOverdraft(ctx) || streamResult == nil {
-					return nil, err
-				}
-				responseErr = err
+				return nil, err
 			}
 			usage = streamResult.usage
 			firstTokenMs = streamResult.firstTokenMs
@@ -997,7 +979,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			forwardResult.ImageOutputSizes = imageOutputSizes
 			forwardResult.BillingModel = imageBillingModel
 		}
-		return forwardResult, responseErr
+		return forwardResult, nil
 	}
 }
 

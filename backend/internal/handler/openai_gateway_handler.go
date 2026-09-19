@@ -555,7 +555,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
 		if err != nil {
-			if result != nil && (result.ImageCount > 0 || service.BillableOpenAIOverdraftResult(c.Request.Context(), result)) {
+			if result != nil && result.ImageCount > 0 {
 				reqLog.Warn("openai.forward_partial_error_with_image_result",
 					zap.Int64("account_id", account.ID),
 					zap.Int("image_count", result.ImageCount),
@@ -1094,7 +1094,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
 		if err != nil {
-			if result != nil && (result.ImageCount > 0 || service.BillableOpenAIOverdraftResult(c.Request.Context(), result)) {
+			if result != nil && result.ImageCount > 0 {
 				reqLog.Warn("openai_messages.forward_partial_error_with_image_result",
 					zap.Int64("account_id", account.ID),
 					zap.Int("image_count", result.ImageCount),
@@ -1841,10 +1841,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			MaxReasoningEffort:      maxReasoningEffort,
 			ReasoningEffortMappings: reasoningEffortMappings,
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
-				if err := ctx.Err(); err != nil {
-					// sub2aouter: billing-overdraft-ws-before-request-v1
-					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "request cancelled after balance overdraft", err)
-				}
 				if turn == 1 {
 					return nil
 				}
@@ -1881,10 +1877,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return mapping.MappedModel, nil
 			},
 			BeforeTurn: func(turn int) error {
-				if err := ctx.Err(); err != nil {
-					// sub2aouter: billing-overdraft-ws-before-turn-v1
-					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "request cancelled after balance overdraft", err)
-				}
 				// turn==1 的会话屏蔽已由握手层检查覆盖；连接内 flag 只拦截后续 turn。
 				if cyberBlockedThisConn {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
@@ -1950,7 +1942,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					cyberBlockedThisConn = true
 				}
 				if turnErr != nil {
-					if result == nil || (result.ImageCount <= 0 && !service.BillableOpenAIOverdraftResult(ctx, result)) {
+					if result == nil || result.ImageCount <= 0 {
 						return
 					}
 					// cyber 命中时该 turn 的用量已由 recordCyberPolicyIfMarked(forwardErrored=true)
@@ -2202,7 +2194,7 @@ func (h *OpenAIGatewayHandler) submitUsageRecordTask(parent context.Context, tas
 		return
 	}
 	task = wrapUsageRecordTaskContext(parent, task)
-	if h.usageRecordWorkerPool != nil && !service.IsGatewayBalanceOverdraft(parent) {
+	if h.usageRecordWorkerPool != nil {
 		h.usageRecordWorkerPool.Submit(task)
 		return
 	}

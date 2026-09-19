@@ -1061,12 +1061,6 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	if req.Stream {
 		streamRes, err := s.handleStreamingResponse(c, resp, startTime, originalModel)
 		if err != nil {
-			// sub2aouter: billing-overdraft-gemini-1-v1
-			if IsGatewayBalanceOverdraft(ctx) && streamRes != nil && hasClaudeUsage(streamRes.usage) {
-				return &ForwardResult{RequestID: requestID, Usage: *streamRes.usage, Model: originalModel,
-					UpstreamModel: mappedModel, Stream: true, Duration: time.Since(startTime),
-					FirstTokenMs: streamRes.firstTokenMs, ClientDisconnect: true}, err
-			}
 			return nil, err
 		}
 		usage = streamRes.usage
@@ -1075,10 +1069,6 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		if useUpstreamStream {
 			collected, usageObj, err := collectGeminiSSE(resp.Body, true)
 			if err != nil {
-				if IsGatewayBalanceOverdraft(ctx) && hasClaudeUsage(usageObj) {
-					return &ForwardResult{RequestID: requestID, Usage: *usageObj, Model: originalModel,
-						UpstreamModel: mappedModel, Duration: time.Since(startTime), ClientDisconnect: true}, err
-				}
 				return nil, s.writeClaudeError(c, http.StatusBadGateway, "upstream_error", "Failed to read upstream stream")
 			}
 			collectedBytes, _ := json.Marshal(collected)
@@ -1602,12 +1592,6 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	if stream {
 		streamRes, err := s.handleNativeStreamingResponse(c, resp, startTime, isOAuth)
 		if err != nil {
-			// sub2aouter: billing-overdraft-gemini-2-v1
-			if IsGatewayBalanceOverdraft(ctx) && streamRes != nil && hasClaudeUsage(streamRes.usage) {
-				return &ForwardResult{RequestID: requestID, Usage: *streamRes.usage, Model: originalModel,
-					UpstreamModel: mappedModel, Stream: true, Duration: time.Since(startTime),
-					FirstTokenMs: streamRes.firstTokenMs, ClientDisconnect: true}, err
-			}
 			return nil, err
 		}
 		usage = streamRes.usage
@@ -1616,10 +1600,6 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		if useUpstreamStream {
 			collected, usageObj, err := collectGeminiSSE(resp.Body, isOAuth)
 			if err != nil {
-				if IsGatewayBalanceOverdraft(ctx) && hasClaudeUsage(usageObj) {
-					return &ForwardResult{RequestID: requestID, Usage: *usageObj, Model: originalModel,
-						UpstreamModel: mappedModel, Duration: time.Since(startTime), ClientDisconnect: true}, err
-				}
 				return nil, s.writeGoogleError(c, http.StatusBadGateway, "Failed to read upstream stream")
 			}
 			b, _ := json.Marshal(collected)
@@ -2081,8 +2061,7 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
-			// sub2aouter: billing-overdraft-gemini-3-v1
-			return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream read error: %w", err)
+			return nil, fmt.Errorf("stream read error: %w", err)
 		}
 
 		if !strings.HasPrefix(line, "data:") {
@@ -2417,8 +2396,7 @@ func collectGeminiSSE(body io.Reader, isOAuth bool) (map[string]any, *ClaudeUsag
 			break
 		}
 		if err != nil {
-			// sub2aouter: billing-overdraft-gemini-4-v1
-			return mergeCollectedTextParts(pickGeminiCollectResult(last, lastWithParts), collectedTextParts), usage, err
+			return nil, nil, err
 		}
 	}
 
@@ -2708,8 +2686,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 			break
 		}
 		if err != nil {
-			// sub2aouter: billing-overdraft-gemini-5-v1
-			return &geminiNativeStreamResult{usage: usage, firstTokenMs: firstTokenMs}, err
+			return nil, err
 		}
 	}
 

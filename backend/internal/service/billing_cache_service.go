@@ -82,14 +82,13 @@ const (
 
 // cacheWriteTask 缓存写入任务
 type cacheWriteTask struct {
-	kind              cacheWriteKind
-	userID            int64
-	groupID           int64
-	apiKeyID          int64
-	balance           float64
-	balanceGeneration string
-	amount            float64
-	subscriptionData  *subscriptionCacheData
+	kind             cacheWriteKind
+	userID           int64
+	groupID          int64
+	apiKeyID         int64
+	balance          float64
+	amount           float64
+	subscriptionData *subscriptionCacheData
 }
 
 // apiKeyRateLimitLoader defines the interface for loading rate limit data from DB.
@@ -100,13 +99,6 @@ type apiKeyRateLimitLoader interface {
 type subscriptionCacheInvalidationPubSub interface {
 	PublishSubscriptionCacheInvalidation(ctx context.Context, cacheKey string) error
 	SubscribeSubscriptionCacheInvalidation(ctx context.Context, handler func(cacheKey string)) error
-}
-
-// balanceCacheFencer prevents a queued DB snapshot from replacing a balance
-// invalidated or deducted after that snapshot was read, including on other nodes.
-type balanceCacheFencer interface {
-	UserBalanceGeneration(ctx context.Context, userID int64) (string, error)
-	SetUserBalanceIfGeneration(ctx context.Context, userID int64, balance float64, generation string) error
 }
 
 // BillingCacheService 计费缓存服务
@@ -227,7 +219,7 @@ func (s *BillingCacheService) cacheWriteWorker(ch <-chan cacheWriteTask) {
 		ctx, cancel := context.WithTimeout(context.Background(), cacheWriteTimeout)
 		switch task.kind {
 		case cacheWriteSetBalance:
-			s.setBalanceCache(ctx, task.userID, task.balance, task.balanceGeneration)
+			s.setBalanceCache(ctx, task.userID, task.balance)
 		case cacheWriteSetSubscription:
 			s.setSubscriptionCache(ctx, task.userID, task.groupID, task.subscriptionData)
 		case cacheWriteUpdateSubscriptionUsage:
@@ -333,25 +325,17 @@ func (s *BillingCacheService) GetUserBalance(ctx context.Context, userID int64) 
 		loadCtx, cancel := context.WithTimeout(context.Background(), balanceLoadTimeout)
 		defer cancel()
 
-		var generation string
-		if cache, ok := s.cache.(balanceCacheFencer); ok {
-			// A failed fence lookup disables cache population; DB remains authoritative.
-			generation, _ = cache.UserBalanceGeneration(loadCtx, userID)
-		}
 		balance, err := s.getUserBalanceFromDB(loadCtx, userID)
 		if err != nil {
 			return nil, err
 		}
 
 		// 异步建立缓存
-		if generation != "" {
-			_ = s.enqueueCacheWrite(cacheWriteTask{
-				kind:              cacheWriteSetBalance,
-				userID:            userID,
-				balance:           balance,
-				balanceGeneration: generation,
-			})
-		}
+		_ = s.enqueueCacheWrite(cacheWriteTask{
+			kind:    cacheWriteSetBalance,
+			userID:  userID,
+			balance: balance,
+		})
 		return balance, nil
 	})
 	if err != nil {
@@ -374,12 +358,11 @@ func (s *BillingCacheService) getUserBalanceFromDB(ctx context.Context, userID i
 }
 
 // setBalanceCache 设置余额缓存
-func (s *BillingCacheService) setBalanceCache(ctx context.Context, userID int64, balance float64, generation string) {
-	cache, ok := s.cache.(balanceCacheFencer)
-	if !ok || generation == "" {
+func (s *BillingCacheService) setBalanceCache(ctx context.Context, userID int64, balance float64) {
+	if s.cache == nil {
 		return
 	}
-	if err := cache.SetUserBalanceIfGeneration(ctx, userID, balance, generation); err != nil {
+	if err := s.cache.SetUserBalance(ctx, userID, balance); err != nil {
 		logger.LegacyPrintf("service.billing_cache", "Warning: set balance cache failed for user %d: %v", userID, err)
 	}
 }
@@ -414,8 +397,6 @@ func (s *BillingCacheService) QueueDeductBalance(userID int64, amount float64) {
 
 // InvalidateUserBalance 失效用户余额缓存
 func (s *BillingCacheService) InvalidateUserBalance(ctx context.Context, userID int64) error {
-	// New callers must not join a DB read started before invalidation.
-	defer s.balanceLoadSF.Forget(strconv.FormatInt(userID, 10))
 	if s.cache == nil {
 		return nil
 	}

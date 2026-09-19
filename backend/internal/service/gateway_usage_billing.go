@@ -149,22 +149,9 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 		if cost.ActualCost > 0 {
 			if err := deps.userRepo.DeductBalance(billingCtx, p.User.ID, cost.ActualCost); err != nil {
 				slog.Error("deduct balance failed", "user_id", p.User.ID, "error", err)
-			} else {
-				if deps.billingCacheService != nil {
-					if err := deps.billingCacheService.InvalidateUserBalance(billingCtx, p.User.ID); err != nil {
-						slog.Warn("invalidate balance cache after legacy deduction failed", "user_id", p.User.ID, "error", err)
-					}
-				}
-				// The request snapshot may predate other concurrent deductions.
-				// Read the committed balance; production gets it from repo.Apply.
-				currentUser, err := deps.userRepo.GetByID(billingCtx, p.User.ID)
-				if err != nil {
-					slog.Error("read balance after legacy deduction failed", "user_id", p.User.ID, "error", err)
-				} else if currentUser == nil {
-					slog.Error("user missing after legacy deduction", "user_id", p.User.ID)
-				} else if currentUser.Balance < 0 {
-					// sub2aouter: billing-overdraft-legacy-cancel-v1
-					CancelGatewayRequestsForUser(p.User.ID)
+			} else if deps.billingCacheService != nil {
+				if err := deps.billingCacheService.InvalidateUserBalance(billingCtx, p.User.ID); err != nil {
+					slog.Warn("invalidate balance cache after legacy deduction failed", "user_id", p.User.ID, "error", err)
 				}
 			}
 		}
@@ -325,18 +312,6 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 		deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
 		return false, nil
 	}
-	if !p.IsSubscriptionBill && p.Cost.ActualCost > 0 && p.User != nil {
-		// Clear an exhausted balance before cancelled requests release their
-		// concurrency slots and clients can start another request.
-		syncBalanceCacheAfterDeduction(billingCtx, p, deps, result)
-	}
-	if !p.IsSubscriptionBill && p.User != nil && result.NewBalance != nil && *result.NewBalance < 0 {
-		// Commit has succeeded, so the negative balance is the authoritative
-		// sub2aouter: billing-overdraft-commit-cancel-v1
-		// overdraft event. Cancel every other request registered for this user;
-		// their upstream clients and stream loops observe ctx.Done().
-		CancelGatewayRequestsForUser(p.User.ID)
-	}
 
 	if result.APIKeyQuotaExhausted {
 		if invalidator, ok := p.APIKeyService.(apiKeyAuthCacheInvalidator); ok && p.APIKey != nil && p.APIKey.Key != "" {
@@ -357,6 +332,8 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 		if p.Cost.ActualCost > 0 && p.User != nil && p.APIKey != nil && p.APIKey.GroupID != nil {
 			deps.billingCacheService.QueueUpdateSubscriptionUsage(p.User.ID, *p.APIKey.GroupID, p.Cost.ActualCost)
 		}
+	} else if p.Cost.ActualCost > 0 && p.User != nil {
+		syncBalanceCacheAfterDeduction(ctx, p, deps, result)
 	}
 
 	if p.Cost.ActualCost > 0 && p.APIKey != nil && p.APIKey.HasRateLimits() {
@@ -377,7 +354,7 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 			deps.billingCacheService.IncrementUserPlatformQuotaUsage(p.User.ID, p.Platform, p.Cost.ActualCost)
 			if deps.cfg == nil || !deps.cfg.Database.UserPlatformQuotaFlusherEnabled {
 				// 降级路径:flusher 未启用时保留原有异步直写 DB
-				dbCtx, dbCancel := detachedBillingContext(ctx)
+				dbCtx, dbCancel := detachUpstreamContext(ctx)
 				userID, platform, cost := p.User.ID, p.Platform, p.Cost.ActualCost
 				go func() {
 					defer func() {
@@ -510,30 +487,12 @@ func detachStreamUpstreamContext(ctx context.Context, stream bool) (context.Cont
 	if !stream {
 		return ctx, func() {}
 	}
-	return detachOverdraftAwareContext(ctx)
+	return context.WithoutCancel(ctx), func() {}
 }
 
 func detachUpstreamContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if ctx == nil {
 		return context.Background(), func() {}
-	}
-	return detachOverdraftAwareContext(ctx)
-}
-
-// detachOverdraftAwareContext keeps the historical detached behavior for
-// ordinary client disconnects while still propagating the explicit overdraft
-// cancellation that must stop upstream generation and failover.
-func detachOverdraftAwareContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	// sub2aouter: billing-overdraft-upstream-context-v1
-	if token := gatewayRequestCancellationContext(ctx); token != nil {
-		// No watcher or extra cancellation registration is needed. The token is
-		// cancelled by overdraft or by unregister at the real request boundary.
-		// Some builders call release before sending their request, so release
-		// remains a no-op instead of prematurely ending the upstream lifecycle.
-		return gatewayUpstreamContext{Context: token, values: context.WithoutCancel(ctx)}, func() {}
-	}
-	if IsGatewayBalanceOverdraft(ctx) {
-		return ctx, func() {}
 	}
 	return context.WithoutCancel(ctx), func() {}
 }

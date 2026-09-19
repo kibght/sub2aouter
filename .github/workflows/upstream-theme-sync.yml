@@ -383,24 +383,6 @@ jobs:
           cp .github/workflows/automation-alert.yml "$GENERATED_DIR/.github/workflows/automation-alert.yml"
           cp .github/workflows/sync-watchdog.yml "$GENERATED_DIR/.github/workflows/sync-watchdog.yml"
 
-      - name: Carry non-negative balance migration
-        if: env.SHOULD_PUBLISH == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          SOURCE_MIGRATION="backend/migrations/192_enforce_non_negative_user_balance.sql"
-          TARGET_MIGRATION="$GENERATED_DIR/$SOURCE_MIGRATION"
-          if [[ ! -f "$SOURCE_MIGRATION" ]]; then
-            echo "Missing balance migration source: $SOURCE_MIGRATION" >&2
-            exit 1
-          fi
-          if [[ -e "$TARGET_MIGRATION" ]] && ! cmp -s "$SOURCE_MIGRATION" "$TARGET_MIGRATION"; then
-            echo "Upstream migration conflicts with $SOURCE_MIGRATION; reconcile it before publishing." >&2
-            exit 1
-          fi
-          mkdir -p "$(dirname "$TARGET_MIGRATION")"
-          cp "$SOURCE_MIGRATION" "$TARGET_MIGRATION"
-
       - name: Restore preserved workflow snapshots
         if: env.SHOULD_PUBLISH == 'true'
         shell: bash
@@ -409,18 +391,6 @@ jobs:
       - name: Apply theme overlay
         if: env.SHOULD_PUBLISH == 'true'
         run: node scripts/apply-theme.mjs --root .
-        working-directory: ${{ env.GENERATED_DIR }}
-
-      - name: Apply non-negative balance guard
-        if: env.SHOULD_PUBLISH == 'true'
-        run: node scripts/apply-non-negative-balance.mjs --root .
-        working-directory: ${{ env.GENERATED_DIR }}
-
-      - name: Apply billing overdraft settlement policy
-        if: env.SHOULD_PUBLISH == 'true'
-        env:
-          SOURCE_ROOT: ${{ github.workspace }}
-        run: node scripts/apply-billing-overdraft.mjs --root . --source "$SOURCE_ROOT"
         working-directory: ${{ env.GENERATED_DIR }}
 
       - name: Carry Infinite Canvas integration
@@ -620,8 +590,6 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/apply-theme.mjs --root . --check
-          node scripts/apply-non-negative-balance.mjs --root . --check
-          node scripts/apply-billing-overdraft.mjs --root . --source "$GITHUB_WORKSPACE" --check
           node scripts/apply-sub2-infinite-canvas-integration.mjs --root . --check
           node scripts/check-encoding.mjs .
           node --test scripts/__tests__/*.test.mjs

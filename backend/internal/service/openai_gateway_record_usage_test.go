@@ -154,10 +154,6 @@ func (s *openAIRecordUsageUserRepoStub) DeductBalance(ctx context.Context, id in
 	return s.deductErr
 }
 
-func (s *openAIRecordUsageUserRepoStub) GetByID(context.Context, int64) (*User, error) {
-	return &User{}, nil
-}
-
 func (s *openAIRecordUsageUserRepoStub) AdjustBalance(ctx context.Context, id int64, delta float64) (BalanceChange, error) {
 	panic("unexpected AdjustBalance call")
 }

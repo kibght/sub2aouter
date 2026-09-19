@@ -1201,36 +1201,6 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		},
 	})
 	if cause := context.Cause(ctx); cause != nil {
-		// A committed balance overdraft closes this turn without retrying or
-		// forwarding it to another account. If upstream already supplied a real
-		// usage snapshot, settle exactly that active turn once; completed turns
-		// were already delivered through OnTurnComplete and are not reused.
-		if errors.Is(cause, ErrGatewayBalanceOverdraft) && relayResult.IncompleteTurn != nil &&
-			openAIWSUsageHasTokens(relayResult.IncompleteTurn.Usage) &&
-			strings.TrimSpace(relayResult.IncompleteTurn.RequestID) != "" && hooks != nil && hooks.AfterTurn != nil {
-			partial := relayResult.IncompleteTurn
-			requestModel, upstreamModel := usageMeta.turnModels(partial.RequestModel)
-			partialResult := &OpenAIForwardResult{
-				RequestID: partial.RequestID,
-				Usage: OpenAIUsage{
-					InputTokens:              partial.Usage.InputTokens,
-					OutputTokens:             partial.Usage.OutputTokens,
-					CacheCreationInputTokens: partial.Usage.CacheCreationInputTokens,
-					CacheReadInputTokens:     partial.Usage.CacheReadInputTokens,
-					ImageOutputTokens:        partial.Usage.ImageOutputTokens,
-				},
-				Model:           requestModel,
-				UpstreamModel:   openAIWSDifferentModel(requestModel, upstreamModel),
-				ServiceTier:     usageMeta.serviceTier.Load(),
-				ReasoningEffort: usageMeta.reasoningEffort.Load(),
-				Stream:          true,
-				OpenAIWSMode:    true,
-				ResponseHeaders: cloneHeader(handshakeHeaders),
-				Duration:        partial.Duration,
-				FirstTokenMs:    partial.FirstTokenMs,
-			}
-			hooks.AfterTurn(int(completedTurns.Load())+1, partialResult, cause)
-		}
 		status := coderws.StatusGoingAway
 		reason := "websocket request canceled"
 		if errors.Is(cause, ErrOpenAIWSIngressLeaseLost) {
@@ -1348,12 +1318,6 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		hooks.AfterTurn(turnCount+1, nil, turnErr)
 	}
 	return turnErr
-}
-
-func openAIWSUsageHasTokens(usage openaiwsv2.Usage) bool {
-	return usage.InputTokens > 0 || usage.OutputTokens > 0 ||
-		usage.CacheCreationInputTokens > 0 || usage.CacheReadInputTokens > 0 ||
-		usage.ImageOutputTokens > 0
 }
 
 func openAIWSPassthroughRelayClientClose(exit openaiwsv2.RelayExit, completedTurns int) (coderws.StatusCode, string, bool) {

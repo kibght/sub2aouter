@@ -292,7 +292,7 @@ func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*Ref
 		// Skip balance deduction on retry if previous attempt already deducted
 		// but failed to roll back (REFUND_ROLLBACK_FAILED in audit log).
 		if !s.hasAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED") {
-			if _, err := s.userRepo.AdjustBalance(ctx, p.Order.UserID, -p.BalanceToDeduct); err != nil {
+			if err := s.userRepo.DeductBalance(ctx, p.Order.UserID, p.BalanceToDeduct); err != nil {
 				s.restoreStatus(ctx, p)
 				return nil, fmt.Errorf("deduction: %w", err)
 			}
@@ -489,7 +489,7 @@ func (s *PaymentService) applyRefundFinalDeduction(ctx context.Context, p *Refun
 		return nil
 	}
 	if p.DeductionType == payment.DeductionTypeBalance && p.BalanceToDeduct > 0 {
-		if _, err := s.userRepo.AdjustBalance(ctx, p.Order.UserID, -p.BalanceToDeduct); err != nil {
+		if err := s.userRepo.DeductBalance(ctx, p.Order.UserID, p.BalanceToDeduct); err != nil {
 			return fmt.Errorf("deduction: %w", err)
 		}
 	}

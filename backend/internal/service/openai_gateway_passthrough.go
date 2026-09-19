@@ -231,7 +231,6 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	serviceTier := extractOpenAIServiceTierFromBody(body)
 
-	var responseErr error
 	var usage *OpenAIUsage
 	var firstTokenMs *int
 	responseID := ""
@@ -240,10 +239,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	if reqStream {
 		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
 		if err != nil {
-			if !IsGatewayBalanceOverdraft(ctx) || result == nil {
-				return nil, err
-			}
-			responseErr = err
+			return nil, err
 		}
 		usage = result.usage
 		firstTokenMs = result.firstTokenMs
@@ -293,7 +289,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		forwardResult.ImageOutputSizes = imageOutputSizes
 		forwardResult.BillingModel = imageBillingModel
 	}
-	return forwardResult, responseErr
+	return forwardResult, nil
 }
 
 func logOpenAIPassthroughInstructionsRejected(

@@ -801,11 +801,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	if reqStream {
 		streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, reqModel, shouldMimicClaudeCode)
 		if err != nil {
-			if IsGatewayBalanceOverdraft(ctx) && streamResult != nil && hasClaudeUsage(streamResult.usage) {
-				return &ForwardResult{RequestID: resp.Header.Get("x-request-id"), Usage: *streamResult.usage,
-					Model: originalModel, UpstreamModel: mappedModel, Stream: reqStream,
-					Duration: time.Since(startTime), FirstTokenMs: streamResult.firstTokenMs, ClientDisconnect: true}, err
-			}
 			var sseErr *sseStreamErrorEventError
 			if errors.As(err, &sseErr) {
 				// 上游 HTTP 200 + SSE 流体内出现 event:error 帧。

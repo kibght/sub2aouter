@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 	"time"
@@ -35,14 +34,6 @@ type userRepository struct {
 
 var _ service.RedeemUserAdjustmentRepository = (*userRepository)(nil)
 
-func invalidNonNegativeBalance(value float64) bool {
-	return value < 0 || math.IsNaN(value) || math.IsInf(value, 0)
-}
-
-func invalidBalanceDelta(delta float64) bool {
-	return math.IsNaN(delta) || math.IsInf(delta, 0)
-}
-
 func NewUserRepository(client *dbent.Client, sqlDB *sql.DB) service.UserRepository {
 	return newUserRepositoryWithSQL(client, sqlDB)
 }
@@ -64,10 +55,6 @@ func (r *userRepository) CreateWithEmailAliasGuard(ctx context.Context, userIn *
 func (r *userRepository) create(ctx context.Context, userIn *service.User, guardEmailAlias bool) error {
 	if userIn == nil {
 		return nil
-	}
-	// sub2aouter: non-negative-balance-create-v1
-	if invalidNonNegativeBalance(userIn.Balance) {
-		return service.ErrBalanceNegative
 	}
 
 	// 统一使用 ent 的事务：保证用户与允许分组的更新原子化，
@@ -806,50 +793,13 @@ func (r *userRepository) filterUsersByAttributes(ctx context.Context, attrs map[
 }
 
 func (r *userRepository) UpdateBalance(ctx context.Context, id int64, amount float64) error {
-	if invalidBalanceDelta(amount) {
-		return service.ErrBalanceNegative
-	}
 	client := clientFromContext(ctx, r.client)
-	update := client.User.Update().Where(dbuser.IDEQ(id))
-	// sub2aouter: non-negative-balance-update-v1
-	if amount < 0 {
-		// Keep the balance floor in the same atomic UPDATE as the increment so
-		// concurrent deductions cannot race through a read-then-write check.
-		update = update.Where(dbuser.BalanceGTE(-amount))
-	}
-	update = update.AddBalance(amount)
+	update := client.User.Update().Where(dbuser.IDEQ(id)).AddBalance(amount)
 	// Track cumulative recharge amount for percentage-based notifications
 	if amount > 0 {
 		update = update.AddTotalRecharged(amount)
 	}
 	n, err := update.Save(ctx)
-	if err != nil {
-		return translatePersistenceError(err, service.ErrUserNotFound, nil)
-	}
-	if n > 0 {
-		return nil
-	}
-	// sub2aouter: non-negative-balance-update-result-v1
-	if amount < 0 {
-		if _, queryErr := client.User.Query().Where(dbuser.IDEQ(id)).Only(ctx); queryErr != nil {
-			return translatePersistenceError(queryErr, service.ErrUserNotFound, nil)
-		}
-		return service.ErrBalanceNegative
-	}
-	return service.ErrUserNotFound
-}
-
-// CreditBalance atomically grants balance without changing the recharge total.
-// It is used for non-purchase grants such as first-provider-bind defaults.
-func (r *userRepository) CreditBalance(ctx context.Context, id int64, amount float64) error {
-	if invalidNonNegativeBalance(amount) {
-		return service.ErrBalanceNegative
-	}
-	client := clientFromContext(ctx, r.client)
-	n, err := client.User.Update().
-		Where(dbuser.IDEQ(id)).
-		AddBalance(amount).
-		Save(ctx)
 	if err != nil {
 		return translatePersistenceError(err, service.ErrUserNotFound, nil)
 	}
@@ -884,16 +834,9 @@ func (r *userRepository) ApplyRedeemBalanceAdjustment(ctx context.Context, id in
 // 透支策略：允许余额变为负数，确保当前请求能够完成
 // 中间件会阻止余额 <= 0 的用户发起后续请求
 func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount float64) error {
-	// sub2aouter: billing-overdraft-deduct-v1
-	if invalidBalanceDelta(amount) || amount < 0 {
-		if amount == 0 {
-			return nil
-		}
-		return fmt.Errorf("deduct balance amount must be positive")
-	}
 	client := clientFromContext(ctx, r.client)
 	n, err := client.User.Update().
-		Where(dbuser.IDEQ(id)).
+		Where(dbuser.IDEQ(id), dbuser.BalanceGTE(amount)).
 		AddBalance(-amount).
 		Save(ctx)
 	if err != nil {
@@ -902,8 +845,16 @@ func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount flo
 	if n > 0 {
 		return nil
 	}
-	if _, queryErr := client.User.Query().Where(dbuser.IDEQ(id)).Only(ctx); queryErr != nil {
-		return translatePersistenceError(queryErr, service.ErrUserNotFound, nil)
+
+	n, err = client.User.Update().
+		Where(dbuser.IDEQ(id)).
+		AddBalance(-amount).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return service.ErrUserNotFound
 	}
 	return nil
 }
@@ -912,10 +863,6 @@ func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount flo
 // 相比"读余额 → 算新值 → 整行写回"，这里把读与写压进同一条 UPDATE，
 // 并发的计费扣款不会被旧快照覆盖。
 func (r *userRepository) AdjustBalance(ctx context.Context, id int64, delta float64) (service.BalanceChange, error) {
-	// sub2aouter: non-negative-balance-adjust-input-v1
-	if invalidBalanceDelta(delta) {
-		return service.BalanceChange{}, service.ErrBalanceNegative
-	}
 	const updateSQL = `
 		UPDATE users
 		SET balance = balance + $1, updated_at = NOW()
@@ -940,7 +887,7 @@ func (r *userRepository) AdjustBalance(ctx context.Context, id int64, delta floa
 
 // SetBalance 原子地把余额置为 value，并返回变更前后的值。
 func (r *userRepository) SetBalance(ctx context.Context, id int64, value float64) (service.BalanceChange, error) {
-	if invalidNonNegativeBalance(value) {
+	if value < 0 {
 		// 连同当前余额一起返回，便于上层给出可读的错误信息。
 		current, err := r.currentBalance(ctx, id)
 		if err != nil {
