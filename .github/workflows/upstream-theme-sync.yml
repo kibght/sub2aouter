@@ -426,6 +426,9 @@ jobs:
         working-directory: ${{ env.GENERATED_DIR }}
         run: |
           set -euo pipefail
+          if [[ -z "${UPSTREAM_SOURCE_VERSION:-}" && -f backend/cmd/server/UPSTREAM_VERSION ]]; then
+            UPSTREAM_SOURCE_VERSION="$(tr -d '[:space:]' < backend/cmd/server/UPSTREAM_VERSION)"
+          fi
           COMPATIBILITY_VERSION="${UPSTREAM_SOURCE_VERSION:-$RELEASE_VERSION}"
           printf '%s\n' "$COMPATIBILITY_VERSION" > backend/cmd/server/UPSTREAM_VERSION
           node scripts/apply-sub2-plugin-compatibility.mjs --root .
