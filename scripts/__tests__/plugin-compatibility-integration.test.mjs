@@ -34,6 +34,13 @@ func EvaluatePluginCompatibility(manifest PluginManifest, host PluginHostInfo) P
 \t}
 }
 `,
+    'backend/internal/service/wire.go': `package service
+
+type BuildInfo struct {
+\tVersion   string
+\tBuildType string
+}
+`,
     'backend/internal/handler/handler.go': `package handler
 
 type BuildInfo struct {
@@ -60,6 +67,13 @@ func buildInfo() handler.BuildInfo {
 `,
     'backend/cmd/server/wire.go': `package main
 
+func provideServiceBuildInfo(buildInfo handler.BuildInfo) service.BuildInfo {
+\treturn service.BuildInfo{
+\t\tVersion:   buildInfo.Version,
+\t\tBuildType: buildInfo.BuildType,
+\t}
+}
+
 func providePluginHostInfo(buildInfo handler.BuildInfo) service.PluginHostInfo {
 \treturn service.PluginHostInfo{
 \t\tVersion:   buildInfo.Version,
@@ -68,6 +82,13 @@ func providePluginHostInfo(buildInfo handler.BuildInfo) service.PluginHostInfo {
 }
 `,
     'backend/cmd/server/wire_gen.go': `package main
+
+func provideServiceBuildInfo(buildInfo handler.BuildInfo) service.BuildInfo {
+\treturn service.BuildInfo{
+\t\tVersion:   buildInfo.Version,
+\t\tBuildType: buildInfo.BuildType,
+\t}
+}
 
 func providePluginHostInfo(buildInfo handler.BuildInfo) service.PluginHostInfo {
 \treturn service.PluginHostInfo{
@@ -105,6 +126,17 @@ test('separates the themed release version from the plugin compatibility version
   const main = await readFile(path.join(root, 'backend/cmd/server/main.go'), 'utf8')
   assert.match(main, /go:embed UPSTREAM_VERSION/)
   assert.match(main, /CompatibilityVersion: strings\.TrimSpace\(embeddedUpstreamVersion\)/)
+
+  const serviceInfo = await readFile(path.join(root, 'backend/internal/service/wire.go'), 'utf8')
+  assert.match(serviceInfo, /CompatibilityVersion string/)
+
+  for (const relative of ['backend/cmd/server/wire.go', 'backend/cmd/server/wire_gen.go']) {
+    const wireSource = await readFile(path.join(root, relative), 'utf8')
+    assert.equal(
+      (wireSource.match(/CompatibilityVersion: buildInfo\.CompatibilityVersion,/g) ?? []).length,
+      2,
+    )
+  }
 })
 
 test('skips compatibility integration for upstream versions without the plugin API', async () => {
