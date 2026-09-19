@@ -105,6 +105,18 @@ export async function applySub2PluginCompatibility({ root, check = false }) {
     check,
     'after',
   )
+
+  const serviceBuildInfo = path.join(resolvedRoot, 'backend/internal/service/wire.go')
+  if (await exists(serviceBuildInfo)) {
+    await replaceOnce(
+      serviceBuildInfo,
+      'type BuildInfo struct {\n',
+      '\tCompatibilityVersion string\n',
+      'CompatibilityVersion string',
+      check,
+      'after',
+    )
+  }
   await replaceOnce(
     path.join(resolvedRoot, 'backend/cmd/server/main.go'),
     '//go:embed VERSION\nvar embeddedVersion string\n',
@@ -122,17 +134,28 @@ export async function applySub2PluginCompatibility({ root, check = false }) {
     'after',
   )
 
-  const wireMarker = '\t\tBuildType: buildInfo.BuildType,\n'
-  const wireReplacement = '\t\tCompatibilityVersion: buildInfo.CompatibilityVersion,\n'
-  for (const relative of ['backend/cmd/server/wire.go', 'backend/cmd/server/wire_gen.go']) {
-    await replaceOnce(
-      path.join(resolvedRoot, relative),
-      wireMarker,
-      wireReplacement,
-      'CompatibilityVersion: buildInfo.CompatibilityVersion,',
-      check,
-      'after',
-    )
+  const wireFiles = ['backend/cmd/server/wire.go', 'backend/cmd/server/wire_gen.go']
+  const wireProviders = [
+    {
+      marker: 'func provideServiceBuildInfo(buildInfo handler.BuildInfo) service.BuildInfo {\n\treturn service.BuildInfo{\n',
+      sentinel: 'func provideServiceBuildInfo(buildInfo handler.BuildInfo) service.BuildInfo {\n\treturn service.BuildInfo{\n\t\tCompatibilityVersion: buildInfo.CompatibilityVersion,\n',
+    },
+    {
+      marker: 'func providePluginHostInfo(buildInfo handler.BuildInfo) service.PluginHostInfo {\n\treturn service.PluginHostInfo{\n',
+      sentinel: 'func providePluginHostInfo(buildInfo handler.BuildInfo) service.PluginHostInfo {\n\treturn service.PluginHostInfo{\n\t\tCompatibilityVersion: buildInfo.CompatibilityVersion,\n',
+    },
+  ]
+  for (const relative of wireFiles) {
+    for (const provider of wireProviders) {
+      await replaceOnce(
+        path.join(resolvedRoot, relative),
+        provider.marker,
+        '\t\tCompatibilityVersion: buildInfo.CompatibilityVersion,\n',
+        provider.sentinel,
+        check,
+        'after',
+      )
+    }
   }
 
   return true
