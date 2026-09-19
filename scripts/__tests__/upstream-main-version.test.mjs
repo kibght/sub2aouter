@@ -16,6 +16,13 @@ test('scheduled sync prefers a newer upstream main version over a stale formal r
   assert.match(workflow, /UPSTREAM_RELEASE_PUBLISHED=false/)
 })
 
+test('scheduled sync validates the source VERSION inside a published release tag', () => {
+  assert.match(workflow, /TAG_UPSTREAM_VERSION=.*git show "\$UPSTREAM_RELEASE_REF":backend\/cmd\/server\/VERSION/)
+  assert.match(workflow, /Published Sub2API release .* has invalid source VERSION/)
+  assert.match(workflow, /points to VERSION .* refusing a stale or downgraded source/)
+  assert.match(workflow, /contains VERSION .* using newer upstream main VERSION/)
+})
+
 test('unreleased upstream snapshots use the source VERSION in release metadata', () => {
   assert.match(workflow, /upstream_version=.*backend\/cmd\/server\/VERSION/)
   assert.match(workflow, /v\$\{upstream_version\}/)
