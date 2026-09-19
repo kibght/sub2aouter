@@ -468,6 +468,9 @@ func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, r
 	if isOpenAIRequestBodyTooLargeError(statusCode, "", responseBody) {
 		return true
 	}
+	if isOpenAITransientProcessingError(statusCode, "", responseBody) {
+		return true
+	}
 	switch statusCode {
 	case http.StatusTooManyRequests, 529:
 		return true
@@ -957,10 +960,18 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 			"message": message,
 		},
 	})
-	return &UpstreamFailoverError{
-		StatusCode:   http.StatusBadGateway,
-		ResponseBody: body,
+	requestScopedCapacity := isOpenAIRequestScopedCapacityShed(message, payload)
+	failoverErr := &UpstreamFailoverError{
+		StatusCode:             http.StatusBadGateway,
+		ResponseBody:           body,
+		RetryableOnSameAccount: requestScopedCapacity,
+		RequestScopedTransient: requestScopedCapacity,
 	}
+	if requestScopedCapacity {
+		failoverErr.ClientStatusCode = http.StatusServiceUnavailable
+		failoverErr.ClientMessage = openAICapacityShedClientMessage(message, payload)
+	}
+	return failoverErr
 }
 
 func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(

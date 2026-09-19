@@ -299,6 +299,33 @@ func TestIsOpenAITransientProcessingError(t *testing.T) {
 	))
 }
 
+func TestOpenAICapacityShedFailoverKeepsRetryable503Semantics(t *testing.T) {
+	body := []byte(`{"error":{"code":"server_is_overloaded","message":"Server is overloaded. Please retry later."}}`)
+	err := newOpenAIUpstreamFailoverError(
+		http.StatusBadRequest,
+		http.Header{"Retry-After": []string{"3"}},
+		body,
+		"Server is overloaded. Please retry later.",
+		false,
+	)
+
+	require.True(t, err.IsOpenAICapacityShed())
+	require.True(t, err.RequestScopedTransient)
+	require.True(t, err.RetryableOnSameAccount)
+	require.Equal(t, http.StatusServiceUnavailable, err.ClientStatusCode)
+	require.Equal(t, "Server is overloaded. Please retry later.", err.ClientMessage)
+
+	highDemand := newOpenAIUpstreamFailoverError(
+		http.StatusServiceUnavailable,
+		http.Header{},
+		[]byte(`{"error":{"message":"We’re currently experiencing high demand, which may cause temporary errors."}}`),
+		"We’re currently experiencing high demand, which may cause temporary errors.",
+		false,
+	)
+	require.True(t, highDemand.IsOpenAICapacityShed())
+	require.Equal(t, http.StatusServiceUnavailable, highDemand.ClientStatusCode)
+}
+
 func TestIsOpenAIContextWindowError(t *testing.T) {
 	require.True(t, isOpenAIContextWindowError(
 		"",

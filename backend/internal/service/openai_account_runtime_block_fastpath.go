@@ -61,6 +61,11 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if account != nil && account.Platform == PlatformOpenAI && isOpenAIContextWindowError("", responseBody) {
 		return false
 	}
+	if account != nil && account.Platform == PlatformOpenAI && isOpenAIRequestScopedCapacityShed("", responseBody) {
+		// Provider capacity shedding is tied to this request/model load, not to
+		// the API key. Do not quarantine a healthy account for a transient 400/503.
+		return false
+	}
 
 	if isOpenAIImageRateLimitError(statusCode, responseBody) {
 		if s != nil && s.rateLimitService != nil {
