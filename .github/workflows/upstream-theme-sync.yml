@@ -420,6 +420,16 @@ jobs:
         run: node scripts/apply-theme.mjs --root .
         working-directory: ${{ env.GENERATED_DIR }}
 
+      - name: Apply Sub2API plugin compatibility integration
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        working-directory: ${{ env.GENERATED_DIR }}
+        run: |
+          set -euo pipefail
+          COMPATIBILITY_VERSION="${UPSTREAM_SOURCE_VERSION:-$RELEASE_VERSION}"
+          printf '%s\n' "$COMPATIBILITY_VERSION" > backend/cmd/server/UPSTREAM_VERSION
+          node scripts/apply-sub2-plugin-compatibility.mjs --root .
+
       - name: Carry Infinite Canvas integration
         if: env.SHOULD_PUBLISH == 'true'
         shell: bash
@@ -616,6 +626,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/apply-theme.mjs --root . --check
+          node scripts/apply-sub2-plugin-compatibility.mjs --root . --check
           node scripts/apply-sub2-infinite-canvas-integration.mjs --root . --check
           node scripts/check-encoding.mjs .
           node --test scripts/__tests__/*.test.mjs
