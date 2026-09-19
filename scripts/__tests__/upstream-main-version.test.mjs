@@ -24,7 +24,10 @@ test('scheduled sync validates the source VERSION inside a published release tag
 })
 
 test('unreleased upstream snapshots use the source VERSION in release metadata', () => {
-  assert.match(workflow, /upstream_version=.*backend\/cmd\/server\/VERSION/)
+  assert.match(workflow, /UPSTREAM_SOURCE_VERSION=.*git -C "\$GENERATED_DIR" show HEAD:backend\/cmd\/server\/VERSION/)
+  assert.match(workflow, /echo "UPSTREAM_SOURCE_VERSION=\$UPSTREAM_SOURCE_VERSION"/)
+  assert.match(workflow, /local upstream_version="\$\{UPSTREAM_SOURCE_VERSION:-\}"/)
+  assert.doesNotMatch(workflow, /upstream_version=.*GENERATED_DIR\/backend\/cmd\/server\/VERSION/)
   assert.match(workflow, /v\$\{upstream_version\}/)
   assert.match(workflow, /Sub2API v\$\{upstream_version\}/)
   assert.match(workflow, /No published upstream release metadata/)

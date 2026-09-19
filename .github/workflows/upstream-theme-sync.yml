@@ -209,6 +209,7 @@ jobs:
             RELEASE_SOURCE_SHA="$UPSTREAM_SHA"
             RELEASE_KIND="upstream"
             RELEASE_IMAGE_TAG="upstream-${UPSTREAM_SHA:0:12}"
+            UPSTREAM_SOURCE_VERSION="$(git -C "$GENERATED_DIR" show HEAD:backend/cmd/server/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
           fi
 
           echo "UPSTREAM_SHA=$UPSTREAM_SHA" >> "$GITHUB_ENV"
@@ -216,6 +217,7 @@ jobs:
           echo "UPSTREAM_RELEASE_ID=$UPSTREAM_RELEASE_ID" >> "$GITHUB_ENV"
           echo "UPSTREAM_RELEASE_PUBLISHED=$UPSTREAM_RELEASE_PUBLISHED" >> "$GITHUB_ENV"
           echo "UPSTREAM_SOURCE_FROM_MAIN=$UPSTREAM_SOURCE_FROM_MAIN" >> "$GITHUB_ENV"
+          echo "UPSTREAM_SOURCE_VERSION=$UPSTREAM_SOURCE_VERSION" >> "$GITHUB_ENV"
           echo "RELEASE_SOURCE_SHA=$RELEASE_SOURCE_SHA" >> "$GITHUB_ENV"
           echo "RELEASE_KIND=$RELEASE_KIND" >> "$GITHUB_ENV"
           echo "RELEASE_IMAGE_TAG=$RELEASE_IMAGE_TAG" >> "$GITHUB_ENV"
@@ -495,8 +497,7 @@ jobs:
 
           write_fallback_notes() {
             local short_sha="${UPSTREAM_SHA:0:12}"
-            local upstream_version=""
-            upstream_version="$(tr -d '[:space:]' < "$GENERATED_DIR/backend/cmd/server/VERSION" 2>/dev/null || true)"
+            local upstream_version="${UPSTREAM_SOURCE_VERSION:-}"
             if [[ "$upstream_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               printf '%s\n' "v${upstream_version}" > "$TAG_FILE"
               printf '%s\n' "Sub2API v${upstream_version}" > "$NAME_FILE"
