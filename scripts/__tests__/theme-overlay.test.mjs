@@ -85,6 +85,32 @@ test('supports exact replacement patches', async () => {
   assert.equal(second.changed, false)
 })
 
+test('supports regex replacement patches for upstream numeric drift', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-regex-root-'))
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-theme-regex-overlay-'))
+  await mkdir(path.join(root, 'frontend'), { recursive: true })
+  await mkdir(path.join(overlay, 'patches'), { recursive: true })
+  await writeFile(path.join(root, 'frontend/providers.spec.ts'), 'expect(providerButtons).toHaveLength(10)\n')
+  await writeFile(path.join(overlay, 'patches/provider-count.txt'), 'expect(providerButtons).toHaveLength(PROVIDERS.length)')
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({
+    patches: [{
+      target: 'frontend/providers.spec.ts',
+      operation: 'replace',
+      marker: 'expect(providerButtons).toHaveLength(8)',
+      markerPattern: 'expect\\(providerButtons\\)\\.toHaveLength\\(\\d+\\)',
+      source: 'patches/provider-count.txt',
+      sentinel: 'expect(providerButtons).toHaveLength(PROVIDERS.length)',
+    }],
+  }))
+
+  const first = await applyTheme({ root, overlay })
+  const second = await applyTheme({ root, overlay })
+
+  assert.equal(await readFile(path.join(root, 'frontend/providers.spec.ts'), 'utf8'), 'expect(providerButtons).toHaveLength(PROVIDERS.length)\n')
+  assert.equal(first.changed, true)
+  assert.equal(second.changed, false)
+})
+
 test('repository pointer patches preserve the official update flow', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-update-pointer-root-'))
   const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-update-pointer-overlay-'))

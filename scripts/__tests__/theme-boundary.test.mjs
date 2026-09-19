@@ -61,6 +61,7 @@ test('generated releases tolerate upstream provider additions in channel monitor
 
   assert.ok(patch, 'the Grok provider count compatibility patch must be registered')
   assert.equal(patch.operation, 'replace')
+  assert.equal(patch.markerPattern, 'expect\\(providerButtons\\)\\.toHaveLength\\(\\d+\\)')
   assert.equal(patch.sentinel, 'expect(providerButtons).toHaveLength(PROVIDERS.length)')
   assert.equal(
     (await read(`theme/apophis/${patch.source}`)).trim(),

@@ -598,6 +598,7 @@
       "target": "frontend/src/views/admin/__tests__/ChannelMonitorView.grok.spec.ts",
       "operation": "replace",
       "marker": "expect(providerButtons).toHaveLength(8)",
+      "markerPattern": "expect\\(providerButtons\\)\\.toHaveLength\\(\\d+\\)",
       "source": "patches/channel-monitor-grok-provider-count.txt",
       "sentinel": "expect(providerButtons).toHaveLength(PROVIDERS.length)"
     }

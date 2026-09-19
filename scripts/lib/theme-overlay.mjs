@@ -35,9 +35,16 @@ function applyPatch(text, patch, patchText) {
 
   if (normalizedPatchText && text.includes(normalizedPatchText)) return text
 
-  const matchedMarker = normalizedMarkers
-    .map((marker, index) => ({ marker, index: text.indexOf(marker), legacy: index > 0 }))
-    .find(({ index }) => index >= 0)
+  let matchedMarker = null
+  if (typeof patch.markerPattern === 'string' && patch.markerPattern) {
+    const match = new RegExp(patch.markerPattern, patch.markerPatternFlags || '').exec(text)
+    if (match) matchedMarker = { marker: match[0], index: match.index, legacy: false }
+  }
+  if (!matchedMarker) {
+    matchedMarker = normalizedMarkers
+      .map((marker, index) => ({ marker, index: text.indexOf(marker), legacy: index > 0 }))
+      .find(({ index }) => index >= 0) || null
+  }
   if (matchedMarker && normalizedPatchText && normalizedSentinel && text.includes(normalizedSentinel) && !matchedMarker.legacy) {
     throw new Error(`Theme patch drift in ${patch.target}: sentinel exists without the exact replacement`)
   }
