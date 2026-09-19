@@ -338,7 +338,9 @@ func openAICapacityShedClientMessage(upstreamMsg string, body []byte) string {
 
 // IsOpenAICapacityShed reports whether this failover came from a request-level
 // OpenAI capacity shed and therefore should be returned as a retryable 503.
-func (e *UpstreamFailoverError) IsOpenAICapacityShed() bool {`n`treturn e != nil && e.RequestScopedTransient && isOpenAIRequestScopedCapacityShed("", e.ResponseBody)`n}
+func (e *UpstreamFailoverError) IsOpenAICapacityShed() bool {
+	return e != nil && e.RequestScopedTransient && isOpenAIRequestScopedCapacityShed("", e.ResponseBody)
+}
 
 // IsOpenAIRequestBodyTooLarge reports whether another account may accept the
 // same request even though the selected account rejected its serialized size.
