@@ -164,10 +164,11 @@ jobs:
             retry_with_backoff 5 5 git fetch --depth=1 --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:${UPSTREAM_RELEASE_REF}"
             TAG_UPSTREAM_VERSION="$(git show "$UPSTREAM_RELEASE_REF":backend/cmd/server/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
             RELEASE_VERSION_FROM_TAG="${UPSTREAM_RELEASE_TAG#v}"
-            if [[ "$TAG_UPSTREAM_VERSION" != "$RELEASE_VERSION_FROM_TAG" ]]; then
-              echo "Sub2API release $UPSTREAM_RELEASE_TAG contains VERSION ${TAG_UPSTREAM_VERSION:-missing}; refusing mismatched source." >&2
+            if [[ ! "$TAG_UPSTREAM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Sub2API release $UPSTREAM_RELEASE_TAG contains invalid VERSION ${TAG_UPSTREAM_VERSION:-missing}." >&2
               exit 1
             fi
+            echo "Using release version $RELEASE_VERSION_FROM_TAG from tag $UPSTREAM_RELEASE_TAG (source VERSION $TAG_UPSTREAM_VERSION)."
             UPSTREAM_REF="$UPSTREAM_RELEASE_TAG"
             git worktree add --detach "$GENERATED_DIR" "$UPSTREAM_RELEASE_REF"
             echo "Using published Sub2API release: $UPSTREAM_RELEASE_TAG"

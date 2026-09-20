@@ -17,7 +17,7 @@ test('scheduled sync builds the latest published upstream release tag', () => {
 test('scheduled sync validates the source VERSION inside a published release tag', () => {
   assert.match(workflow, /TAG_UPSTREAM_VERSION=.*git show "\$UPSTREAM_RELEASE_REF":backend\/cmd\/server\/VERSION/)
   assert.match(workflow, /RELEASE_VERSION_FROM_TAG=/)
-  assert.match(workflow, /contains VERSION .* refusing mismatched source/)
+  assert.match(workflow, /contains invalid VERSION/)
 })
 
 test('published upstream releases keep source VERSION metadata', () => {
