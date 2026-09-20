@@ -53,7 +53,7 @@ test('manual repository releases build the checked out main commit without fetch
   assert.match(workflow, /rm -rf \"\$GENERATED_DIR\/theme\" \"\$GENERATED_DIR\/scripts\"/)
 })
 
-test('the coordinated upstream round avoids hourly load boundaries and retries transient fetch failures', async () => {
+test('the coordinated upstream round fetches the published release tag with retries', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
   const coordinator = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
   assert.match(coordinator, /cron:\s*'17 \* \* \* \*'/)
@@ -61,7 +61,7 @@ test('the coordinated upstream round avoids hourly load boundaries and retries t
   assert.doesNotMatch(workflow, /schedule:/)
   assert.match(workflow, /SCHEDULED_ROUND/)
   assert.match(workflow, /source scripts\/ci\/retry\.sh/)
-  assert.match(workflow, /retry_with_backoff 5 5 git fetch --depth=1 upstream "\$UPSTREAM_REF"/)
+  assert.match(workflow, /retry_with_backoff 5 5 git fetch --depth=1 --force upstream "refs\/tags\/\$\{UPSTREAM_RELEASE_TAG\}:\$\{UPSTREAM_RELEASE_REF\}"/)
 })
 
 test('scheduled upstream sync deduplicates by release identity before falling back to SHA', async () => {

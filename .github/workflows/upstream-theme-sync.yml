@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       upstream_ref:
-        description: Upstream branch, tag, or commit
+        description: Optional upstream release tag override; empty uses the latest published version
         required: false
-        default: main
+        default: ''
         type: string
       repository_release:
         description: Publish current repository changes without refetching upstream
@@ -44,7 +44,7 @@ jobs:
       release_version: ${{ steps.release_outputs.outputs.release_version }}
     env:
       UPSTREAM_REPOSITORY: https://github.com/Wei-Shaw/sub2api.git
-      UPSTREAM_REF: ${{ inputs.upstream_ref || 'main' }}
+      UPSTREAM_REF: ${{ inputs.upstream_ref || '' }}
       UPSTREAM_RELEASE_REF: refs/apophis/upstream-release
       REPOSITORY_RELEASE: ${{ inputs.repository_release || false }}
       SCHEDULED_ROUND: ${{ inputs.scheduled_round || false }}
@@ -95,7 +95,7 @@ jobs:
 
       - name: Discover published Sub2API release
         id: upstream_release
-        if: ${{ inputs.repository_release != true && inputs.scheduled_round == true }}
+        if: ${{ inputs.repository_release != true }}
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -143,68 +143,34 @@ jobs:
             UPSTREAM_RELEASE_ID=""
             UPSTREAM_RELEASE_PUBLISHED=false
             UPSTREAM_SOURCE_FROM_MAIN=false
-            if [[ "$SCHEDULED_ROUND" == "true" ]]; then
-              if [[ "$DISCOVERED_UPSTREAM_RELEASE" == "true" ]]; then
-                UPSTREAM_RELEASE_TAG="$DISCOVERED_UPSTREAM_RELEASE_TAG"
-                UPSTREAM_RELEASE_ID="$DISCOVERED_UPSTREAM_RELEASE_ID"
-                UPSTREAM_RELEASE_PUBLISHED=true
-              else
-                echo "No published Sub2API release; falling back to the configured upstream ref."
-              fi
-            fi
-
-            if [[ -n "$UPSTREAM_RELEASE_TAG" && "$SCHEDULED_ROUND" == "true" ]]; then
-              retry_with_backoff 5 5 git fetch --depth=1 upstream "$UPSTREAM_REF"
-              MAIN_UPSTREAM_VERSION="$(git show FETCH_HEAD:backend/cmd/server/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
-              RELEASE_VERSION_FROM_TAG="${UPSTREAM_RELEASE_TAG#v}"
-
-              if ! git check-ref-format "refs/tags/${UPSTREAM_RELEASE_TAG}"; then
-                echo "Invalid Sub2API release tag: $UPSTREAM_RELEASE_TAG" >&2
-                exit 1
-              fi
-              retry_with_backoff 5 5 git fetch --depth=1 --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:${UPSTREAM_RELEASE_REF}"
-              TAG_UPSTREAM_VERSION="$(git show "$UPSTREAM_RELEASE_REF":backend/cmd/server/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
-
-              if [[ "$TAG_UPSTREAM_VERSION" != "$RELEASE_VERSION_FROM_TAG" ]]; then
-                if [[ ! "$TAG_UPSTREAM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                  echo "Published Sub2API release $UPSTREAM_RELEASE_TAG has invalid source VERSION: ${TAG_UPSTREAM_VERSION:-missing}" >&2
-                  exit 1
-                fi
-                if [[ ! "$MAIN_UPSTREAM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
-                   [[ "$(printf '%s\n%s\n' "$TAG_UPSTREAM_VERSION" "$MAIN_UPSTREAM_VERSION" | sort -V | tail -n 1)" != "$MAIN_UPSTREAM_VERSION" ]]; then
-                  echo "Published Sub2API release $UPSTREAM_RELEASE_TAG points to VERSION $TAG_UPSTREAM_VERSION, but upstream main is ${MAIN_UPSTREAM_VERSION:-invalid}; refusing a stale or downgraded source." >&2
-                  exit 1
-                fi
-                echo "Published Sub2API release $UPSTREAM_RELEASE_TAG contains VERSION $TAG_UPSTREAM_VERSION; using newer upstream main VERSION $MAIN_UPSTREAM_VERSION."
-                UPSTREAM_RELEASE_TAG="v${MAIN_UPSTREAM_VERSION}"
-                UPSTREAM_RELEASE_ID=""
-                UPSTREAM_RELEASE_PUBLISHED=false
-                UPSTREAM_SOURCE_FROM_MAIN=true
-              fi
-
-              if [[ "$MAIN_UPSTREAM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
-                 [[ "$RELEASE_VERSION_FROM_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
-                 [[ "$MAIN_UPSTREAM_VERSION" != "$RELEASE_VERSION_FROM_TAG" ]] &&
-                 [[ "$(printf '%s\n%s\n' "$RELEASE_VERSION_FROM_TAG" "$MAIN_UPSTREAM_VERSION" | sort -V | tail -n 1)" == "$MAIN_UPSTREAM_VERSION" ]]; then
-                echo "Using newer unreleased upstream main version $MAIN_UPSTREAM_VERSION instead of $UPSTREAM_RELEASE_TAG."
-                UPSTREAM_RELEASE_TAG="v${MAIN_UPSTREAM_VERSION}"
-                UPSTREAM_RELEASE_ID=""
-                UPSTREAM_RELEASE_PUBLISHED=false
-                UPSTREAM_SOURCE_FROM_MAIN=true
-              fi
-            fi
-
-            if [[ -n "$UPSTREAM_RELEASE_TAG" && "$UPSTREAM_SOURCE_FROM_MAIN" != "true" ]]; then
-              if ! git check-ref-format "refs/tags/${UPSTREAM_RELEASE_TAG}"; then
-                echo "Invalid Sub2API release tag: $UPSTREAM_RELEASE_TAG" >&2
-                exit 1
-              fi
-              git worktree add --detach "$GENERATED_DIR" "$UPSTREAM_RELEASE_REF"
-              echo "Using published Sub2API release: $UPSTREAM_RELEASE_TAG"
+            if [[ -n "$UPSTREAM_REF" ]]; then
+              UPSTREAM_RELEASE_TAG="$UPSTREAM_REF"
+              UPSTREAM_RELEASE_ID=""
+              UPSTREAM_RELEASE_PUBLISHED=false
+              echo "Using explicitly requested upstream release tag: $UPSTREAM_RELEASE_TAG"
+            elif [[ "$DISCOVERED_UPSTREAM_RELEASE" == "true" ]]; then
+              UPSTREAM_RELEASE_TAG="$DISCOVERED_UPSTREAM_RELEASE_TAG"
+              UPSTREAM_RELEASE_ID="$DISCOVERED_UPSTREAM_RELEASE_ID"
+              UPSTREAM_RELEASE_PUBLISHED=true
             else
-              retry_with_backoff 5 5 git fetch --depth=1 upstream "$UPSTREAM_REF"
-              git worktree add --detach "$GENERATED_DIR" FETCH_HEAD
+              echo "No published Sub2API release was found; refusing to build a branch snapshot." >&2
+              exit 1
             fi
+
+            if [[ ! "$UPSTREAM_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Invalid Sub2API release tag: $UPSTREAM_RELEASE_TAG" >&2
+              exit 1
+            fi
+            retry_with_backoff 5 5 git fetch --depth=1 --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:${UPSTREAM_RELEASE_REF}"
+            TAG_UPSTREAM_VERSION="$(git show "$UPSTREAM_RELEASE_REF":backend/cmd/server/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
+            RELEASE_VERSION_FROM_TAG="${UPSTREAM_RELEASE_TAG#v}"
+            if [[ "$TAG_UPSTREAM_VERSION" != "$RELEASE_VERSION_FROM_TAG" ]]; then
+              echo "Sub2API release $UPSTREAM_RELEASE_TAG contains VERSION ${TAG_UPSTREAM_VERSION:-missing}; refusing mismatched source." >&2
+              exit 1
+            fi
+            UPSTREAM_REF="$UPSTREAM_RELEASE_TAG"
+            git worktree add --detach "$GENERATED_DIR" "$UPSTREAM_RELEASE_REF"
+            echo "Using published Sub2API release: $UPSTREAM_RELEASE_TAG"
 
             UPSTREAM_SHA="$(git -C "$GENERATED_DIR" rev-parse HEAD)"
             RELEASE_SOURCE_SHA="$UPSTREAM_SHA"
@@ -314,7 +280,7 @@ jobs:
 
           UPSTREAM_RECOVERY_FROM_UNRELEASED=false
           if [[ "$RELEASE_KIND" == "upstream" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) && -n "$PREVIOUS_UPSTREAM_SHA" && "$PREVIOUS_UPSTREAM_SHA" != "$UPSTREAM_SHA" ]]; then
-            retry_with_backoff 5 5 git -C "$GENERATED_DIR" fetch --depth=1000 upstream "$UPSTREAM_REF"
+            retry_with_backoff 5 5 git -C "$GENERATED_DIR" fetch --depth=1000 upstream "refs/tags/${UPSTREAM_RELEASE_TAG}"
             if ! git -C "$GENERATED_DIR" cat-file -e "${PREVIOUS_UPSTREAM_SHA}^{commit}" 2>/dev/null; then
               echo "Unable to verify the previously published upstream commit: $PREVIOUS_UPSTREAM_SHA" >&2
               exit 1
@@ -556,7 +522,7 @@ jobs:
             exit 0
           fi
 
-          retry_with_backoff 3 5 git -C "$GENERATED_DIR" fetch --deepen=500 upstream "$UPSTREAM_REF" || true
+          retry_with_backoff 3 5 git -C "$GENERATED_DIR" fetch --deepen=500 upstream "refs/tags/${UPSTREAM_RELEASE_TAG}" || true
           if ! retry_with_backoff 3 5 git -C "$GENERATED_DIR" fetch --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:${UPSTREAM_RELEASE_REF}"; then
             echo "无法获取上游标签 $UPSTREAM_RELEASE_TAG，改用提交摘要。"
             write_fallback_notes
