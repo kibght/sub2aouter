@@ -133,8 +133,7 @@
             data-test="codex-agent-entry"
             class="canvas-agent-entry"
             :href="canvasEntryUrl"
-            target="_blank"
-            rel="noopener noreferrer"
+            @click.prevent="openStandalone"
           >
             <span class="min-w-0">
               <span class="block text-xs text-gray-500 dark:text-dark-300">{{ t('infiniteCanvas.fixedEntry') }}</span>
@@ -225,6 +224,7 @@ let agentCheckTimer: ReturnType<typeof setTimeout> | null = null
 let agentCopyTimer: ReturnType<typeof setTimeout> | null = null
 let connectTimer: ReturnType<typeof setTimeout> | null = null
 let themeObserver: MutationObserver | null = null
+let standaloneWindow: Window | null = null
 
 const selectedKey = computed(() =>
   apiKeys.value.find((key) => key.id === selectedKeyId.value) ?? null
@@ -253,8 +253,7 @@ function startConnectTimer() {
   }, CONNECT_TIMEOUT_MS)
 }
 
-function sendCanvasConfig() {
-  const target = canvasFrame.value?.contentWindow
+function sendCanvasConfig(target: Window | null = canvasFrame.value?.contentWindow ?? null) {
   const key = selectedKey.value
   if (!target || !key) return
 
@@ -271,15 +270,36 @@ function sendCanvasConfig() {
   )
 }
 
-function handleMessage(event: MessageEvent) {
-  const target = canvasFrame.value?.contentWindow ?? null
-  if (isTrustedCanvasReadyMessage(event, target, window.location.origin)) {
-    sendCanvasConfig()
+function sendStandaloneConfig() {
+  if (!standaloneWindow || standaloneWindow.closed) {
+    standaloneWindow = null
     return
   }
-  if (isTrustedCanvasConfiguredMessage(event, target, window.location.origin)) {
+  sendCanvasConfig(standaloneWindow)
+}
+
+function handleMessage(event: MessageEvent) {
+  const iframeTarget = canvasFrame.value?.contentWindow ?? null
+  const isIframeMessage = isTrustedCanvasReadyMessage(event, iframeTarget, window.location.origin)
+    || isTrustedCanvasConfiguredMessage(event, iframeTarget, window.location.origin)
+  const isStandaloneMessage = standaloneWindow !== null
+    && (isTrustedCanvasReadyMessage(event, standaloneWindow, window.location.origin)
+      || isTrustedCanvasConfiguredMessage(event, standaloneWindow, window.location.origin))
+
+  if (isTrustedCanvasReadyMessage(event, iframeTarget, window.location.origin)) {
+    sendCanvasConfig(iframeTarget)
+    return
+  }
+  if (isTrustedCanvasReadyMessage(event, standaloneWindow, window.location.origin)) {
+    sendCanvasConfig(standaloneWindow)
+    return
+  }
+  if (isIframeMessage && isTrustedCanvasConfiguredMessage(event, iframeTarget, window.location.origin)) {
     clearConnectTimer()
     canvasStatus.value = 'ready'
+  }
+  if (isStandaloneMessage && isTrustedCanvasConfiguredMessage(event, standaloneWindow, window.location.origin)) {
+    standaloneWindow = standaloneWindow && !standaloneWindow.closed ? standaloneWindow : null
   }
 }
 
@@ -297,7 +317,10 @@ function reloadCanvas() {
 }
 
 function openStandalone() {
-  window.open(canvasUrl, '_blank', 'noopener,noreferrer')
+  standaloneWindow = window.open(canvasEntryUrl, 'sub2-infinite-canvas')
+  if (standaloneWindow && !standaloneWindow.closed) {
+    sendStandaloneConfig()
+  }
 }
 
 async function checkAgent() {
@@ -353,6 +376,7 @@ function handleKeyChange() {
   if (canvasStatus.value === 'ready') {
     sendCanvasConfig()
   }
+  sendStandaloneConfig()
 }
 
 async function loadApiKeys() {
@@ -388,6 +412,7 @@ onMounted(() => {
   window.addEventListener('message', handleMessage)
   themeObserver = new MutationObserver(() => {
     if (canvasStatus.value === 'ready') sendCanvasConfig()
+    sendStandaloneConfig()
   })
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
   void loadApiKeys()
@@ -398,6 +423,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('message', handleMessage)
   themeObserver?.disconnect()
   clearConnectTimer()
+  standaloneWindow = null
   agentCheckController?.abort()
   if (agentCheckTimer) clearTimeout(agentCheckTimer)
   if (agentCopyTimer) clearTimeout(agentCopyTimer)
