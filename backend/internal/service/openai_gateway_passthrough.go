@@ -926,6 +926,28 @@ func openAIStreamFailedEventSemanticStatus(payload []byte, message string) int {
 	}
 }
 
+// openAIStreamFailureStatus maps a response.failed payload to the status that
+// the HTTP bridge should use when it has to fail over before writing output.
+// response.failed is carried on an HTTP 200 SSE stream, so only structured
+// retry/account states are safe to preserve; ordinary failures keep the
+// existing gateway 502 behavior.
+func openAIStreamFailureStatus(payload []byte, message string) int {
+	if len(bytes.TrimSpace(payload)) == 0 || !gjson.ValidBytes(payload) {
+		return http.StatusBadGateway
+	}
+
+	semanticStatus := openAIStreamFailedEventSemanticStatus(payload, message)
+	switch semanticStatus {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, 529:
+		return semanticStatus
+	case http.StatusServiceUnavailable:
+		if isOpenAIUpstreamCapacityShedEvent(payload) {
+			return semanticStatus
+		}
+	}
+	return http.StatusBadGateway
+}
+
 func openAIStreamFailedEventPassthroughBody(payload []byte, failedMessage string) []byte {
 	if len(payload) == 0 || !gjson.ValidBytes(payload) {
 		return payload
