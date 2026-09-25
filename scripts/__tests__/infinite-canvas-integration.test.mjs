@@ -46,6 +46,8 @@ test('infinite canvas adapter applies cleanly and remains idempotent', async () 
       'web/src/layouts/user-layout.tsx',
       'web/src/components/agent/agent-chat.tsx',
       'web/src/pages/home/index.tsx',
+      'web/src/services/api/image.ts',
+      'web/src/services/image-storage.ts',
       'canvas-agent/src/agent/codex-history.test.ts',
     ]) {
       const target = path.join(root, relative)
@@ -64,6 +66,8 @@ test('infinite canvas adapter applies cleanly and remains idempotent', async () 
     const home = await readFile(path.join(root, 'web/src/pages/home/index.tsx'), 'utf8')
     const historyTest = await readFile(path.join(root, 'canvas-agent/src/agent/codex-history.test.ts'), 'utf8')
     const bridge = await readFile(path.join(root, 'web/src/lib/sub2-bridge.ts'), 'utf8')
+    const imageApi = await readFile(path.join(root, 'web/src/services/api/image.ts'), 'utf8')
+    const imageStorage = await readFile(path.join(root, 'web/src/services/image-storage.ts'), 'utf8')
     const sub2CanvasView = await readFile('scripts/infinite-canvas-integration/sub2-files/frontend/src/views/user/InfiniteCanvasView.vue', 'utf8')
     const childBridge = await readFile('scripts/infinite-canvas-integration/canvas-files/web/src/lib/sub2-bridge.ts', 'utf8')
 
@@ -78,6 +82,19 @@ test('infinite canvas adapter applies cleanly and remains idempotent', async () 
     assert.doesNotMatch(historyTest, /\uFFFD/)
     assert.match(historyTest, /\\uFFFD\\uFFFD/)
     assert.match(bridge, /event\.origin !== window\.location\.origin/)
+    assert.match(
+      bridge,
+      /state\.config\.channels\.map\(\(channel\) => \(\{ \.\.\.channel, baseUrl: gatewayBaseUrl, apiKey: gatewayApiKey, apiFormat: "openai"(?: as const)? \}\)\)/
+    )
+    assert.match(bridge, /state\.updateConfig\("apiFormat", "openai"\)/)
+    assert.match(imageStorage, /const storedUrl = image\.storageKey \? await resolveImageUrl\(image\.storageKey, ""\) : "";/)
+    assert.match(imageStorage, /apiErrors\.referenceImageReadFailed/)
+    assert.match(imageApi, /const imageField = files\.length > 1 \? "image\[\]" : "image";/)
+    assert.match(
+      bridge,
+      /state\.config\.channels\.map\(\(channel\) => \(\{ \.\.\.channel, baseUrl: gatewayBaseUrl, apiKey: gatewayApiKey, apiFormat: "openai"(?: as const)? \}\)\)/
+    )
+    assert.match(bridge, /state\.updateConfig\("apiFormat", "openai"\)/)
     assert.match(sub2CanvasView, /buildCanvasEntryUrl\(window\.location\.origin\)/)
     assert.match(sub2CanvasView, /window\.open\(canvasUrl, '_blank', 'noopener,noreferrer'\)/)
     assert.doesNotMatch(sub2CanvasView, /window\.open\(canvasEntryUrl, '_blank'/)
