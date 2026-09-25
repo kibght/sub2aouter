@@ -623,11 +623,25 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 					errMessage,
 				)
 			}
-			// error 事件后连接不再可复用，避免回池后污染下一请求。
-			lease.MarkBroken()
-			if !wroteDownstream && canFallback {
-				return nil, wrapOpenAIWSFallback(fallbackReason, errors.New(errMsg))
-			}
+				// error 事件后连接不再可复用，避免回池后污染下一请求。
+				lease.MarkBroken()
+				if !wroteDownstream && isOpenAIRequestScopedCapacityShed(errMsgRaw, message) {
+					return nil, &UpstreamFailoverError{
+						StatusCode:             http.StatusServiceUnavailable,
+						ResponseBody:           append([]byte(nil), message...),
+						ResponseHeaders:        cloneHeader(lease.HandshakeHeaders()),
+						RetryableOnSameAccount: true,
+						RequestScopedTransient: true,
+						ClientStatusCode:       http.StatusServiceUnavailable,
+						ClientMessage:          openAICapacityShedClientMessage(errMsg, message),
+					}
+				}
+				if !wroteDownstream && canFallback {
+					return nil, wrapOpenAIWSFallback(fallbackReason, errors.New(errMsg))
+				}
+				if rewritten, changed := sanitizeOpenAICapacityShedErrorCodeForClient(message); changed {
+					message = rewritten
+				}
 			statusCode := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
 			setOpsUpstreamError(c, statusCode, errMsg, "")
 			if reqStream && !clientDisconnected {

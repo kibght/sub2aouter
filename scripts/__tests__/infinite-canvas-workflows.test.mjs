@@ -142,7 +142,7 @@ test('the Canvas workflow is the single hourly upstream coordinator', async () =
   assert.match(canvasWorkflow, /gh workflow run upstream-theme-sync\.yml[\s\S]*repository_release=false/)
   assert.doesNotMatch(canvasWorkflow, /repository_release=true/)
   assert.match(sub2Workflow, /workflow_dispatch:/)
-  assert.match(sub2Workflow, /github\.event_name != 'push' \|\| !contains\(github\.event\.head_commit\.message, 'Infinite Canvas'\)/)
+  assert.doesNotMatch(sub2Workflow, /\n  push:/)
 })
 
 test('Infinite Canvas merge waits for reusable full CI at the update commit', async () => {

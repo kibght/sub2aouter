@@ -24,6 +24,18 @@ async function replaceOnce(file, marker, replacement, sentinel) {
   return true
 }
 
+function withLineEndings(content, value) {
+  return content.includes('\r\n') ? value.replaceAll('\n', '\r\n') : value
+}
+
+function replaceText(content, marker, replacement, file) {
+  const effectiveMarker = withLineEndings(content, marker)
+  if (!content.includes(effectiveMarker)) {
+    throw new Error(`Infinite Canvas adapter marker not found in ${file}: ${marker.slice(0, 100)}`)
+  }
+  return content.replace(effectiveMarker, withLineEndings(content, replacement))
+}
+
 export async function patchCanvasGenerationHelpers(file) {
   let content
   try {
@@ -49,6 +61,64 @@ export async function patchCanvasImageStorage(file) {
   }
 
   let changed = false
+  if (!content.includes('const memoryBlobs = new Map<string, Blob>();')) {
+    content = replaceText(
+      content,
+      'const objectUrls = new Map<string, string>();\n',
+      'const objectUrls = new Map<string, string>();\nconst memoryBlobs = new Map<string, Blob>();\n',
+      file,
+    )
+    changed = true
+  }
+
+  if (!content.includes('export function isImageFile(file: Blob & { name?: string })')) {
+    content = replaceText(
+      content,
+      'type ImageReadOptions = { signal?: AbortSignal };\n',
+      [
+        'type ImageReadOptions = { signal?: AbortSignal };',
+        '',
+        'const IMAGE_FILE_EXTENSIONS = /\\.(?:avif|bmp|gif|heic|heif|jpe?g|png|svg|webp)$/i;',
+        '',
+        'export function isImageFile(file: Blob & { name?: string }) {',
+        '    const type = file.type?.toLowerCase() || "";',
+        '    const name = typeof file.name === "string" ? file.name : "";',
+        '    return type.startsWith("image/") || IMAGE_FILE_EXTENSIONS.test(name);',
+        '}',
+        '',
+        'function normalizeImageBlob(blob: Blob) {',
+        '    if (blob.type?.toLowerCase().startsWith("image/")) return blob;',
+        '    const name = "name" in blob && typeof (blob as Blob & { name?: unknown }).name === "string" ? String((blob as Blob & { name?: unknown }).name) : "";',
+        '    const mimeType = name.match(/\\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|webp)$/i)?.[1];',
+        '    const normalizedType = mimeType ? `image/${mimeType.toLowerCase().replace("jpg", "jpeg")}` : "image/png";',
+        '    return new Blob([blob], { type: normalizedType });',
+        '}',
+        '',
+      ].join('\n'),
+      file,
+    )
+    changed = true
+  }
+
+  if (!content.includes('return storeImage(normalizeImageBlob(input), options);')) {
+    content = replaceText(
+      content,
+      '    if (typeof input !== "string") return storeImage(input, options);\n',
+      '    if (typeof input !== "string") return storeImage(normalizeImageBlob(input), options);\n',
+      file,
+    )
+    changed = true
+  }
+
+  if (!content.includes('return storeImage(normalizeImageBlob(blob), options);')) {
+    content = replaceText(
+      content,
+      '    return storeImage(blob, options);\n',
+      '    return storeImage(normalizeImageBlob(blob), options);\n',
+      file,
+    )
+    changed = true
+  }
   const storageMarker = '    const url = image.dataUrl || (await resolveImageUrl(image.storageKey, image.url || ""));\n'
   const storageReplacement = [
     '    const storedUrl = image.storageKey ? await resolveImageUrl(image.storageKey, "") : "";',
@@ -60,6 +130,105 @@ export async function patchCanvasImageStorage(file) {
     if (!content.includes(effectiveMarker)) throw new Error(`Infinite Canvas image storage marker not found in ${file}`)
     const effectiveReplacement = content.includes('\r\n') ? storageReplacement.replaceAll('\n', '\r\n') : storageReplacement
     content = content.replace(effectiveMarker, effectiveReplacement)
+    changed = true
+  }
+
+  if (!content.includes('memoryBlobs.set(storageKey, blob);')) {
+    content = replaceText(
+      content,
+      '        await store.setItem(storageKey, blob);\n',
+      [
+        '        try {',
+        '            await store.setItem(storageKey, blob);',
+        '        } catch {',
+        '            // Private browsing and quota-restricted contexts can reject IndexedDB.',
+        '            memoryBlobs.set(storageKey, blob);',
+        '        }',
+      ].join('\n') + '\n',
+      file,
+    )
+    changed = true
+  }
+
+  if (!content.includes('memoryBlobs.delete(storageKey);')) {
+    content = replaceText(
+      content,
+      '        URL.revokeObjectURL(url);\n        await store.removeItem(storageKey).catch(() => undefined);\n',
+      '        URL.revokeObjectURL(url);\n        memoryBlobs.delete(storageKey);\n        await store.removeItem(storageKey).catch(() => undefined);\n',
+      file,
+    )
+    changed = true
+  }
+
+  if (!content.includes('blob = blob || memoryBlobs.get(storageKey) || null;')) {
+    content = replaceText(
+      content,
+      '    const blob = await store.getItem<Blob>(storageKey);\n',
+      [
+        '    let blob: Blob | null = null;',
+        '    try {',
+        '        blob = await store.getItem<Blob>(storageKey);',
+        '    } catch {',
+        '        blob = null;',
+        '    }',
+        '    blob = blob || memoryBlobs.get(storageKey) || null;',
+      ].join('\n') + '\n',
+      file,
+    )
+    changed = true
+  }
+
+  const getImageBlobStart = content.indexOf('export async function getImageBlob(storageKey: string)')
+  const getImageBlobEnd = content.indexOf('export function previewUrlFor', getImageBlobStart)
+  const getImageBlobSource = getImageBlobStart >= 0 && getImageBlobEnd > getImageBlobStart ? content.slice(getImageBlobStart, getImageBlobEnd) : ''
+  if (!getImageBlobSource.includes('return blob || memoryBlobs.get(storageKey) || null;')) {
+    content = replaceText(
+      content,
+      'export async function getImageBlob(storageKey: string) {\n    return store.getItem<Blob>(storageKey);\n}\n',
+      [
+        'export async function getImageBlob(storageKey: string) {',
+        '    let blob: Blob | null = null;',
+        '    try {',
+        '        blob = await store.getItem<Blob>(storageKey);',
+        '    } catch {',
+        '        blob = null;',
+        '    }',
+        '    return blob || memoryBlobs.get(storageKey) || null;',
+        '}',
+        '',
+      ].join('\n'),
+      file,
+    )
+    changed = true
+  }
+
+  if (!content.includes('memoryBlobs.delete(key);')) {
+    content = replaceText(
+      content,
+      '            await store.removeItem(key);\n',
+      '            memoryBlobs.delete(key);\n            await store.removeItem(key).catch(() => undefined);\n',
+      file,
+    )
+    changed = true
+  }
+
+  const setImageBlobStart = content.indexOf('export async function setImageBlob(storageKey: string, blob: Blob)')
+  const setImageBlobEnd = content.indexOf('export async function imageToDataUrl', setImageBlobStart)
+  const setImageBlobSource = setImageBlobStart >= 0 && setImageBlobEnd > setImageBlobStart ? content.slice(setImageBlobStart, setImageBlobEnd) : ''
+  if (!setImageBlobSource.includes('memoryBlobs.set(storageKey, blob);')) {
+    content = replaceText(
+      content,
+      'export async function setImageBlob(storageKey: string, blob: Blob) {\n    await store.setItem(storageKey, blob);\n',
+      [
+        'export async function setImageBlob(storageKey: string, blob: Blob) {',
+        '    try {',
+        '        await store.setItem(storageKey, blob);',
+        '    } catch {',
+        '        memoryBlobs.set(storageKey, blob);',
+        '    }',
+      ].join('\n') + '\n',
+      file,
+    )
     changed = true
   }
 
@@ -140,6 +309,74 @@ export async function patchCanvasImageApi(file) {
       content = content.replace(effectiveMarker, effectiveReplacement)
       changed = true
     }
+  }
+
+  if (changed) await writeFile(file, content, 'utf8')
+  return changed
+}
+
+export async function patchCanvasImageWorkbench(file) {
+  let content
+  try {
+    content = await readFile(file, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
+  }
+
+  let changed = false
+  if (!content.includes('isImageFile } from "@/services/image-storage"')) {
+    const importPattern = /(uploadImage)(\s*}\s*from\s+"@\/services\/image-storage";)/
+    if (!importPattern.test(content)) throw new Error(`Infinite Canvas image workbench import marker not found in ${file}`)
+    content = content.replace(importPattern, '$1, isImageFile$2')
+    changed = true
+  }
+
+  const imageFilterMarker = 'const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith("image/"));'
+  if (content.includes(imageFilterMarker)) {
+    content = replaceText(content, imageFilterMarker, 'const imageFiles = Array.from(files || []).filter((file) => isImageFile(file));', file)
+    changed = true
+  }
+
+  const videoUnsupportedMarker = 'const unsupported = selectedFiles.filter((file) => !file.type.startsWith("image/"));'
+  if (content.includes(videoUnsupportedMarker)) {
+    content = replaceText(content, videoUnsupportedMarker, 'const unsupported = selectedFiles.filter((file) => !isImageFile(file));', file)
+    changed = true
+  }
+  const videoFilterMarker = 'const imageFiles = selectedFiles.filter((file) => file.type.startsWith("image/")).slice(0, 7 - references.length);'
+  if (content.includes(videoFilterMarker)) {
+    content = replaceText(content, videoFilterMarker, 'const imageFiles = selectedFiles.filter((file) => isImageFile(file)).slice(0, 7 - references.length);', file)
+    changed = true
+  }
+
+  if (!content.includes('message.error(t("common.imageReadFailed"));')) {
+    const opening = '    const addReferences = async (files?: FileList | null) => {\n'
+    const effectiveOpening = withLineEndings(content, opening)
+    const openingIndex = content.indexOf(effectiveOpening)
+    if (openingIndex < 0) throw new Error(`Infinite Canvas image workbench opening marker not found in ${file}`)
+    const isVideoWorkbench = file.replaceAll('\\', '/').endsWith('/video/index.tsx') || content.includes('const selectedFiles = Array.from(files || []);')
+    const nextFunction = isVideoWorkbench
+      ? '    const handleReferenceDragEnter = '
+      : '    const addReferencesFromClipboard = '
+    const nextFunctionIndex = content.indexOf(nextFunction, openingIndex + effectiveOpening.length)
+    if (nextFunctionIndex < 0) throw new Error(`Infinite Canvas image workbench next function marker not found in ${file}`)
+    if (!content.slice(openingIndex, nextFunctionIndex).includes('        try {\n')) {
+      content = replaceText(content, opening, `${opening}        try {\n`, file)
+      changed = true
+    }
+
+    const closingMarker = `    };\n\n${nextFunction}`
+    if (!content.includes(withLineEndings(content, closingMarker))) throw new Error(`Infinite Canvas image workbench closing marker not found in ${file}`)
+    const closingReplacement = [
+      '        } catch {',
+      '            message.error(t("common.imageReadFailed"));',
+      '        }',
+      '    };',
+      '',
+      nextFunction,
+    ].join('\n')
+    content = replaceText(content, closingMarker, closingReplacement, file)
+    changed = true
   }
 
   if (changed) await writeFile(file, content, 'utf8')
@@ -241,12 +478,16 @@ export async function applyInfiniteCanvasPatches({ root }) {
   const layoutPath = path.join(resolvedRoot, 'web/src/layouts/user-layout.tsx')
   const agentChatPath = path.join(resolvedRoot, 'web/src/components/agent/agent-chat.tsx')
   const homePath = path.join(resolvedRoot, 'web/src/pages/home/index.tsx')
+  const imagePagePath = path.join(resolvedRoot, 'web/src/pages/image/index.tsx')
+  const videoPagePath = path.join(resolvedRoot, 'web/src/pages/video/index.tsx')
   const historyTestPath = path.join(resolvedRoot, 'canvas-agent/src/agent/codex-history.test.ts')
 
   await copyTemplate(resolvedRoot, 'web/src/lib/sub2-bridge.ts')
   await patchCanvasGenerationHelpers(path.join(resolvedRoot, 'web/src/lib/canvas/canvas-generation-helpers.ts'))
   await patchCanvasImageStorage(path.join(resolvedRoot, 'web/src/services/image-storage.ts'))
   await patchCanvasImageApi(path.join(resolvedRoot, 'web/src/services/api/image.ts'))
+  await patchCanvasImageWorkbench(imagePagePath)
+  await patchCanvasImageWorkbench(videoPagePath)
 
   await replaceOnce(
     indexPath,

@@ -180,4 +180,38 @@ describe('InfiniteCanvasView', () => {
     await nextTick()
     expect(wrapper.text()).toContain('infiniteCanvas.statusReady')
   })
+
+  it('uses the same-origin API prefix when the public API base URL is empty', async () => {
+    publicSettings.api_base_url = ''
+    const wrapper = mount(InfiniteCanvasView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          RouterLink: { template: '<a><slot /></a>' },
+          Icon: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    const iframe = wrapper.get('iframe')
+    const targetWindow = { postMessage: vi.fn() } as unknown as Window
+    Object.defineProperty(iframe.element, 'contentWindow', { value: targetWindow })
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: window.location.origin,
+        source: targetWindow,
+        data: { type: CANVAS_READY_MESSAGE, version: 1 },
+      })
+    )
+
+    expect(targetWindow.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: CANVAS_INIT_MESSAGE,
+        payload: expect.objectContaining({ baseUrl: '/api/v1' }),
+      }),
+      window.location.origin
+    )
+  })
 })

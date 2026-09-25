@@ -803,8 +803,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		replayCollector := &openAIWSToolCallReplayCollector{}
 		firstEventType := ""
 		lastEventType := ""
-		needModelReplace := false
-		clientDisconnected := false
+			needModelReplace := false
+			clientDisconnected := false
+			pendingClientMessages := make([][]byte, 0, 4)
+			pendingClientMessageBytes := int64(0)
 		mappedModel := ""
 		var mappedModelBytes []byte
 		if originalModel != "" {
@@ -904,15 +906,31 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						false,
 					)
 				}
-				if !wroteDownstream && isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw) {
+					if !wroteDownstream && isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw) {
 					lease.MarkBroken()
 					return nil, &UpstreamFailoverError{
 						StatusCode:      http.StatusTooManyRequests,
 						ResponseBody:    append([]byte(nil), upstreamMessage...),
 						ResponseHeaders: cloneHeader(lease.HandshakeHeaders()),
+						}
+					}
+					if !wroteDownstream && isOpenAIRequestScopedCapacityShed(errMsgRaw, upstreamMessage) {
+						lease.MarkBroken()
+						message := strings.TrimSpace(errMsgRaw)
+						if message == "" {
+							message = "OpenAI upstream capacity is temporarily unavailable"
+						}
+						return nil, &UpstreamFailoverError{
+							StatusCode:             http.StatusServiceUnavailable,
+							ResponseBody:           append([]byte(nil), upstreamMessage...),
+							ResponseHeaders:        cloneHeader(lease.HandshakeHeaders()),
+							RetryableOnSameAccount: true,
+							RequestScopedTransient: true,
+							ClientStatusCode:       http.StatusServiceUnavailable,
+							ClientMessage:          openAICapacityShedClientMessage(message, upstreamMessage),
+						}
 					}
 				}
-			}
 			isTokenEvent := isOpenAIWSTokenEvent(eventType)
 			if isTokenEvent {
 				tokenEventCount++
@@ -943,17 +961,46 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				}
 			}
 
+			clientMessage := upstreamMessage
+			if eventType == "error" || eventType == "response.failed" {
+				if rewritten, changed := sanitizeOpenAICapacityShedErrorCodeForClient(clientMessage); changed {
+					clientMessage = rewritten
+				}
+			}
+			startsClientOutput := openAIStreamDataStartsClientOutput(string(clientMessage), eventType)
 			if !clientDisconnected {
 				if needModelReplace && len(mappedModelBytes) > 0 && openAIWSEventMayContainModel(eventType) && bytes.Contains(upstreamMessage, mappedModelBytes) {
-					upstreamMessage = replaceOpenAIWSMessageModel(upstreamMessage, mappedModel, originalModel)
+					clientMessage = replaceOpenAIWSMessageModel(clientMessage, mappedModel, originalModel)
 				}
-				if openAIWSEventMayContainToolCalls(eventType) && openAIWSMessageLikelyContainsToolCalls(upstreamMessage) {
-					if corrected, changed := s.toolCorrector.CorrectToolCallsInSSEBytes(upstreamMessage); changed {
-						upstreamMessage = corrected
+				if openAIWSEventMayContainToolCalls(eventType) && openAIWSMessageLikelyContainsToolCalls(clientMessage) {
+					if corrected, changed := s.toolCorrector.CorrectToolCallsInSSEBytes(clientMessage); changed {
+						clientMessage = corrected
 					}
 				}
-				replayCollector.AddEvent(eventType, upstreamMessage)
-				if err := writeClientMessage(upstreamMessage); err != nil {
+				replayCollector.AddEvent(eventType, clientMessage)
+				stageBeforeSemanticOutput := !wroteDownstream
+				commitStagedMessages := !stageBeforeSemanticOutput || startsClientOutput || isTerminalEvent || eventType == "error"
+				if stageBeforeSemanticOutput && !commitStagedMessages {
+					if pendingClientMessageBytes+int64(len(clientMessage)) > openAIFirstOutputStageMaxBytes {
+						lease.MarkBroken()
+						return nil, wrapOpenAIWSFallback("first_output_staging_limit", errors.New("OpenAI WS first-output staging limit exceeded"))
+					}
+					pendingClientMessages = append(pendingClientMessages, append([]byte(nil), clientMessage...))
+					pendingClientMessageBytes += int64(len(clientMessage))
+					continue
+				}
+				messages := append(pendingClientMessages, clientMessage)
+				pendingClientMessages = nil
+				pendingClientMessageBytes = 0
+				writeErr := error(nil)
+				for _, message := range messages {
+					if err := writeClientMessage(message); err != nil {
+						writeErr = err
+						break
+					}
+				}
+				if writeErr != nil {
+					err := writeErr
 					if isOpenAIWSClientDisconnectError(err) {
 						clientDisconnected = true
 						closeStatus, closeReason := summarizeOpenAIWSReadCloseError(err)
@@ -965,8 +1012,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 							closeStatus,
 							truncateOpenAIWSLogValue(closeReason, openAIWSHeaderValueMaxLen),
 						)
-					} else {
-						return nil, wrapOpenAIWSIngressTurnError(
+				} else {
+					return nil, wrapOpenAIWSIngressTurnError(
 							"write_client",
 							fmt.Errorf("write client websocket event: %w", err),
 							wroteDownstream,

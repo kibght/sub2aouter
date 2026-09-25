@@ -215,6 +215,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	failedMessage := ""
 	clientOutputStarted := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
+	pendingSSEEventType := ""
+	var pendingCapacityPayload []byte
+	pendingCapacityMessage := ""
 	var streamEarlyErr error
 	eventInProgress := false
 	eventStartsClientOutput := false
@@ -401,11 +404,23 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		if streamEarlyErr != nil {
 			return
 		}
+		if line == "" {
+			// An SSE event label is scoped to the frame ending at this blank line.
+			pendingSSEEventType = ""
+		}
+		if eventType, ok := extractOpenAISSEEventLine(line); ok {
+			pendingSSEEventType = eventType
+		}
 		// Extract data from SSE line (supports both "data: " and "data:" formats)
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			dataBytes := []byte(data)
 			eventTypeRaw := gjson.GetBytes(dataBytes, "type").String()
 			eventType := strings.TrimSpace(eventTypeRaw)
+			if eventType == "" {
+				eventType = pendingSSEEventType
+				eventTypeRaw = eventType
+			}
+			pendingSSEEventType = ""
 			// 初始上游 data 的 type 只解析一次：原始值保持终止事件的精确匹配，规范化值供后续分支复用。
 			if openAIStreamEventIsTerminalWithType(data, eventTypeRaw) {
 				sawTerminalEvent = true
@@ -416,6 +431,8 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			forceFlushFailedEvent := false
 			if eventType == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
+				pendingCapacityPayload = nil
+				pendingCapacityMessage = ""
 				// response.failed 自带上游已消耗的 usage（input token 通常已扣）；必须先解析
 				// 再打 cyber 标记，否则 mark 记到的是解析前的 0，导致流式 cyber 按 0 token 计费
 				// 而漏记真实用量。对齐 WS V2 / Chat 流式路径（均先解析 usage 再 Mark）。
@@ -456,6 +473,13 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				forceFlushFailedEvent = true
 				sawFailedEvent = true
 			}
+			if eventType == "error" && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+				message := extractOpenAISSEErrorMessage(dataBytes)
+				if openAIStreamFailedEventShouldFailover(dataBytes, message) {
+					pendingCapacityPayload = append(pendingCapacityPayload[:0], dataBytes...)
+					pendingCapacityMessage = message
+				}
+			}
 			if normalizedData, normalized := normalizeCompletedImageGenerationStatus(dataBytes); normalized {
 				dataBytes = normalizedData
 				data = string(normalizedData)
@@ -484,6 +508,12 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				data = string(normalizedData)
 				line = "data: " + data
 				eventType = strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String())
+			}
+			if strings.TrimSpace(data) == "[DONE]" && len(pendingCapacityPayload) > 0 && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+				streamEarlyErr = s.newOpenAIStreamFailoverError(
+					c, account, false, upstreamRequestID, pendingCapacityPayload, pendingCapacityMessage,
+				)
+				return
 			}
 			restoredData, restoreErr := restoreGrokResponsesClientToolPayload(c, dataBytes)
 			if restoreErr != nil {
@@ -1310,10 +1340,22 @@ func extractOpenAISSEErrorMessage(payload []byte) string {
 }
 
 func sanitizeOpenAIResponseFailedEventForClient(payload []byte, eventType string, clientOutputStarted bool) ([]byte, bool) {
-	if eventType != "response.failed" || len(payload) == 0 || !gjson.ValidBytes(payload) {
+	eventType = strings.TrimSpace(eventType)
+	isFailedEvent := eventType == "response.failed"
+	if (!isFailedEvent && eventType != "error") || len(payload) == 0 || !gjson.ValidBytes(payload) {
 		return payload, false
 	}
 	updated := payload
+	// Codex treats server_is_overloaded/slow_down as terminal. When the event
+	// must be sent downstream, rewrite only the client-facing code so its
+	// built-in retry path can run. Keep the original payload for accounting and
+	// health decisions.
+	if rewritten, changed := sanitizeOpenAICapacityShedErrorCodeForClient(updated); changed {
+		updated = rewritten
+	}
+	if !isFailedEvent {
+		return updated, !bytes.Equal(updated, payload)
+	}
 	if clientOutputStarted && isOpenAIContextWindowError(extractOpenAISSEErrorMessage(payload), payload) {
 		errorPath := ""
 		switch {

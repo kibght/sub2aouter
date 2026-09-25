@@ -282,6 +282,14 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	sawDone := false
 	wroteDownstream := false
 	clientDisconnected := false
+	clientSemanticOutputStarted := false
+	pendingClientMessages := make([][]byte, 0, 4)
+	pendingClientMessageBytes := int64(0)
+	pendingSSEEventType := ""
+	officialOpenAIResponses := account != nil && account.Platform == PlatformOpenAI
+	bareErrorPending := false
+	var bareErrorPayload []byte
+	bareErrorMessage := ""
 	mappedModel := ""
 	needModelReplace := false
 	var mappedModelBytes []byte
@@ -334,9 +342,37 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	scanBuf := getSSEScannerBuf64K()
 	scanner.Buffer(scanBuf[:0], maxLineSize)
 	defer putSSEScannerBuf64K(scanBuf)
+	flushPendingClientMessages := func() error {
+		for _, message := range pendingClientMessages {
+			if err := writeClientMessage(message); err != nil {
+				return err
+			}
+			wroteDownstream = true
+		}
+		pendingClientMessages = pendingClientMessages[:0]
+		pendingClientMessageBytes = 0
+		return nil
+	}
+	finalizeBareError := func() error {
+		if !bareErrorPending {
+			return nil
+		}
+		if clientDisconnected {
+			return nil
+		}
+		failure := s.newOpenAIStreamFailoverError(c, account, true, resp.Header.Get("x-request-id"), bareErrorPayload, bareErrorMessage)
+		bareErrorPending = false
+		return failure
+	}
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		if line == "" {
+			pendingSSEEventType = ""
+		}
+		if eventLabel, ok := extractOpenAISSEEventLine(line); ok {
+			pendingSSEEventType = eventLabel
+		}
 		data, ok := extractOpenAISSEDataLine(line)
 		if !ok {
 			continue
@@ -347,6 +383,9 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		}
 		if trimmedData == "[DONE]" {
 			sawDone = true
+			if bareErrorPending {
+				return resultWithUsage(), finalizeBareError()
+			}
 			continue
 		}
 
@@ -355,6 +394,10 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			upstreamMessage = normalized
 		}
 		eventType, eventResponseID, _ := parseOpenAIWSEventEnvelope(upstreamMessage)
+		if eventType == "" {
+			eventType = strings.TrimSpace(pendingSSEEventType)
+		}
+		pendingSSEEventType = ""
 		if responseID == "" && eventResponseID != "" {
 			responseID = eventResponseID
 		}
@@ -388,15 +431,28 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		replayCollector.AddEvent(eventType, upstreamMessage)
 
 		var upstreamEventErr error
-		if eventType == "error" {
-			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(upstreamMessage)
-			errMessage := strings.TrimSpace(errMsgRaw)
+		if officialOpenAIResponses && bareErrorPending && (eventType == "response.completed" || eventType == "response.done") {
+			// A few upstreams emit a recoverable bare error before the authoritative
+			// success event. Do not fail over or expose the superseded error.
+			bareErrorPending = false
+			bareErrorPayload = nil
+			bareErrorMessage = ""
+		}
+		suppressClientMessage := officialOpenAIResponses && bareErrorPending && eventType != "response.failed"
+		if eventType == "error" || eventType == "response.failed" {
+			errMessage := extractOpenAISSEErrorMessage(upstreamMessage)
 			if errMessage == "" {
 				errMessage = "upstream error event"
 			}
-			statusCode := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
-			shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(statusCode, errMessage, upstreamMessage)
-			if account.Platform == PlatformGrok {
+			statusCode := openAIStreamFailureStatus(upstreamMessage, errMessage)
+			shouldFailover := openAIStreamFailedEventShouldFailover(upstreamMessage, errMessage)
+			if eventType == "error" {
+				errCodeRaw, errTypeRaw, _ := parseOpenAIWSErrorEventFields(upstreamMessage)
+				statusCode = openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
+				shouldFailover = s.shouldFailoverOpenAIUpstreamResponse(statusCode, errMessage, upstreamMessage)
+			}
+			requestScopedCapacity := isOpenAIRequestScopedCapacityShed(errMessage, upstreamMessage)
+			if account.Platform == PlatformGrok && eventType == "error" {
 				// SSE error events do not carry an HTTP status. The local status
 				// mapper therefore defaults unknown xAI codes (for example
 				// new_sensitive) to 502; classify the body as a request-scoped
@@ -407,7 +463,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 					shouldFailover = s.shouldFailoverGrokUpstreamError(statusCode, upstreamMessage)
 					s.handleGrokAccountUpstreamError(ctx, account, statusCode, resp.Header, upstreamMessage)
 				}
-			} else if shouldFailover {
+			} else if eventType == "error" && shouldFailover && !requestScopedCapacity {
 				accountStatus := statusCode
 				if transientStatus := openAIWSPayloadTransientStatus(upstreamMessage); transientStatus != 0 {
 					accountStatus = transientStatus
@@ -416,13 +472,65 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				s.handleOpenAIAccountUpstreamError(ctx, account, accountStatus, resp.Header, upstreamMessage, canonicalModel)
 			}
 			if turn == 1 && !wroteDownstream && shouldFailover {
-				return nil, newOpenAIUpstreamFailoverError(statusCode, resp.Header, upstreamMessage, errMessage, false)
+				if officialOpenAIResponses && eventType == "error" {
+					bareErrorPending = true
+					bareErrorPayload = append(bareErrorPayload[:0], upstreamMessage...)
+					bareErrorMessage = errMessage
+					suppressClientMessage = true
+				} else {
+					return nil, newOpenAIUpstreamFailoverError(statusCode, resp.Header, upstreamMessage, errMessage, false)
+				}
 			}
-			upstreamEventErr = errors.New(errMessage)
+			if eventType == "error" && !officialOpenAIResponses {
+				upstreamEventErr = errors.New(errMessage)
+			}
 		}
 
-		if !clientDisconnected {
-			if err := writeClientMessage(upstreamMessage); err != nil {
+		// Keep the original event for billing/health classification, but make
+		// capacity shed events retryable for Codex clients.
+		clientMessage := upstreamMessage
+		if eventType == "error" || eventType == "response.failed" {
+			if rewritten, changed := sanitizeOpenAICapacityShedErrorCodeForClient(clientMessage); changed {
+				clientMessage = rewritten
+			}
+		}
+		capacityEvent := (eventType == "error" || eventType == "response.failed") &&
+			isOpenAIRequestScopedCapacityShed(string(upstreamMessage), upstreamMessage)
+		startsClientOutput := openAIStreamDataStartsClientOutput(string(clientMessage), eventType)
+		if startsClientOutput {
+			clientSemanticOutputStarted = true
+		}
+		if capacityEvent && !clientSemanticOutputStarted && turn == 1 {
+			// Preambles and the capacity error are still buffered, so failover does
+			// not splice a second attempt after bytes visible to the client.
+			capacityMessage := extractOpenAISSEErrorMessage(upstreamMessage)
+			if capacityMessage == "" {
+				capacityMessage = "OpenAI upstream capacity is temporarily unavailable"
+			}
+			return nil, newOpenAIUpstreamFailoverError(http.StatusServiceUnavailable, resp.Header, upstreamMessage, capacityMessage, false)
+		}
+		if !clientDisconnected && !suppressClientMessage {
+			writeMessage := func() error {
+				stageBeforeSemanticOutput := turn == 1 && account.Platform == PlatformOpenAI && !wroteDownstream
+				commitStagedMessages := !stageBeforeSemanticOutput || startsClientOutput || isOpenAIWSTerminalEvent(eventType)
+				if stageBeforeSemanticOutput && !commitStagedMessages {
+					if pendingClientMessageBytes+int64(len(clientMessage)) > openAIFirstOutputStageMaxBytes {
+						return s.newOpenAIStreamFailoverError(c, account, true, resp.Header.Get("x-request-id"), nil, "OpenAI WS HTTP bridge first-output staging limit exceeded")
+					}
+					pendingClientMessages = append(pendingClientMessages, append([]byte(nil), clientMessage...))
+					pendingClientMessageBytes += int64(len(clientMessage))
+					return nil
+				}
+				if err := flushPendingClientMessages(); err != nil {
+					return err
+				}
+				return writeClientMessage(clientMessage)
+			}
+			if err := writeMessage(); err != nil {
+				var failoverErr *UpstreamFailoverError
+				if errors.As(err, &failoverErr) {
+					return nil, failoverErr
+				}
 				if isOpenAIWSClientDisconnectError(err) {
 					clientDisconnected = true
 					closeStatus, closeReason := summarizeOpenAIWSReadCloseError(err)
@@ -440,7 +548,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 						wroteDownstream,
 					)
 				}
-			} else {
+			} else if startsClientOutput || isOpenAIWSTerminalEvent(eventType) {
 				wroteDownstream = true
 			}
 		}
@@ -448,7 +556,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		if upstreamEventErr != nil {
 			return resultWithUsage(), upstreamEventErr
 		}
-		if isOpenAIWSTerminalEvent(eventType) {
+		if isOpenAIWSTerminalEvent(eventType) && !bareErrorPending {
 			upstreamTerminalEvent = s.handleOpenAIWSTerminalTransientFailure(ctx, account, canonicalOpenAIAccountSchedulingModel(account, originalModel), resp.Header, upstreamMessage)
 			terminalEventCount++
 			firstTokenMsValue := -1
@@ -472,6 +580,12 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			)
 			return resultWithUsage(), nil
 		}
+	}
+	if bareErrorPending {
+		if finalizeErr := finalizeBareError(); finalizeErr != nil {
+			return resultWithUsage(), finalizeErr
+		}
+		return resultWithUsage(), errors.New(bareErrorMessage)
 	}
 	if err := scanner.Err(); err != nil {
 		streamErr := fmt.Errorf("read upstream http bridge stream: %w", err)

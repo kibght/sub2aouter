@@ -73,7 +73,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
 
   const syncPath = '.github/workflows/upstream-theme-sync.yml'
   const sync = files.get(syncPath) || ''
-  check('sync.push_main', syncPath, hasPattern(sync, /\n  push:\n    branches:\n      - main\n/), 'Sync must run for pushes to main.')
+  check('sync.no_push_release', syncPath, !sync.includes('\n  push:') && hasPattern(sync, /\non:\n  workflow_dispatch:/), 'Repository pushes must not publish a themed release automatically.')
   check('sync.coordinated_round', syncPath, !sync.includes('  schedule:') && sync.includes('scheduled_round:') && sync.includes('SCHEDULED_ROUND'), 'Theme sync must be dispatched by the single hourly coordinator.')
   check('sync.upstream', syncPath, sync.includes('https://github.com/Wei-Shaw/sub2api.git'), 'Sync must fetch the canonical upstream repository.')
   check('sync.upstream_release_metadata', syncPath, sync.includes('resolve-github-release.mjs') && sync.includes('--repository Wei-Shaw/sub2api') && sync.includes('UPSTREAM_RELEASE_TAG'), 'Scheduled Sub2API syncs must inspect the latest published release before fetching source.')
@@ -91,7 +91,11 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.repository_recovery', syncPath, sync.includes('repository_release:') && sync.includes('CURRENT_REPOSITORY_SHA') && sync.includes('PREVIOUS_CANVAS_SHA') && sync.includes('UPSTREAM_ALREADY_SYNCHRONIZED'), 'Scheduled and dispatched syncs must recover repository or Canvas drift even when upstream is unchanged.')
   check('sync.canvas_freshness', syncPath, sync.includes('name: Verify Infinite Canvas dependency is current') && sync.includes('LATEST_CANVAS_SHA') && sync.includes('infinite-canvas/releases/latest'), 'Theme publication must stop when main is behind the latest published Infinite Canvas release.')
   check('sync.release_notes_encoding', syncPath, sync.includes('cat "$GENERATED_DIR/.apophis-upstream-release-notes.md"') && !/\?{4,}/.test(sync), 'Release notes must preserve readable text instead of emitting literal question-mark placeholders.')
-  check('sync.repository_source', syncPath, sync.includes('git worktree add --detach "$GENERATED_DIR" origin/themed-release') && sync.includes('RELEASE_KIND="repository"') && hasPattern(sync, /github\.event_name[^\n]+push/), 'Push releases must reuse themed-release without fetching upstream.')
+  check('sync.repository_source', syncPath,
+    sync.includes('git worktree add --detach "$GENERATED_DIR" "${{ github.sha }}"') &&
+    sync.includes('RELEASE_KIND="repository"') &&
+    sync.includes('[[ "$REPOSITORY_RELEASE" == "true" ]]'),
+    'Repository releases must build the checked out main commit without fetching upstream source.')
   check('sync.repository_notes', syncPath, sync.includes('## \u4ed3\u5e93\u4fee\u590d') && sync.includes('Capture repository release notes'), 'Push releases must publish repository fix notes.')
   check('sync.release_version', syncPath, sync.includes('PREVIOUS_RELEASE_VERSION') && sync.includes('node scripts/next-release-version.mjs \"$PREVIOUS_RELEASE_VERSION\"'), 'Sync must migrate the next release to v0.1.200 and increment the persisted version.')
   check('sync.publish_order', syncPath, hasOrderedMarkers(sync, [
@@ -132,7 +136,6 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     hasPattern(canvasSync, /gh workflow run upstream-theme-sync\.yml[^\n]*\n\s+--repo "\$GITHUB_REPOSITORY"/),
     'Canvas automation must explicitly target the current repository for PR and workflow commands.')
   check('canvas_sync.release_dispatch', canvasSyncPath, canvasSync.includes('actions: write') && canvasSync.includes('gh workflow run upstream-theme-sync.yml') && canvasSync.includes('repository_release=false') && canvasSync.includes('scheduled_round=true') && canvasSync.includes('needs.update.outputs.changed') && canvasSync.includes('always()'), 'The coordinator must dispatch one combined Canvas and Sub2API release round after every successful check.')
-  check('sync.canvas_push_guard', syncPath, sync.includes("github.event_name != 'push'") && sync.includes("head_commit.message, 'Infinite Canvas'"), 'Automated Canvas merge pushes must not create a second repository-only release.')
 
   const binaryPath = '.github/workflows/theme-binary-release.yml'
   const binary = files.get(binaryPath) || ''

@@ -1,9 +1,6 @@
 name: Sync Upstream With Apophis Theme
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       upstream_ref:
@@ -32,7 +29,6 @@ permissions:
 
 jobs:
   sync-build-publish:
-    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'Infinite Canvas') }}
     runs-on: ubuntu-latest
     outputs:
       run_binary: ${{ steps.release_outputs.outputs.run_binary }}
@@ -94,10 +90,13 @@ jobs:
             return 1
           }
 
-          if [[ "${{ github.event_name }}" == "push" || "$REPOSITORY_RELEASE" == "true" ]]; then
-            git worktree add --detach "$GENERATED_DIR" origin/themed-release
-            UPSTREAM_SHA="$(tr -d '[:space:]' < "$GENERATED_DIR/.apophis-upstream-sha")"
-            RELEASE_SOURCE_SHA="${{ github.sha }}"
+          if [[ "$REPOSITORY_RELEASE" == "true" ]]; then
+            git worktree add --detach "$GENERATED_DIR" "${{ github.sha }}"
+            UPSTREAM_SHA="$(git show origin/themed-release:.apophis-upstream-sha 2>/dev/null | tr -d '[:space:]' || true)"
+            if [[ -z "$UPSTREAM_SHA" ]]; then
+              UPSTREAM_SHA="$(git -C "$GENERATED_DIR" rev-parse HEAD)"
+            fi
+            RELEASE_SOURCE_SHA="$(git rev-parse HEAD)"
             RELEASE_KIND="repository"
             RELEASE_IMAGE_TAG="repository-${RELEASE_SOURCE_SHA:0:12}"
             UPSTREAM_RELEASE_TAG=""
@@ -120,15 +119,12 @@ jobs:
               fi
             fi
 
-            if [[ -n "$UPSTREAM_RELEASE_TAG" ]]; then
-              git fetch --depth=1 upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:refs/tags/${UPSTREAM_RELEASE_TAG}"
-              git worktree add --detach "$GENERATED_DIR" "refs/tags/${UPSTREAM_RELEASE_TAG}"
-              UPSTREAM_REF="$UPSTREAM_RELEASE_TAG"
-              echo "Using published Sub2API release: $UPSTREAM_RELEASE_TAG"
-            else
-              fetch_upstream_with_retry
-              git worktree add --detach "$GENERATED_DIR" FETCH_HEAD
-            fi
+            # Always build from the requested upstream branch/ref. The latest
+            # GitHub Release is metadata for notes and deduplication only;
+            # using its tag as the source would miss commits merged after the release.
+            fetch_upstream_with_retry
+            git worktree add --detach "$GENERATED_DIR" FETCH_HEAD
+            echo "Using latest Sub2API upstream ref: $UPSTREAM_REF"
 
             UPSTREAM_SHA="$(git -C "$GENERATED_DIR" rev-parse HEAD)"
             RELEASE_SOURCE_SHA="$UPSTREAM_SHA"
@@ -604,10 +600,31 @@ jobs:
         working-directory: ${{ env.GENERATED_DIR }}
         run: |
           set -euo pipefail
+          PRESERVED_WORKFLOW_DIR="$(mktemp -d)"
+          for workflow in \
+            upstream-theme-sync.yml \
+            infinite-canvas-upstream-sync.yml \
+            backend-ci.yml \
+            theme-binary-release.yml; do
+            if [[ -f ".github/workflows/$workflow" ]]; then
+              cp ".github/workflows/$workflow" "$PRESERVED_WORKFLOW_DIR/$workflow"
+            fi
+          done
           rm -rf "$GENERATED_DIR/.github/workflows"
           if git cat-file -e origin/themed-release:.github/workflows 2>/dev/null; then
             git checkout origin/themed-release -- .github/workflows
           fi
+          mkdir -p .github/workflows
+          for workflow in \
+            upstream-theme-sync.yml \
+            infinite-canvas-upstream-sync.yml \
+            backend-ci.yml \
+            theme-binary-release.yml; do
+            if [[ -f "$PRESERVED_WORKFLOW_DIR/$workflow" ]]; then
+              cp "$PRESERVED_WORKFLOW_DIR/$workflow" ".github/workflows/$workflow"
+            fi
+          done
+          rm -rf "$PRESERVED_WORKFLOW_DIR"
 
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com

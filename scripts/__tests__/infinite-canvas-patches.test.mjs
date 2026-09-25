@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
-import { patchCanvasGenerationHelpers, patchCanvasImageApi, patchCanvasImageStorage } from "../apply-infinite-canvas-patches.mjs"
+import { patchCanvasGenerationHelpers, patchCanvasImageApi, patchCanvasImageStorage, patchCanvasImageWorkbench } from "../apply-infinite-canvas-patches.mjs"
 
 test("patches optional Canvas node metadata before upstream typecheck", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "infinite-canvas-patch-"))
@@ -41,6 +41,55 @@ test("patches image edits for GPT Image and restores references from local stora
   const newline = "\r\n"
   const storageSource = [
     'import i18n from "@/i18n";',
+    'import localforage from "localforage";',
+    "",
+    'const store = localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" });',
+    'const objectUrls = new Map<string, string>();',
+    "",
+    'type ImageReadOptions = { signal?: AbortSignal };',
+    "",
+    'export async function uploadImage(input: string | Blob, options?: ImageReadOptions) {',
+    '    if (typeof input !== "string") return storeImage(input, options);',
+    '    const blob = await fetchImageBlob(input, options);',
+    '    return storeImage(blob, options);',
+    '}',
+    "",
+    'async function storeImage(blob: Blob, options?: ImageReadOptions) {',
+    '    const storageKey = "image:test";',
+    '    const url = URL.createObjectURL(blob);',
+    '    try {',
+    '        await store.setItem(storageKey, blob);',
+    '        objectUrls.set(storageKey, url);',
+    '        return { url, storageKey, width: 1, height: 1, bytes: blob.size, mimeType: blob.type };',
+    '    } catch (error) {',
+    '        URL.revokeObjectURL(url);',
+    '        await store.removeItem(storageKey).catch(() => undefined);',
+    '        throw error;',
+    '    }',
+    '}',
+    "",
+    'async function fetchImageBlob(url: string, options?: ImageReadOptions) { return new Blob(); }',
+    'async function resolveImageUrl(storageKey?: string, fallback = "") { return fallback; }',
+    "",
+    'export async function resolveImageUrlForTest(storageKey?: string, fallback = "") {',
+    '    const blob = await store.getItem<Blob>(storageKey);',
+    '    if (!blob) return fallback;',
+    '    return URL.createObjectURL(blob);',
+    '}',
+    "",
+    'export async function getImageBlob(storageKey: string) {',
+    '    return store.getItem<Blob>(storageKey);',
+    '}',
+    'export function previewUrlFor(storageKey?: string) { return storageKey; }',
+    'export async function deleteStoredImages(keys: Iterable<string>) {',
+    '    await Promise.all(Array.from(keys).map(async (key) => {',
+    '            await store.removeItem(key);',
+    '    }));',
+    '}',
+    'export async function setImageBlob(storageKey: string, blob: Blob) {',
+    '    await store.setItem(storageKey, blob);',
+    '    return URL.createObjectURL(blob);',
+    '}',
     "",
     "export async function imageToDataUrl(image: { url?: string; dataUrl?: string; storageKey?: string }) {",
     '    const url = image.dataUrl || (await resolveImageUrl(image.storageKey, image.url || ""));',
@@ -70,6 +119,9 @@ test("patches image edits for GPT Image and restores references from local stora
     assert.match(patchedStorage, /const url = storedUrl \|\| image\.dataUrl \|\| image\.url \|\| "";/)
     assert.match(patchedStorage, /apiErrors\.referenceImageReadFailed/)
     assert.match(patchedStorage, /await \(await fetch\(url\)\)\.blob\(\)/)
+    assert.match(patchedStorage, /const memoryBlobs = new Map<string, Blob>\(\);/)
+    assert.match(patchedStorage, /export function isImageFile\(file: Blob & \{ name\?: string \}\)/)
+    assert.match(patchedStorage, /memoryBlobs\.set\(storageKey, blob\)/)
 
     const patchedApi = await readFile(apiFile, "utf8")
     assert.match(patchedApi, /\.\.\.\(\/gpt-image\/\.test\(requestConfig\.model\)/)
@@ -79,6 +131,49 @@ test("patches image edits for GPT Image and restores references from local stora
 
     assert.equal(await patchCanvasImageStorage(storageFile), false)
     assert.equal(await patchCanvasImageApi(apiFile), false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("patches image workbench uploads for empty MIME types and visible failures", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "infinite-canvas-workbench-patch-"))
+  const imageFile = path.join(root, "image.tsx")
+  const videoFile = path.join(root, "video.tsx")
+  const source = (video) => [
+    'import { uploadImage } from "@/services/image-storage";',
+    "",
+    '    const addReferences = async (files?: FileList | null) => {',
+    ...(video ? [
+      '        const selectedFiles = Array.from(files || []);',
+      '        const unsupported = selectedFiles.filter((file) => !file.type.startsWith("image/"));',
+      '        const imageFiles = selectedFiles.filter((file) => file.type.startsWith("image/")).slice(0, 7 - references.length);',
+    ] : [
+      '        const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith("image/"));',
+    ]),
+    '        const nextReferences = await Promise.all(imageFiles.map(async (file) => uploadImage(file)));',
+    '        setReferences((value) => [...value, ...nextReferences]);',
+    '    };',
+    "",
+    ...(video ? ['    const handleReferenceDragEnter = () => {};'] : ['    const addReferencesFromClipboard = async () => {};']),
+    "",
+  ].join("\n")
+
+  try {
+    await writeFile(imageFile, source(false), "utf8")
+    await writeFile(videoFile, source(true), "utf8")
+    assert.equal(await patchCanvasImageWorkbench(imageFile), true)
+    assert.equal(await patchCanvasImageWorkbench(videoFile), true)
+    const patchedImage = await readFile(imageFile, "utf8")
+    const patchedVideo = await readFile(videoFile, "utf8")
+    for (const patched of [patchedImage, patchedVideo]) {
+      assert.match(patched, /isImageFile/)
+      assert.match(patched, /message\.error\(t\("common\.imageReadFailed"\)\)/)
+    }
+    assert.match(patchedImage, /filter\(\(file\) => isImageFile\(file\)\)/)
+    assert.match(patchedVideo, /filter\(\(file\) => !isImageFile\(file\)\)/)
+    assert.equal(await patchCanvasImageWorkbench(imageFile), false)
+    assert.equal(await patchCanvasImageWorkbench(videoFile), false)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

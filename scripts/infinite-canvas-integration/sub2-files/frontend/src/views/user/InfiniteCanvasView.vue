@@ -260,9 +260,7 @@ function sendCanvasConfig() {
 
   target.postMessage(
     buildCanvasInitMessage({
-      baseUrl: buildGatewayBaseUrl(
-        appStore.cachedPublicSettings?.api_base_url || window.location.origin
-      ),
+      baseUrl: buildGatewayBaseUrl(appStore.cachedPublicSettings?.api_base_url || '/api'),
       apiKey: key.key,
       theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
       locale: getLocale() === 'zh' ? 'zh-CN' : 'en-US',
