@@ -39,6 +39,113 @@ export async function patchCanvasGenerationHelpers(file) {
   return true
 }
 
+export async function patchCanvasImageStorage(file) {
+  let content
+  try {
+    content = await readFile(file, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
+  }
+
+  let changed = false
+  const storageMarker = '    const url = image.dataUrl || (await resolveImageUrl(image.storageKey, image.url || ""));\n'
+  const storageReplacement = [
+    '    const storedUrl = image.storageKey ? await resolveImageUrl(image.storageKey, "") : "";',
+    '    const url = storedUrl || image.dataUrl || image.url || "";',
+    '',
+  ].join('\n')
+  if (!content.includes('const storedUrl = image.storageKey ? await resolveImageUrl(image.storageKey, "")')) {
+    const effectiveMarker = content.includes(storageMarker) ? storageMarker : storageMarker.replaceAll('\n', '\r\n')
+    if (!content.includes(effectiveMarker)) throw new Error(`Infinite Canvas image storage marker not found in ${file}`)
+    const effectiveReplacement = content.includes('\r\n') ? storageReplacement.replaceAll('\n', '\r\n') : storageReplacement
+    content = content.replace(effectiveMarker, effectiveReplacement)
+    changed = true
+  }
+
+  const errorSentinel = 'apiErrors.referenceImageReadFailed'
+  if (!content.includes(errorSentinel)) {
+    const fetchMarker = '    return blobToDataUrl(await fetchImageBlob(url, options));\n'
+    const legacyFetchMarker = '    return blobToDataUrl(await (await fetch(url)).blob());\n'
+    const effectiveFetchMarker = content.includes(fetchMarker) ? fetchMarker : fetchMarker.replaceAll('\n', '\r\n')
+    const effectiveLegacyFetchMarker = content.includes(legacyFetchMarker) ? legacyFetchMarker : legacyFetchMarker.replaceAll('\n', '\r\n')
+    const usesFetchImageBlob = content.includes(effectiveFetchMarker)
+    const effectiveMarker = usesFetchImageBlob ? effectiveFetchMarker : effectiveLegacyFetchMarker
+    if (!content.includes(effectiveMarker)) throw new Error(`Infinite Canvas image read marker not found in ${file}`)
+    const expression = usesFetchImageBlob ? 'await fetchImageBlob(url, options)' : 'await (await fetch(url)).blob()'
+    const replacement = [
+      '    try {',
+      `        return blobToDataUrl(${expression});`,
+      '    } catch (error) {',
+      '        if (error instanceof Error && error.name === "AbortError") throw error;',
+      '        throw new Error(i18n.t("apiErrors.referenceImageReadFailed"));',
+      '    }',
+      '',
+    ].join('\n')
+    const effectiveReplacement = content.includes('\r\n') ? replacement.replaceAll('\n', '\r\n') : replacement
+    content = content.replace(effectiveMarker, effectiveReplacement)
+    changed = true
+  }
+
+  if (changed) await writeFile(file, content, 'utf8')
+  return changed
+}
+
+export async function patchCanvasImageApi(file) {
+  let content
+  try {
+    content = await readFile(file, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
+  }
+
+  let changed = false
+  const imageResponseFormat = '                response_format: "b64_json",'
+  const compatibleImageResponseFormat = '                ...(/gpt-image/.test(requestConfig.model) ? {} : { response_format: "b64_json" }),'
+  if (content.includes(imageResponseFormat)) {
+    content = content.replaceAll(imageResponseFormat, compatibleImageResponseFormat)
+    changed = true
+  }
+
+  const formResponseMarker = '\n    formData.set("response_format", "b64_json");\n'
+  const formResponseSentinel = '\n    if (!/gpt-image/.test(requestConfig.model)) {'
+  if (!content.includes(formResponseSentinel) && !content.includes(formResponseSentinel.replaceAll('\n', '\r\n'))) {
+    const effectiveMarker = content.includes(formResponseMarker) ? formResponseMarker : formResponseMarker.replaceAll('\n', '\r\n')
+    if (content.includes(effectiveMarker)) {
+      const replacement = [
+        '',
+        '    if (!/gpt-image/.test(requestConfig.model)) {',
+        '        formData.set("response_format", "b64_json");',
+        '    }',
+        '',
+      ].join('\n')
+      const effectiveReplacement = content.includes('\r\n') ? replacement.replaceAll('\n', '\r\n') : replacement
+      content = content.replace(effectiveMarker, effectiveReplacement)
+      changed = true
+    }
+  }
+
+  const imageAppendMarker = '\n    files.forEach((file) => formData.append("image", file));\n'
+  if (!content.includes('const imageField = files.length > 1 ? "image[]" : "image";')) {
+    const effectiveMarker = content.includes(imageAppendMarker) ? imageAppendMarker : imageAppendMarker.replaceAll('\n', '\r\n')
+    if (content.includes(effectiveMarker)) {
+      const replacement = [
+        '',
+        '    const imageField = files.length > 1 ? "image[]" : "image";',
+        '    files.forEach((file) => formData.append(imageField, file));',
+        '',
+      ].join('\n')
+      const effectiveReplacement = content.includes('\r\n') ? replacement.replaceAll('\n', '\r\n') : replacement
+      content = content.replace(effectiveMarker, effectiveReplacement)
+      changed = true
+    }
+  }
+
+  if (changed) await writeFile(file, content, 'utf8')
+  return changed
+}
+
 function findJsxOpeningTagEnd(content, start) {
   let quote = null
   let escaped = false
@@ -138,6 +245,8 @@ export async function applyInfiniteCanvasPatches({ root }) {
 
   await copyTemplate(resolvedRoot, 'web/src/lib/sub2-bridge.ts')
   await patchCanvasGenerationHelpers(path.join(resolvedRoot, 'web/src/lib/canvas/canvas-generation-helpers.ts'))
+  await patchCanvasImageStorage(path.join(resolvedRoot, 'web/src/services/image-storage.ts'))
+  await patchCanvasImageApi(path.join(resolvedRoot, 'web/src/services/api/image.ts'))
 
   await replaceOnce(
     indexPath,
