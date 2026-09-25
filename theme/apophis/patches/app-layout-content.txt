@@ -1,0 +1,1 @@
+      <main class="app-content p-4 md:p-6 lg:p-8" :class="fullHeight ? 'app-content--full-height' : ''">

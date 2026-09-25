@@ -1,0 +1,1 @@
+      <div class="auth-copyright mt-8 text-center text-xs text-gray-400 dark:text-dark-500">

@@ -1,0 +1,1 @@
+  <div class="auth-shell relative flex min-h-screen items-center justify-center overflow-hidden p-4">
