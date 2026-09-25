@@ -35,12 +35,12 @@ function isInitMessage(value: unknown): value is InitMessage {
 }
 
 export function installSub2Bridge() {
-    if (window.parent === window) return () => undefined;
+    const host = window.parent !== window ? window.parent : window.opener;
+    if (!host || host === window) return () => undefined;
 
-    const parent = window.parent;
     const targetOrigin = window.location.origin;
     const handleMessage = (event: MessageEvent) => {
-        if (event.origin !== window.location.origin || event.source !== parent || !isInitMessage(event.data)) return;
+        if (event.origin !== targetOrigin || event.source !== host || !isInitMessage(event.data)) return;
 
         const { baseUrl, apiKey, theme, locale } = event.data.payload;
         const gatewayBaseUrl = baseUrl.trim();
@@ -60,11 +60,11 @@ export function installSub2Bridge() {
         if (theme === "light" || theme === "dark") useThemeStore.getState().setTheme(theme);
         if (locale === "zh-CN" || locale === "en-US") void changeAppLocale(locale as AppLocale);
 
-        parent.postMessage({ type: CONFIGURED_MESSAGE, version: BRIDGE_VERSION }, targetOrigin);
+        host.postMessage({ type: CONFIGURED_MESSAGE, version: BRIDGE_VERSION }, targetOrigin);
     };
 
     window.addEventListener("message", handleMessage);
-    parent.postMessage({ type: READY_MESSAGE, version: BRIDGE_VERSION }, targetOrigin);
+    host.postMessage({ type: READY_MESSAGE, version: BRIDGE_VERSION }, targetOrigin);
 
     return () => window.removeEventListener("message", handleMessage);
 }

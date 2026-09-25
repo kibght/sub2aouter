@@ -133,7 +133,62 @@ describe('InfiniteCanvasView', () => {
 
     await openButton!.trigger('click')
 
-    expect(openWindow).toHaveBeenCalledWith('/canvas-app/', '_blank', 'noopener,noreferrer')
+    expect(openWindow).toHaveBeenCalledWith(
+      `${window.location.origin}/canvas-app/canvas?mode=new`,
+      'sub2-infinite-canvas',
+    )
+    openWindow.mockRestore()
+  })
+
+  it('hands the API key to a standalone window after its trusted ready event', async () => {
+    const targetWindow = { postMessage: vi.fn(), closed: false } as unknown as Window
+    const openWindow = vi.spyOn(window, 'open').mockReturnValue(targetWindow)
+    const wrapper = mount(InfiniteCanvasView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          RouterLink: { template: '<a><slot /></a>' },
+          Icon: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    const openButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('infiniteCanvas.openStandalone'))
+    expect(openButton).toBeDefined()
+    await openButton!.trigger('click')
+    vi.mocked(targetWindow.postMessage).mockClear()
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: window.location.origin,
+        source: targetWindow,
+        data: { type: CANVAS_READY_MESSAGE, version: 1 },
+      }),
+    )
+
+    expect(targetWindow.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: CANVAS_INIT_MESSAGE,
+        payload: expect.objectContaining({
+          apiKey: 'sk-canvas-secret',
+          baseUrl: 'https://gateway.example.com/v1',
+        }),
+      }),
+      window.location.origin,
+    )
+
+    const foreignWindow = { postMessage: vi.fn(), closed: false } as unknown as Window
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: window.location.origin,
+        source: foreignWindow,
+        data: { type: CANVAS_READY_MESSAGE, version: 1 },
+      }),
+    )
+    expect(foreignWindow.postMessage).not.toHaveBeenCalled()
     openWindow.mockRestore()
   })
 
@@ -204,4 +259,5 @@ describe('InfiniteCanvasView', () => {
     await nextTick()
     expect(wrapper.text()).toContain('infiniteCanvas.statusReady')
   })
+
 })
