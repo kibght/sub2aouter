@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
-import { patchCanvasGenerationHelpers, patchCanvasImageApi, patchCanvasImageStorage, patchCanvasImageWorkbench } from "../apply-infinite-canvas-patches.mjs"
+import { patchCanvasGenerationHelpers, patchCanvasImageApi, patchCanvasImageStorage, patchCanvasImageWorkbench, patchCanvasModalStyles } from "../apply-infinite-canvas-patches.mjs"
 
 test("patches optional Canvas node metadata before upstream typecheck", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "infinite-canvas-patch-"))
@@ -174,6 +174,20 @@ test("patches image workbench uploads for empty MIME types and visible failures"
     assert.match(patchedVideo, /filter\(\(file\) => !isImageFile\(file\)\)/)
     assert.equal(await patchCanvasImageWorkbench(imageFile), false)
     assert.equal(await patchCanvasImageWorkbench(videoFile), false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("patches the Ant Design 6 Modal semantic style key", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "infinite-canvas-modal-patch-"))
+  const file = path.join(root, "model-script-editor.tsx")
+  const source = '            styles={{\n                content: { height: "100dvh", maxHeight: "100dvh", margin: 0, padding: 0, borderRadius: 0, overflow: "hidden" },\n            }}\n'
+  try {
+    await writeFile(file, source, "utf8")
+    assert.equal(await patchCanvasModalStyles(file), true)
+    assert.match(await readFile(file, "utf8"), /container: \{ height: "100dvh"/)
+    assert.equal(await patchCanvasModalStyles(file), false)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

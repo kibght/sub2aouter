@@ -383,6 +383,23 @@ export async function patchCanvasImageWorkbench(file) {
   return changed
 }
 
+export async function patchCanvasModalStyles(file) {
+  let content
+  try {
+    content = await readFile(file, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
+  }
+
+  const marker = '                content: { height: "100dvh", maxHeight: "100dvh", margin: 0, padding: 0, borderRadius: 0, overflow: "hidden" },\n'
+  const replacement = '                container: { height: "100dvh", maxHeight: "100dvh", margin: 0, padding: 0, borderRadius: 0, overflow: "hidden" },\n'
+  if (content.includes('container: { height: "100dvh", maxHeight: "100dvh", margin: 0, padding: 0, borderRadius: 0, overflow: "hidden" }')) return false
+  if (!content.includes(withLineEndings(content, marker))) return false
+  await writeFile(file, replaceText(content, marker, replacement, file), 'utf8')
+  return true
+}
+
 function findJsxOpeningTagEnd(content, start) {
   let quote = null
   let escaped = false
@@ -480,6 +497,7 @@ export async function applyInfiniteCanvasPatches({ root }) {
   const homePath = path.join(resolvedRoot, 'web/src/pages/home/index.tsx')
   const imagePagePath = path.join(resolvedRoot, 'web/src/pages/image/index.tsx')
   const videoPagePath = path.join(resolvedRoot, 'web/src/pages/video/index.tsx')
+  const modelScriptEditorPath = path.join(resolvedRoot, 'web/src/components/layout/model-script-editor.tsx')
   const historyTestPath = path.join(resolvedRoot, 'canvas-agent/src/agent/codex-history.test.ts')
 
   await copyTemplate(resolvedRoot, 'web/src/lib/sub2-bridge.ts')
@@ -488,6 +506,7 @@ export async function applyInfiniteCanvasPatches({ root }) {
   await patchCanvasImageApi(path.join(resolvedRoot, 'web/src/services/api/image.ts'))
   await patchCanvasImageWorkbench(imagePagePath)
   await patchCanvasImageWorkbench(videoPagePath)
+  await patchCanvasModalStyles(modelScriptEditorPath)
 
   await replaceOnce(
     indexPath,

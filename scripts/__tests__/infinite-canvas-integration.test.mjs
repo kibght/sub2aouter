@@ -18,6 +18,7 @@ test('infinite canvas adapter applies cleanly and remains idempotent', async () 
       'web/src/pages/home/index.tsx',
       'web/src/pages/image/index.tsx',
       'web/src/pages/video/index.tsx',
+      'web/src/components/layout/model-script-editor.tsx',
       'web/src/services/api/image.ts',
       'web/src/services/image-storage.ts',
       'canvas-agent/src/agent/codex-history.test.ts',
@@ -42,6 +43,7 @@ test('infinite canvas adapter applies cleanly and remains idempotent', async () 
     const imageStorage = await readFile(path.join(root, 'web/src/services/image-storage.ts'), 'utf8')
     const imagePage = await readFile(path.join(root, 'web/src/pages/image/index.tsx'), 'utf8')
     const videoPage = await readFile(path.join(root, 'web/src/pages/video/index.tsx'), 'utf8')
+    const modelScriptEditor = await readFile(path.join(root, 'web/src/components/layout/model-script-editor.tsx'), 'utf8')
     const sub2CanvasView = await readFile('scripts/infinite-canvas-integration/sub2-files/frontend/src/views/user/InfiniteCanvasView.vue', 'utf8')
 
     assert.match(indexHtml, /nonce="__CSP_NONCE_VALUE__"/)
@@ -69,6 +71,7 @@ test('infinite canvas adapter applies cleanly and remains idempotent', async () 
     assert.match(imagePage, /message\.error\(t\("common\.imageReadFailed"\)\)/)
     assert.match(videoPage, /filter\(\(file\) => !isImageFile\(file\)\)/)
     assert.match(videoPage, /message\.error\(t\("common\.imageReadFailed"\)\)/)
+    assert.match(modelScriptEditor, /container: \{ height: "100dvh"/)
     assert.match(
       bridge,
       /state\.config\.channels\.map\(\(channel\) => \(\{ \.\.\.channel, baseUrl: gatewayBaseUrl, apiKey: gatewayApiKey, apiFormat: "openai"(?: as const)? \}\)\)/
