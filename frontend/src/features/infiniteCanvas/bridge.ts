@@ -30,10 +30,7 @@ export function buildCanvasEntryUrl(origin: string, appPath = '/canvas-app/'): s
 
 export function buildGatewayBaseUrl(baseUrl: string): string {
   const normalized = baseUrl.trim().replace(/\/+$/, '')
-  const effectiveBaseUrl = normalized || '/api'
-  return effectiveBaseUrl.toLowerCase().endsWith('/v1')
-    ? effectiveBaseUrl
-    : `${effectiveBaseUrl}/v1`
+  return normalized.toLowerCase().endsWith('/v1') ? normalized : `${normalized}/v1`
 }
 
 export function buildCanvasInitMessage(payload: CanvasInitPayload): CanvasInitMessage {

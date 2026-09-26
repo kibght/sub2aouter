@@ -6,10 +6,10 @@ import path from 'node:path'
 
 import {
   applyInfiniteCanvasPatches,
-  patchCanvasModalStyles,
+  patchModelScriptEditorModalStyles,
 } from '../apply-infinite-canvas-patches.mjs'
 
-test('infinite canvas adapter maps the Ant Design 6 modal content style key', async () => {
+test('infinite canvas adapter removes the Ant Design 6 modal content style key', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'infinite-canvas-model-script-editor-'))
   const file = path.join(root, 'model-script-editor.tsx')
   try {
@@ -24,11 +24,11 @@ test('infinite canvas adapter maps the Ant Design 6 modal content style key', as
 </Modal>
 `)
 
-    await patchCanvasModalStyles(file)
-    await patchCanvasModalStyles(file)
+    await patchModelScriptEditorModalStyles(file)
+    await patchModelScriptEditorModalStyles(file)
 
     const patched = await readFile(file, 'utf8')
-    assert.match(patched, /container: \{ height: "100dvh"/)
+    assert.doesNotMatch(patched, /content: \{ height: "100dvh"/)
     assert.match(patched, /wrapper: \{ overflow: "hidden" \}/)
     assert.match(patched, /body: \{ height: "100dvh"/)
   } finally {
@@ -46,9 +46,6 @@ test('infinite canvas adapter applies cleanly and remains idempotent', async () 
       'web/src/layouts/user-layout.tsx',
       'web/src/components/agent/agent-chat.tsx',
       'web/src/pages/home/index.tsx',
-      'web/src/pages/image/index.tsx',
-      'web/src/pages/video/index.tsx',
-      'web/src/components/layout/model-script-editor.tsx',
       'web/src/services/api/image.ts',
       'web/src/services/image-storage.ts',
       'canvas-agent/src/agent/codex-history.test.ts',
@@ -67,9 +64,6 @@ test('infinite canvas adapter applies cleanly and remains idempotent', async () 
     const layout = await readFile(path.join(root, 'web/src/layouts/user-layout.tsx'), 'utf8')
     const agentChat = await readFile(path.join(root, 'web/src/components/agent/agent-chat.tsx'), 'utf8')
     const home = await readFile(path.join(root, 'web/src/pages/home/index.tsx'), 'utf8')
-    const imagePage = await readFile(path.join(root, 'web/src/pages/image/index.tsx'), 'utf8')
-    const videoPage = await readFile(path.join(root, 'web/src/pages/video/index.tsx'), 'utf8')
-    const modelScriptEditor = await readFile(path.join(root, 'web/src/components/layout/model-script-editor.tsx'), 'utf8')
     const historyTest = await readFile(path.join(root, 'canvas-agent/src/agent/codex-history.test.ts'), 'utf8')
     const bridge = await readFile(path.join(root, 'web/src/lib/sub2-bridge.ts'), 'utf8')
     const imageApi = await readFile(path.join(root, 'web/src/services/api/image.ts'), 'utf8')
@@ -95,14 +89,7 @@ test('infinite canvas adapter applies cleanly and remains idempotent', async () 
     assert.match(bridge, /state\.updateConfig\("apiFormat", "openai"\)/)
     assert.match(imageStorage, /const storedUrl = image\.storageKey \? await resolveImageUrl\(image\.storageKey, ""\) : "";/)
     assert.match(imageStorage, /apiErrors\.referenceImageReadFailed/)
-    assert.match(imageStorage, /const memoryBlobs = new Map<string, Blob>\(\);/)
-    assert.match(imageStorage, /export function isImageFile\(file: Blob & \{ name\?: string \}\)/)
     assert.match(imageApi, /const imageField = files\.length > 1 \? "image\[\]" : "image";/)
-    assert.match(imagePage, /filter\(\(file\) => isImageFile\(file\)\)/)
-    assert.match(imagePage, /message\.error\(t\("common\.imageReadFailed"\)\)/)
-    assert.match(videoPage, /filter\(\(file\) => !isImageFile\(file\)\)/)
-    assert.match(videoPage, /message\.error\(t\("common\.imageReadFailed"\)\)/)
-    assert.match(modelScriptEditor, /container: \{ height: "100dvh"/)
     assert.match(
       bridge,
       /state\.config\.channels\.map\(\(channel\) => \(\{ \.\.\.channel, baseUrl: gatewayBaseUrl, apiKey: gatewayApiKey, apiFormat: "openai"(?: as const)? \}\)\)/

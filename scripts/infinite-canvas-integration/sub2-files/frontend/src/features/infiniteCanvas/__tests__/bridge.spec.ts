@@ -33,8 +33,6 @@ describe('infinite canvas bridge', () => {
     expect(buildGatewayBaseUrl('https://gateway.example.com/v1/')).toBe(
       'https://gateway.example.com/v1'
     )
-    expect(buildGatewayBaseUrl('')).toBe('/api/v1')
-    expect(buildGatewayBaseUrl('/')).toBe('/api/v1')
   })
 
   it('creates a versioned init message', () => {
