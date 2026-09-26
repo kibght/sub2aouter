@@ -294,6 +294,15 @@ test('contract requires fail-closed release discovery and a private upstream rel
   assert.ok(violations.some((violation) => violation.code === 'sync.upstream_release_ref'))
 })
 
+test('contract keeps branch and commit overrides out of scheduled upstream rounds', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(path, files.get(path).replace('[[ "$SCHEDULED_ROUND" == "true" ]]', '[[ "$SCHEDULED_ROUND" == "disabled" ]]'))
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.release_source_tag'))
+})
+
 test('contract requires monotonic upstream source and identity plus SHA deduplication', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/upstream-theme-sync.yml'

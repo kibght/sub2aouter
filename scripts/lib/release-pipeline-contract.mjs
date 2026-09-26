@@ -112,9 +112,10 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     sync.includes('git fetch --depth=1 --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:${UPSTREAM_RELEASE_REF}"') &&
     sync.includes('git worktree add --detach "$GENERATED_DIR" "$UPSTREAM_RELEASE_REF"') &&
     sync.includes('TAG_UPSTREAM_VERSION') &&
-    !sync.includes('git worktree add --detach "$GENERATED_DIR" FETCH_HEAD') &&
-    !sync.includes('MAIN_UPSTREAM_VERSION'),
-    'Upstream synchronization must build the latest published release tag, never an unreleased branch snapshot.')
+    sync.includes('UPSTREAM_SOURCE_FROM_MAIN=true') &&
+    sync.includes('git fetch --depth=1 --force upstream "$UPSTREAM_REF"') &&
+    sync.includes('[[ "$SCHEDULED_ROUND" == "true" ]]'),
+    'Scheduled upstream synchronization must build the latest published release tag; explicit manual refs may opt into a verified branch or commit.')
   check('sync.release_version_metadata', syncPath,
     sync.includes('RELEASE_VERSION_FROM_TAG') &&
     sync.includes('TAG_UPSTREAM_VERSION') &&
