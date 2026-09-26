@@ -260,7 +260,7 @@ function sendCanvasConfig(target: Window | null = canvasFrame.value?.contentWind
   target.postMessage(
     buildCanvasInitMessage({
       baseUrl: buildGatewayBaseUrl(
-        appStore.cachedPublicSettings?.api_base_url || window.location.origin
+        appStore.cachedPublicSettings?.api_base_url || '/api'
       ),
       apiKey: key.key,
       theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
