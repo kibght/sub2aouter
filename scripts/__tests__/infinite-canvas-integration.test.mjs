@@ -1,4 +1,4 @@
-﻿import test from 'node:test'
+import test from 'node:test'
 import assert from 'node:assert/strict'
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
@@ -88,6 +88,7 @@ test('infinite canvas adapter applies cleanly and remains idempotent', async () 
     )
     assert.match(bridge, /state\.updateConfig\("apiFormat", "openai"\)/)
     assert.match(imageStorage, /const storedUrl = image\.storageKey \? await resolveImageUrl\(image\.storageKey, ""\) : "";/)
+    assert.match(imageStorage, /if \(originalBlob\) return blobToDataUrl\(originalBlob\)/)
     assert.match(imageStorage, /apiErrors\.referenceImageReadFailed/)
     assert.match(imageApi, /const imageField = files\.length > 1 \? "image\[\]" : "image";/)
     assert.match(
@@ -126,6 +127,7 @@ test('infinite canvas adapter accepts the translated v0.14 home button', async (
       'web/src/layouts/user-layout.tsx',
       'web/src/components/agent/agent-chat.tsx',
       'web/src/pages/home/index.tsx',
+      'web/src/services/image-storage.ts',
       'canvas-agent/src/agent/codex-history.test.ts',
     ]) {
       const target = path.join(root, relative)

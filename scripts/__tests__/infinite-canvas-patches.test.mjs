@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
-import { patchCanvasGenerationHelpers, patchCanvasImageApi, patchCanvasImageStorage } from "../apply-infinite-canvas-patches.mjs"
+import { patchCanvasGenerationHelpers, patchCanvasImageApi, patchCanvasImageStorage, patchCanvasReferenceImageRead } from "../apply-infinite-canvas-patches.mjs"
 
 test("patches optional Canvas node metadata before upstream typecheck", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "infinite-canvas-patch-"))
@@ -79,6 +79,32 @@ test("patches image edits for GPT Image and restores references from local stora
 
     assert.equal(await patchCanvasImageStorage(storageFile), false)
     assert.equal(await patchCanvasImageApi(apiFile), false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("reads original image bytes before resolving a blob URL and survives reapplication", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "canvas-reference-read-"))
+  const file = path.join(root, "image-storage.ts")
+  try {
+    for (const newline of ["\n", "\r\n"]) {
+      const source = [
+        'export async function imageToDataUrl(image: { url?: string; dataUrl?: string; storageKey?: string }, options?: ImageReadOptions) {',
+        '    const url = await resolveImageUrl(image.storageKey, image.url || "");',
+        '    return blobToDataUrl(await fetchImageBlob(url, options));',
+        '}',
+      ].join(newline)
+      await writeFile(file, source, "utf8")
+      assert.equal(await patchCanvasReferenceImageRead(file), true)
+      assert.equal(await patchCanvasReferenceImageRead(file), false)
+      const patched = await readFile(file, "utf8")
+      if (newline === "\r\n") assert.equal(patched.replaceAll("\r\n", "").includes("\n"), false)
+      assert.ok(patched.indexOf("getImageBlob(image.storageKey)") < patched.indexOf("resolveImageUrl"))
+      assert.match(patched, /if \(originalBlob\) return blobToDataUrl\(originalBlob\)/)
+    }
+    await writeFile(file, "export function incompatibleUpstream() {}", "utf8")
+    await assert.rejects(() => patchCanvasReferenceImageRead(file), /marker not found/)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

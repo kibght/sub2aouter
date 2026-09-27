@@ -103,6 +103,13 @@ func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string) g
 		} else {
 			c.Header("X-Frame-Options", "DENY")
 		}
+		if canvasAppRoute {
+			for _, scheme := range []string{"blob:", "data:"} {
+				if !directiveHasValue(finalPolicy, "connect-src", scheme) {
+					finalPolicy = addToDirective(finalPolicy, "connect-src", scheme)
+				}
+			}
+		}
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		if isAPIRoutePath(c) {
 			c.Next()

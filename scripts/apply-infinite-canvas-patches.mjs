@@ -55,6 +55,22 @@ export async function patchModelScriptEditorModalStyles(file) {
   return true
 }
 
+export async function patchCanvasReferenceImageRead(file) {
+  const newline = (await readFile(file, 'utf8')).includes('\r\n') ? '\r\n' : '\n'
+  return replaceOnce(
+    file,
+    'export async function imageToDataUrl(image: { url?: string; dataUrl?: string; storageKey?: string }, options?: ImageReadOptions) {',
+    [
+      'export async function imageToDataUrl(image: { url?: string; dataUrl?: string; storageKey?: string }, options?: ImageReadOptions) {',
+      '    throwIfAborted(options?.signal);',
+      '    const originalBlob = image.storageKey ? await getImageBlob(image.storageKey) : null;',
+      '    throwIfAborted(options?.signal);',
+      '    if (originalBlob) return blobToDataUrl(originalBlob);',
+    ].join(newline),
+    '    if (originalBlob) return blobToDataUrl(originalBlob);'
+  )
+}
+
 export async function patchCanvasImageStorage(file) {
   let content
   try {
@@ -263,6 +279,7 @@ export async function applyInfiniteCanvasPatches({ root }) {
   await patchCanvasGenerationHelpers(path.join(resolvedRoot, 'web/src/lib/canvas/canvas-generation-helpers.ts'))
   await patchModelScriptEditorModalStyles(path.join(resolvedRoot, 'web/src/components/layout/model-script-editor.tsx'))
   await patchCanvasImageStorage(path.join(resolvedRoot, 'web/src/services/image-storage.ts'))
+  await patchCanvasReferenceImageRead(path.join(resolvedRoot, 'web/src/services/image-storage.ts'))
   await patchCanvasImageApi(path.join(resolvedRoot, 'web/src/services/api/image.ts'))
 
   await replaceOnce(

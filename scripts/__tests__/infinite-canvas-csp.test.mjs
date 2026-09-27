@@ -4,7 +4,29 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
-import { patchCanvasDefaultCSP } from "../apply-sub2-infinite-canvas-integration.mjs"
+import { patchCanvasDefaultCSP, patchCanvasImageCSP } from "../apply-sub2-infinite-canvas-integration.mjs"
+
+test("patches Canvas image fetch CSP and rejects drift in check mode", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "canvas-image-csp-"))
+  const file = path.join(root, "security_headers.go")
+  const source = [
+    '\t\tc.Header("Referrer-Policy", "strict-origin-when-cross-origin")',
+    '',
+  ].join("\n")
+  try {
+    await writeFile(file, source, "utf8")
+    await assert.rejects(() => patchCanvasImageCSP(file, true), /drift|missing/i)
+    await patchCanvasImageCSP(file)
+    const once = await readFile(file, "utf8")
+    await patchCanvasImageCSP(file)
+    await patchCanvasImageCSP(file, true)
+    assert.equal(await readFile(file, "utf8"), once)
+    assert.match(once, /\[\]string\{"blob:", "data:"\}/)
+    assert.match(once, /!directiveHasValue\(finalPolicy, "connect-src", scheme\)/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 const vulnerableConfig = `package config
 

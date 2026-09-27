@@ -67,7 +67,27 @@ export async function patchCanvasDefaultCSP(file, check = false) {
   return true
 }
 
+export async function patchCanvasImageCSP(file, check = false) {
+  await ensureReplace(
+    file,
+    `\t\tc.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+`,
+    `\t\tif canvasAppRoute {
+\t\t\tfor _, scheme := range []string{"blob:", "data:"} {
+\t\t\t\tif !directiveHasValue(finalPolicy, "connect-src", scheme) {
+\t\t\t\t\tfinalPolicy = addToDirective(finalPolicy, "connect-src", scheme)
+\t\t\t\t}
+\t\t\t}
+\t\t}
+\t\tc.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+`,
+    'for _, scheme := range []string{"blob:", "data:"}',
+    check
+  )
+}
+
 const newFiles = [
+  'backend/internal/server/middleware/canvas_reference_images_test.go',
   'frontend/src/features/infiniteCanvas/bridge.ts',
   'frontend/src/features/infiniteCanvas/__tests__/bridge.spec.ts',
   'frontend/src/views/user/InfiniteCanvasView.vue',
@@ -363,6 +383,7 @@ export async function applySub2InfiniteCanvasIntegration({ root, check = false }
     'canvasAppRoute := isCanvasAppRoutePath(c)',
     check
   )
+  await patchCanvasImageCSP(securityHeadersFile, check)
   await ensureReplace(
     securityHeadersFile,
     `\t\tc.Header("X-Frame-Options", "DENY")
