@@ -1,0 +1,1 @@
+      class="app-main relative min-h-screen transition-all duration-300"
