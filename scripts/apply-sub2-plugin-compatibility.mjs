@@ -5,7 +5,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 function withDetectedLineEndings(content, value) {
-  return content.includes('\r\n') ? value.replaceAll('\n', '\r\n') : value
+  const normalized = value.replace(/\r\n?/g, '\n')
+  return content.includes('\r\n') ? normalized.replaceAll('\n', '\r\n') : normalized
 }
 
 async function replaceOnce(file, marker, replacement, sentinel, check, position = 'replace') {
@@ -52,6 +53,32 @@ export async function applySub2PluginCompatibility({ root, check = false }) {
   const resolvedRoot = path.resolve(root)
   const pluginCompatibility = path.join(resolvedRoot, 'backend/internal/service/plugin_compatibility.go')
   if (!(await exists(pluginCompatibility))) return false
+  const dualVersionTests = [
+    'func TestEvaluatePluginCompatibilityUsesForkAndUpstreamVersions(t *testing.T) {',
+    '\tmanifest := testPluginManifest(nil)',
+    '\tmanifest.Requires.Sub2API = ">=0.1.266 <0.1.267 || >=0.2.7 <0.3.0"',
+    '\tmanifest.Requires.TestedSub2APIVersions = []string{"0.2.7"}',
+    '\thost := PluginHostInfo{Version: "0.1.266", CompatibilityVersion: "0.2.8", BuildType: "release"}',
+    '',
+    '\tresult := EvaluatePluginCompatibility(manifest, host)',
+    '\trequire.True(t, result.Compatible)',
+    '\tassert.False(t, result.Tested)',
+    '\tassert.Equal(t, "untested", result.Status)',
+    '\tassert.Equal(t, "0.1.266 (fork), 0.2.8 (upstream)", result.CurrentSub2API)',
+    '',
+    '\tmanifest.Requires.TestedSub2APIVersions = []string{"0.2.8"}',
+    '\tresult = EvaluatePluginCompatibility(manifest, host)',
+    '\tassert.True(t, result.Tested)',
+    '\tassert.Equal(t, "compatible", result.Status)',
+    '}',
+    '',
+    'func TestMatchesSemverRangeSupportsAlternatives(t *testing.T) {',
+    '\texpression := ">=0.1.266 <0.1.267 || >=0.2.7 <0.3.0"',
+    '\tassert.True(t, matchesSemverRange("0.1.266", expression))',
+    '\tassert.True(t, matchesSemverRange("0.2.8", expression))',
+    '\tassert.False(t, matchesSemverRange("0.2.6", expression))',
+    '}',
+  ].join('\n')
 
   await replaceOnce(
     pluginCompatibility,
@@ -63,37 +90,111 @@ export async function applySub2PluginCompatibility({ root, check = false }) {
   await replaceOnce(
     pluginCompatibility,
     'func EvaluatePluginCompatibility(manifest PluginManifest, host PluginHostInfo) PluginCompatibility {\n',
-    'func pluginCompatibilityVersion(host PluginHostInfo) string {\n\tversion := strings.TrimSpace(host.CompatibilityVersion)\n\tif version != "" {\n\t\treturn version\n\t}\n\treturn host.Version\n}\n\n',
-    'func pluginCompatibilityVersion(host PluginHostInfo) string',
+    `func pluginHostVersions(host PluginHostInfo) []string {
+	versions := make([]string, 0, 2)
+	seen := make(map[string]struct{}, 2)
+	for _, candidate := range []string{host.Version, host.CompatibilityVersion} {
+		version := normalizeSemver(candidate)
+		if version == "" {
+			continue
+		}
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		versions = append(versions, strings.TrimPrefix(version, "v"))
+	}
+	return versions
+}
+
+func pluginHostVersionDisplay(host PluginHostInfo) string {
+	versions := pluginHostVersions(host)
+	if len(versions) == 0 {
+		return strings.TrimSpace(host.Version)
+	}
+	if len(versions) == 1 {
+		return versions[0]
+	}
+	return fmt.Sprintf("%s (fork), %s (upstream)", versions[0], versions[1])
+}
+
+func pluginHostVersionMatches(host PluginHostInfo, expression string) bool {
+	for _, version := range pluginHostVersions(host) {
+		if matchesSemverRange(version, expression) {
+			return true
+		}
+	}
+	return false
+}
+
+func pluginTestedAgainstHostVersion(tested string, host PluginHostInfo) bool {
+	testedVersion := normalizeSemver(tested)
+	if testedVersion == "" {
+		return false
+	}
+	for _, version := range pluginHostVersions(host) {
+		if testedVersion == normalizeSemver(version) {
+			return true
+		}
+	}
+	return false
+}
+
+func EvaluatePluginCompatibility(manifest PluginManifest, host PluginHostInfo) PluginCompatibility {
+`,
+    'func pluginHostVersions(host PluginHostInfo) []string',
     check,
-    'before',
   )
   await replaceOnce(
     pluginCompatibility,
     '\t\tCurrentSub2API:     host.Version,\n',
-    '\t\tCurrentSub2API:     pluginCompatibilityVersion(host),\n',
-    'CurrentSub2API:     pluginCompatibilityVersion(host)',
+    '\t\tCurrentSub2API:     pluginHostVersionDisplay(host),\n',
+    'CurrentSub2API:     pluginHostVersionDisplay(host)',
     check,
   )
   await replaceOnce(
     pluginCompatibility,
     '\tif !matchesSemverRange(host.Version, manifest.Requires.Sub2API) {\n',
-    '\tif !matchesSemverRange(pluginCompatibilityVersion(host), manifest.Requires.Sub2API) {\n',
-    'matchesSemverRange(pluginCompatibilityVersion(host), manifest.Requires.Sub2API)',
+    '\tif !pluginHostVersionMatches(host, manifest.Requires.Sub2API) {\n',
+    'pluginHostVersionMatches(host, manifest.Requires.Sub2API)',
     check,
   )
   await replaceOnce(
     pluginCompatibility,
     '\t\tresult.Message = fmt.Sprintf("当前 Sub2API %s 不满足插件要求 %s", host.Version, manifest.Requires.Sub2API)\n',
-    '\t\tresult.Message = fmt.Sprintf("当前 Sub2API %s 不满足插件要求 %s", pluginCompatibilityVersion(host), manifest.Requires.Sub2API)\n',
-    'result.Message = fmt.Sprintf("当前 Sub2API %s 不满足插件要求 %s", pluginCompatibilityVersion(host)',
+    '\t\tresult.Message = fmt.Sprintf("当前 Sub2API %s 不满足插件要求 %s", result.CurrentSub2API, manifest.Requires.Sub2API)\n',
+    'result.Message = fmt.Sprintf("当前 Sub2API %s 不满足插件要求 %s", result.CurrentSub2API',
     check,
   )
   await replaceOnce(
     pluginCompatibility,
     '\t\tif normalizeSemver(tested) == normalizeSemver(host.Version) {\n',
-    '\t\tif normalizeSemver(tested) == normalizeSemver(pluginCompatibilityVersion(host)) {\n',
-    'normalizeSemver(pluginCompatibilityVersion(host))',
+    '\t\tif pluginTestedAgainstHostVersion(tested, host) {\n',
+    'pluginTestedAgainstHostVersion(tested, host)',
+    check,
+  )
+  await replaceOnce(
+    pluginCompatibility,
+    'func matchesSemverRange(version, expression string) bool {\n',
+    `func matchesSemverRange(version, expression string) bool {
+	for _, alternative := range strings.Split(expression, "||") {
+		if matchesSemverRangeConjunction(version, strings.TrimSpace(alternative)) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesSemverRangeConjunction(version, expression string) bool {
+`,
+    'func matchesSemverRangeConjunction(version, expression string) bool',
+    check,
+  )
+  await replaceOnce(
+    path.join(resolvedRoot, 'backend/internal/service/plugin_compatibility_test.go'),
+    'func TestEvaluatePluginCompatibilityRejectsProtocolMismatch(t *testing.T) {\n',
+    `${dualVersionTests}\n\nfunc TestEvaluatePluginCompatibilityRejectsProtocolMismatch(t *testing.T) {\n`,
+    'func TestEvaluatePluginCompatibilityUsesForkAndUpstreamVersions(t *testing.T)',
     check,
   )
 
