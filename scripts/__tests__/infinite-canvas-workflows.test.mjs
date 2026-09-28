@@ -108,14 +108,14 @@ test('theme sync awaits one reusable binary publication before promoting latest'
 })
 
 
-test('hourly sync recovers missing or incomplete binary releases without minting another version', async () => {
+test('hourly sync checks the latest binary release and repairs it without minting another version', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
 
   assert.match(workflow, /NEEDS_BINARY_RELEASE/)
-  assert.match(workflow, /gh release view "\$PREVIOUS_RELEASE_TAG"/)
+  assert.match(workflow, /gh release view "\$LATEST_RELEASE_TAG"/)
   assert.match(workflow, /targetCommitish/)
   assert.match(workflow, /\.assets\[\]\.name/)
-  assert.match(workflow, /sub2api_\$\{PREVIOUS_RELEASE_VERSION\}_linux_amd64\.tar\.gz/)
+  assert.match(workflow, /sub2api_\$\{LATEST_RELEASE_VERSION\}_linux_amd64\.tar\.gz/)
   assert.match(workflow, /run_binary=\$RUN_BINARY/)
   assert.match(workflow, /effective_version=\$EFFECTIVE_VERSION/)
 })

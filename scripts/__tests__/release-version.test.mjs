@@ -12,6 +12,7 @@ test('calendar releases migrate to v0.1.200', () => {
 test('themed semantic releases increment from v0.1.200', () => {
   assert.equal(nextReleaseVersion('0.1.200'), '0.1.201')
   assert.equal(nextReleaseVersion('v0.1.207'), '0.1.208')
+  assert.equal(nextReleaseVersion('v0.1.265'), '0.1.266')
 })
 
 test('unrelated version schemes restart at v0.1.200', () => {

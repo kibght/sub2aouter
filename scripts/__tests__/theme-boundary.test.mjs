@@ -107,7 +107,7 @@ test('Docker images and binary releases share one generated release version', as
     read('.github/workflows/upstream-theme-sync.yml'),
     read('.github/workflows/theme-binary-release.yml'),
   ])
-  assert.match(syncWorkflow, /PREVIOUS_RELEASE_VERSION/)
+  assert.match(syncWorkflow, /LATEST_RELEASE_VERSION/)
   assert.match(syncWorkflow, /node scripts\/next-release-version\.mjs/)
   assert.doesNotMatch(syncWorkflow, /GITHUB_RUN_NUMBER/)
   assert.match(syncWorkflow, /backend\/cmd\/server\/VERSION/)

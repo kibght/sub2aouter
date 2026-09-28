@@ -3,11 +3,6 @@ name: Sync Upstream With Apophis Theme
 on:
   workflow_dispatch:
     inputs:
-      upstream_ref:
-        description: Optional upstream release tag, branch, or commit override; empty uses the latest published version
-        required: false
-        default: ''
-        type: string
       repository_release:
         description: Publish current repository changes without refetching upstream
         required: false
@@ -42,9 +37,10 @@ jobs:
       should_promote_latest: ${{ steps.release_outputs.outputs.should_promote_latest }}
       release_ref: ${{ steps.release_outputs.outputs.release_ref }}
       release_version: ${{ steps.release_outputs.outputs.release_version }}
+      upstream_release_tag: ${{ steps.release_outputs.outputs.upstream_release_tag }}
+      upstream_sha: ${{ steps.release_outputs.outputs.upstream_sha }}
     env:
       UPSTREAM_REPOSITORY: https://github.com/Wei-Shaw/sub2api.git
-      UPSTREAM_REF: ${{ inputs.upstream_ref || '' }}
       UPSTREAM_RELEASE_REF: refs/apophis/upstream-release
       REPOSITORY_RELEASE: ${{ inputs.repository_release || false }}
       SCHEDULED_ROUND: ${{ inputs.scheduled_round || false }}
@@ -134,63 +130,33 @@ jobs:
             UPSTREAM_RELEASE_TAG=""
             UPSTREAM_RELEASE_ID=""
             UPSTREAM_RELEASE_PUBLISHED=false
-            UPSTREAM_SOURCE_FROM_MAIN=false
             echo "Repository push: reusing themed-release without fetching upstream."
           else
             git remote remove upstream 2>/dev/null || true
             git remote add upstream "$UPSTREAM_REPOSITORY"
-            UPSTREAM_RELEASE_TAG=""
-            UPSTREAM_RELEASE_ID=""
-            UPSTREAM_RELEASE_PUBLISHED=false
-            UPSTREAM_SOURCE_FROM_MAIN=false
-            if [[ -n "$UPSTREAM_REF" && ! "$UPSTREAM_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              if [[ "$SCHEDULED_ROUND" == "true" ]]; then
-                echo "Scheduled upstream rounds must use the published release tag; refusing ref $UPSTREAM_REF." >&2
-                exit 1
-              fi
-              echo "Using explicitly requested upstream branch or commit: $UPSTREAM_REF"
-              retry_with_backoff 5 5 git fetch --depth=1 --force upstream "$UPSTREAM_REF"
-              git worktree add --detach "$GENERATED_DIR" FETCH_HEAD
-              UPSTREAM_SOURCE_FROM_MAIN=true
-              UPSTREAM_SOURCE_VERSION="$(git -C "$GENERATED_DIR" show HEAD:backend/cmd/server/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
-              if [[ ! "$UPSTREAM_SOURCE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                echo "Requested upstream ref $UPSTREAM_REF contains invalid VERSION ${UPSTREAM_SOURCE_VERSION:-missing}." >&2
-                exit 1
-              fi
-              echo "Using upstream ref $UPSTREAM_REF (source VERSION $UPSTREAM_SOURCE_VERSION)."
-            else
-              if [[ -n "$UPSTREAM_REF" ]]; then
-                UPSTREAM_RELEASE_TAG="$UPSTREAM_REF"
-                UPSTREAM_RELEASE_ID=""
-                UPSTREAM_RELEASE_PUBLISHED=false
-                echo "Using explicitly requested upstream release tag: $UPSTREAM_RELEASE_TAG"
-              elif [[ "$DISCOVERED_UPSTREAM_RELEASE" == "true" ]]; then
-                UPSTREAM_RELEASE_TAG="$DISCOVERED_UPSTREAM_RELEASE_TAG"
-                UPSTREAM_RELEASE_ID="$DISCOVERED_UPSTREAM_RELEASE_ID"
-                UPSTREAM_RELEASE_PUBLISHED=true
-              else
-                echo "No published Sub2API release was found; refusing to build a branch snapshot." >&2
-                exit 1
-              fi
-
-              if [[ ! "$UPSTREAM_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                echo "Invalid Sub2API release tag: $UPSTREAM_RELEASE_TAG" >&2
-                exit 1
-              fi
-              retry_with_backoff 5 5 git fetch --depth=1 --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:${UPSTREAM_RELEASE_REF}"
-              TAG_UPSTREAM_VERSION="$(git show "$UPSTREAM_RELEASE_REF":backend/cmd/server/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
-              RELEASE_VERSION_FROM_TAG="${UPSTREAM_RELEASE_TAG#v}"
-              if [[ ! "$TAG_UPSTREAM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                echo "Sub2API release $UPSTREAM_RELEASE_TAG contains invalid VERSION ${TAG_UPSTREAM_VERSION:-missing}." >&2
-                exit 1
-              fi
-              echo "Using release version $RELEASE_VERSION_FROM_TAG from tag $UPSTREAM_RELEASE_TAG (source VERSION $TAG_UPSTREAM_VERSION)."
-              UPSTREAM_REF="$UPSTREAM_RELEASE_TAG"
-              git worktree add --detach "$GENERATED_DIR" "$UPSTREAM_RELEASE_REF"
-              echo "Using published Sub2API release: $UPSTREAM_RELEASE_TAG"
-
-              UPSTREAM_SOURCE_VERSION="$(git -C "$GENERATED_DIR" show HEAD:backend/cmd/server/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
+            if [[ "$DISCOVERED_UPSTREAM_RELEASE" != "true" ]]; then
+              echo "No published Sub2API release was found; refusing to build a branch snapshot." >&2
+              exit 1
             fi
+            UPSTREAM_RELEASE_TAG="$DISCOVERED_UPSTREAM_RELEASE_TAG"
+            UPSTREAM_RELEASE_ID="$DISCOVERED_UPSTREAM_RELEASE_ID"
+            UPSTREAM_RELEASE_PUBLISHED=true
+            if [[ ! "$UPSTREAM_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Invalid Sub2API release tag: $UPSTREAM_RELEASE_TAG" >&2
+              exit 1
+            fi
+            retry_with_backoff 5 5 git fetch --depth=1 --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:${UPSTREAM_RELEASE_REF}"
+            TAG_UPSTREAM_VERSION="$(git show "$UPSTREAM_RELEASE_REF":backend/cmd/server/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
+            RELEASE_VERSION_FROM_TAG="${UPSTREAM_RELEASE_TAG#v}"
+            if [[ ! "$TAG_UPSTREAM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Sub2API release $UPSTREAM_RELEASE_TAG contains invalid VERSION ${TAG_UPSTREAM_VERSION:-missing}." >&2
+              exit 1
+            fi
+            echo "Using release version $RELEASE_VERSION_FROM_TAG from tag $UPSTREAM_RELEASE_TAG (source VERSION $TAG_UPSTREAM_VERSION)."
+            git worktree add --detach "$GENERATED_DIR" "$UPSTREAM_RELEASE_REF"
+            echo "Using published Sub2API release: $UPSTREAM_RELEASE_TAG"
+
+            UPSTREAM_SOURCE_VERSION="$(git -C "$GENERATED_DIR" show HEAD:backend/cmd/server/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
 
             UPSTREAM_SHA="$(git -C "$GENERATED_DIR" rev-parse HEAD)"
             RELEASE_SOURCE_SHA="$UPSTREAM_SHA"
@@ -202,7 +168,6 @@ jobs:
           echo "UPSTREAM_RELEASE_TAG=$UPSTREAM_RELEASE_TAG" >> "$GITHUB_ENV"
           echo "UPSTREAM_RELEASE_ID=$UPSTREAM_RELEASE_ID" >> "$GITHUB_ENV"
           echo "UPSTREAM_RELEASE_PUBLISHED=$UPSTREAM_RELEASE_PUBLISHED" >> "$GITHUB_ENV"
-          echo "UPSTREAM_SOURCE_FROM_MAIN=$UPSTREAM_SOURCE_FROM_MAIN" >> "$GITHUB_ENV"
           echo "UPSTREAM_SOURCE_VERSION=$UPSTREAM_SOURCE_VERSION" >> "$GITHUB_ENV"
           echo "RELEASE_SOURCE_SHA=$RELEASE_SOURCE_SHA" >> "$GITHUB_ENV"
           echo "RELEASE_KIND=$RELEASE_KIND" >> "$GITHUB_ENV"
@@ -239,54 +204,56 @@ jobs:
           fi
           echo "PREVIOUS_REPOSITORY_SHA=$PREVIOUS_REPOSITORY_SHA" >> "$GITHUB_ENV"
 
-          PREVIOUS_RELEASE_VERSION=""
-          if git show origin/themed-release:backend/cmd/server/VERSION > /tmp/apophis-release-version 2>/dev/null; then
-            PREVIOUS_RELEASE_VERSION="$(tr -d '[:space:]' < /tmp/apophis-release-version)"
+          LATEST_RELEASE_JSON_FILE=/tmp/apophis-latest-published-release.json
+          retry_with_backoff 5 5 gh api "repos/${GITHUB_REPOSITORY}/releases/latest" > "$LATEST_RELEASE_JSON_FILE"
+          LATEST_RELEASE_TAG="$(jq -r '.tag_name // ""' "$LATEST_RELEASE_JSON_FILE")"
+          if [[ ! "$LATEST_RELEASE_TAG" =~ ^v0\.1\.[0-9]+$ ]]; then
+            echo "Invalid latest published themed release tag: ${LATEST_RELEASE_TAG:-missing}" >&2
+            exit 1
           fi
-          echo "PREVIOUS_RELEASE_VERSION=$PREVIOUS_RELEASE_VERSION" >> "$GITHUB_ENV"
+          LATEST_RELEASE_VERSION="${LATEST_RELEASE_TAG#v}"
+          LATEST_RELEASE_REF=refs/apophis/latest-published-release
+          retry_with_backoff 5 5 git fetch origin "refs/tags/${LATEST_RELEASE_TAG}:${LATEST_RELEASE_REF}"
+          LATEST_RELEASE_UPSTREAM_SHA="$(git show "${LATEST_RELEASE_REF}:.apophis-upstream-sha" 2>/dev/null | tr -d '[:space:]' || true)"
+          LATEST_RELEASE_UPSTREAM_TAG="$(git show "${LATEST_RELEASE_REF}:.apophis-upstream-release-tag" 2>/dev/null | tr -d '[:space:]' || true)"
+          echo "Latest published themed release: $LATEST_RELEASE_TAG."
 
           NEEDS_BINARY_RELEASE=false
-          if [[ -n "$PREVIOUS_RELEASE_VERSION" ]]; then
-            PREVIOUS_RELEASE_TAG="v${PREVIOUS_RELEASE_VERSION}"
-            RELEASE_JSON_FILE=/tmp/apophis-release.json
-            RELEASE_ERROR_FILE=/tmp/apophis-release-error.log
-            set +e
-            gh release view "$PREVIOUS_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets,targetCommitish > "$RELEASE_JSON_FILE" 2> "$RELEASE_ERROR_FILE"
-            RELEASE_STATUS=$?
-            set -e
-            if [[ "$RELEASE_STATUS" -eq 0 ]]; then
-              RELEASE_DRAFT="$(jq -r '.isDraft' "$RELEASE_JSON_FILE")"
-              RELEASE_PRERELEASE="$(jq -r '.isPrerelease' "$RELEASE_JSON_FILE")"
-              RELEASE_TARGET="$(jq -r '.targetCommitish' "$RELEASE_JSON_FILE")"
-              RELEASE_ASSETS="$(jq -r '.assets[].name' "$RELEASE_JSON_FILE")"
-              REQUIRED_ASSETS=(
-                "sub2api_${PREVIOUS_RELEASE_VERSION}_linux_amd64.tar.gz"
-                "sub2api_${PREVIOUS_RELEASE_VERSION}_linux_arm64.tar.gz"
-                "sub2api_${PREVIOUS_RELEASE_VERSION}_windows_amd64.zip"
-                "sub2api_${PREVIOUS_RELEASE_VERSION}_darwin_amd64.tar.gz"
-                "sub2api_${PREVIOUS_RELEASE_VERSION}_darwin_arm64.tar.gz"
-                "checksums.txt"
-              )
-              MISSING_ASSETS=()
-              for asset in "${REQUIRED_ASSETS[@]}"; do
-                if ! grep -Fqx -- "$asset" <<< "$RELEASE_ASSETS"; then
-                  MISSING_ASSETS+=("$asset")
-                fi
-              done
-              if [[ "$RELEASE_DRAFT" == "true" || "$RELEASE_PRERELEASE" == "true" || "$RELEASE_TARGET" != "themed-release" || "${#MISSING_ASSETS[@]}" -gt 0 ]]; then
-                NEEDS_BINARY_RELEASE=true
-                echo "Existing release needs repair (draft=${RELEASE_DRAFT}, prerelease=${RELEASE_PRERELEASE}, target=${RELEASE_TARGET}, missing=${MISSING_ASSETS[*]:-none})."
+          RELEASE_JSON_FILE=/tmp/apophis-release.json
+          RELEASE_ERROR_FILE=/tmp/apophis-release-error.log
+          set +e
+          gh release view "$LATEST_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets,targetCommitish > "$RELEASE_JSON_FILE" 2> "$RELEASE_ERROR_FILE"
+          RELEASE_STATUS=$?
+          set -e
+          if [[ "$RELEASE_STATUS" -eq 0 ]]; then
+            RELEASE_DRAFT="$(jq -r '.isDraft' "$RELEASE_JSON_FILE")"
+            RELEASE_PRERELEASE="$(jq -r '.isPrerelease' "$RELEASE_JSON_FILE")"
+            RELEASE_TARGET="$(jq -r '.targetCommitish' "$RELEASE_JSON_FILE")"
+            RELEASE_ASSETS="$(jq -r '.assets[].name' "$RELEASE_JSON_FILE")"
+            REQUIRED_ASSETS=(
+              "sub2api_${LATEST_RELEASE_VERSION}_linux_amd64.tar.gz"
+              "sub2api_${LATEST_RELEASE_VERSION}_linux_arm64.tar.gz"
+              "sub2api_${LATEST_RELEASE_VERSION}_windows_amd64.zip"
+              "sub2api_${LATEST_RELEASE_VERSION}_darwin_amd64.tar.gz"
+              "sub2api_${LATEST_RELEASE_VERSION}_darwin_arm64.tar.gz"
+              "checksums.txt"
+            )
+            MISSING_ASSETS=()
+            for asset in "${REQUIRED_ASSETS[@]}"; do
+              if ! grep -Fqx -- "$asset" <<< "$RELEASE_ASSETS"; then
+                MISSING_ASSETS+=("$asset")
               fi
-            elif grep -Eiq '404|not found' "$RELEASE_ERROR_FILE"; then
+            done
+            if [[ "$RELEASE_DRAFT" == "true" || "$RELEASE_PRERELEASE" == "true" || "$RELEASE_TARGET" != "themed-release" || "${#MISSING_ASSETS[@]}" -gt 0 ]]; then
               NEEDS_BINARY_RELEASE=true
-              echo "Previous release is missing; binary publication must recreate it."
-            else
-              cat "$RELEASE_ERROR_FILE" >&2
-              exit "$RELEASE_STATUS"
+              echo "Latest release needs repair (draft=${RELEASE_DRAFT}, prerelease=${RELEASE_PRERELEASE}, target=${RELEASE_TARGET}, missing=${MISSING_ASSETS[*]:-none})."
             fi
-          else
+          elif grep -Eiq '404|not found' "$RELEASE_ERROR_FILE"; then
             NEEDS_BINARY_RELEASE=true
-            echo "No previous release version metadata found; binary publication must run."
+            echo "Latest release is missing; binary publication must recreate it."
+          else
+            cat "$RELEASE_ERROR_FILE" >&2
+            exit "$RELEASE_STATUS"
           fi
           echo "NEEDS_BINARY_RELEASE=$NEEDS_BINARY_RELEASE" >> "$GITHUB_ENV"
 
@@ -298,7 +265,7 @@ jobs:
           echo "PREVIOUS_CANVAS_SHA=$PREVIOUS_CANVAS_SHA" >> "$GITHUB_ENV"
 
           UPSTREAM_RECOVERY_FROM_UNRELEASED=false
-          if [[ "$RELEASE_KIND" == "upstream" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) && -n "$PREVIOUS_UPSTREAM_SHA" && "$PREVIOUS_UPSTREAM_SHA" != "$UPSTREAM_SHA" ]]; then
+          if [[ "$RELEASE_KIND" == "upstream" && -n "$PREVIOUS_UPSTREAM_SHA" && "$PREVIOUS_UPSTREAM_SHA" != "$UPSTREAM_SHA" ]]; then
             retry_with_backoff 5 5 git -C "$GENERATED_DIR" fetch --depth=1000 upstream "refs/tags/${UPSTREAM_RELEASE_TAG}"
             if ! git -C "$GENERATED_DIR" cat-file -e "${PREVIOUS_UPSTREAM_SHA}^{commit}" 2>/dev/null; then
               echo "Unable to verify the previously published upstream commit: $PREVIOUS_UPSTREAM_SHA" >&2
@@ -316,7 +283,7 @@ jobs:
           echo "UPSTREAM_RECOVERY_FROM_UNRELEASED=$UPSTREAM_RECOVERY_FROM_UNRELEASED" >> "$GITHUB_ENV"
 
           UPSTREAM_IDENTITY_AND_SHA_MATCH=false
-          if [[ "$RELEASE_KIND" == "upstream" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) && "$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA" ]]; then
+          if [[ "$RELEASE_KIND" == "upstream" && "$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA" ]]; then
             if [[ -n "$UPSTREAM_RELEASE_ID" && "$PREVIOUS_UPSTREAM_RELEASE_ID" == "$UPSTREAM_RELEASE_ID" ]]; then
               UPSTREAM_IDENTITY_AND_SHA_MATCH=true
             elif [[ -n "$UPSTREAM_RELEASE_TAG" && "$PREVIOUS_UPSTREAM_RELEASE_TAG" == "$UPSTREAM_RELEASE_TAG" ]]; then
@@ -326,6 +293,13 @@ jobs:
             fi
           fi
           UPSTREAM_ALREADY_SYNCHRONIZED="$UPSTREAM_IDENTITY_AND_SHA_MATCH"
+
+          UPSTREAM_PUBLICATION_PENDING=false
+          if [[ "$RELEASE_KIND" == "upstream" && ( "$LATEST_RELEASE_UPSTREAM_SHA" != "$UPSTREAM_SHA" || "$LATEST_RELEASE_UPSTREAM_TAG" != "$UPSTREAM_RELEASE_TAG" ) ]]; then
+            UPSTREAM_PUBLICATION_PENDING=true
+            echo "Themed branch contains $UPSTREAM_RELEASE_TAG ($UPSTREAM_SHA), but latest binary release $LATEST_RELEASE_TAG contains ${LATEST_RELEASE_UPSTREAM_TAG:-no upstream tag} (${LATEST_RELEASE_UPSTREAM_SHA:-no upstream SHA}); publication is pending."
+          fi
+          echo "UPSTREAM_PUBLICATION_PENDING=$UPSTREAM_PUBLICATION_PENDING" >> "$GITHUB_ENV"
 
           if [[ "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$PREVIOUS_CANVAS_SHA" != "$CURRENT_CANVAS_SHA" ]]; then
             RELEASE_KIND="repository"
@@ -339,16 +313,16 @@ jobs:
             echo "Repository source drift is intentionally not published without repository_release=true."
           fi
 
-          if [[ "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$NEEDS_BINARY_RELEASE" == "true" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) ]]; then
+          if [[ "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$UPSTREAM_PUBLICATION_PENDING" != "true" && "$NEEDS_BINARY_RELEASE" == "true" ]]; then
             echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
             echo "NEEDS_BINARY_RELEASE=true" >> "$GITHUB_ENV"
             echo "Upstream source is synchronized, but its binary release needs repair."
             exit 0
           fi
 
-          if [[ "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && ( "${{ github.event_name }}" == "schedule" || "$SCHEDULED_ROUND" == "true" ) ]]; then
+          if [[ "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$UPSTREAM_PUBLICATION_PENDING" != "true" ]]; then
             echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
-            echo "Upstream release identity and source SHA are already synchronized; skipping scheduled publication."
+            echo "Upstream release identity and source SHA are already synchronized; skipping duplicate publication."
             exit 0
           fi
 
@@ -372,7 +346,7 @@ jobs:
             RELEASE_VERSION="$RELEASE_VERSION_OVERRIDE"
             echo "Using explicit release version $RELEASE_VERSION for this verified repository publication."
           else
-            RELEASE_VERSION="$(node scripts/next-release-version.mjs "$PREVIOUS_RELEASE_VERSION")"
+            RELEASE_VERSION="$(node scripts/next-release-version.mjs "$LATEST_RELEASE_VERSION")"
           fi
           echo "SHOULD_PUBLISH=true" >> "$GITHUB_ENV"
           echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
@@ -497,14 +471,19 @@ jobs:
           write_fallback_notes() {
             local short_sha="${UPSTREAM_SHA:0:12}"
             local upstream_version="${UPSTREAM_SOURCE_VERSION:-}"
-            if [[ "$upstream_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            if [[ -n "${UPSTREAM_RELEASE_TAG:-}" ]]; then
+              printf '%s\n' "$UPSTREAM_RELEASE_TAG" > "$TAG_FILE"
+              printf '%s\n' "Sub2API $UPSTREAM_RELEASE_TAG" > "$NAME_FILE"
+              printf '%s\n' "https://github.com/Wei-Shaw/sub2api/releases/tag/$UPSTREAM_RELEASE_TAG" > "$URL_FILE"
+            elif [[ "$upstream_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               printf '%s\n' "v${upstream_version}" > "$TAG_FILE"
               printf '%s\n' "Sub2API v${upstream_version}" > "$NAME_FILE"
+              printf '%s\n' "https://github.com/Wei-Shaw/sub2api/commit/${UPSTREAM_SHA}" > "$URL_FILE"
             else
               printf '%s\n' "unreleased-${short_sha}" > "$TAG_FILE"
               printf '%s\n' "上游版本 ${short_sha}" > "$NAME_FILE"
+              printf '%s\n' "https://github.com/Wei-Shaw/sub2api/commit/${UPSTREAM_SHA}" > "$URL_FILE"
             fi
-            printf '%s\n' "https://github.com/Wei-Shaw/sub2api/commit/${UPSTREAM_SHA}" > "$URL_FILE"
             {
               printf '未找到与上游提交 %s 匹配的已发布版本。\n\n' "$UPSTREAM_SHA"
               printf '## 上游提交\n\n'
@@ -726,8 +705,15 @@ jobs:
           set -euo pipefail
           RUN_BINARY=false
           SHOULD_PROMOTE_LATEST=false
-          EFFECTIVE_VERSION="${RELEASE_VERSION:-${PREVIOUS_RELEASE_VERSION:-}}"
+          EFFECTIVE_VERSION="${RELEASE_VERSION:-${LATEST_RELEASE_VERSION:-}}"
           RELEASE_REF=""
+          UPSTREAM_RELEASE_TAG_OUTPUT=""
+          UPSTREAM_SHA_OUTPUT=""
+
+          if [[ "${RELEASE_KIND:-}" == "upstream" ]]; then
+            UPSTREAM_RELEASE_TAG_OUTPUT="${UPSTREAM_RELEASE_TAG:-}"
+            UPSTREAM_SHA_OUTPUT="${UPSTREAM_SHA:-}"
+          fi
 
           if [[ "${SHOULD_PUBLISH:-false}" == "true" ]]; then
             RUN_BINARY=true
@@ -735,7 +721,7 @@ jobs:
             RELEASE_REF="${RELEASE_COMMIT:-}"
           elif [[ "${NEEDS_BINARY_RELEASE:-false}" == "true" ]]; then
             RUN_BINARY=true
-            RELEASE_REF="$(git rev-parse origin/themed-release)"
+            RELEASE_REF="$LATEST_RELEASE_TAG"
           fi
 
           if [[ "$RUN_BINARY" == "true" ]]; then
@@ -748,6 +734,8 @@ jobs:
             echo "should_promote_latest=$SHOULD_PROMOTE_LATEST"
             echo "release_ref=$RELEASE_REF"
             echo "release_version=$EFFECTIVE_VERSION"
+            echo "upstream_release_tag=$UPSTREAM_RELEASE_TAG_OUTPUT"
+            echo "upstream_sha=$UPSTREAM_SHA_OUTPUT"
             echo "effective_version=$EFFECTIVE_VERSION"
           } >> "$GITHUB_OUTPUT"
 
@@ -757,6 +745,8 @@ jobs:
     uses: ./.github/workflows/theme-binary-release.yml
     with:
       release_ref: ${{ needs.sync-build-publish.outputs.release_ref }}
+      expected_upstream_release_tag: ${{ needs.sync-build-publish.outputs.upstream_release_tag }}
+      expected_upstream_sha: ${{ needs.sync-build-publish.outputs.upstream_sha }}
     secrets: inherit
 
   promote-latest:

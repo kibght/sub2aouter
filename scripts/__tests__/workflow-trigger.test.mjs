@@ -64,23 +64,22 @@ test('the coordinated upstream round fetches the published release tag with retr
   assert.match(workflow, /retry_with_backoff 5 5 git fetch --depth=1 --force upstream "refs\/tags\/\$\{UPSTREAM_RELEASE_TAG\}:\$\{UPSTREAM_RELEASE_REF\}"/)
 })
 
-test('manual upstream refs support branches and commits without weakening scheduled release selection', async () => {
+test('every upstream sync uses the discovered published release tag', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
-  assert.match(workflow, /upstream release tag, branch, or commit override/)
-  assert.match(workflow, /! "\$UPSTREAM_REF" =~ \^v\[0-9\]/)
-  assert.match(workflow, /\[\[ "\$SCHEDULED_ROUND" == "true" \]\]/)
-  assert.match(workflow, /git fetch --depth=1 --force upstream "\$UPSTREAM_REF"/)
-  assert.match(workflow, /git worktree add --detach "\$GENERATED_DIR" FETCH_HEAD/)
-  assert.match(workflow, /UPSTREAM_SOURCE_FROM_MAIN=true/)
+  assert.match(workflow, /DISCOVERED_UPSTREAM_RELEASE_TAG/)
+  assert.match(workflow, /git fetch --depth=1 --force upstream "refs\/tags\/\$\{UPSTREAM_RELEASE_TAG\}:\$\{UPSTREAM_RELEASE_REF\}"/)
+  assert.match(workflow, /git worktree add --detach "\$GENERATED_DIR" "\$UPSTREAM_RELEASE_REF"/)
+  assert.doesNotMatch(workflow, /upstream_ref:|UPSTREAM_REF|FETCH_HEAD/)
 })
 
-test('scheduled upstream sync deduplicates by release identity before falling back to SHA', async () => {
+test('upstream sync deduplicates by release identity before falling back to SHA', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
   assert.match(workflow, /UPSTREAM_RELEASE_ID/)
   assert.match(workflow, /\.apophis-upstream-release-id/)
   assert.match(workflow, /PREVIOUS_UPSTREAM_RELEASE_ID/)
   assert.match(workflow, /PREVIOUS_UPSTREAM_RELEASE_TAG/)
-  assert.match(workflow, /RELEASE_KIND.*upstream.*github\.event_name.*schedule/)
+  assert.match(workflow, /RELEASE_KIND.*upstream.*PREVIOUS_UPSTREAM_SHA.*UPSTREAM_SHA/)
+  assert.match(workflow, /UPSTREAM_PUBLICATION_PENDING/)
   assert.match(workflow, /PREVIOUS_UPSTREAM_RELEASE_ID.*UPSTREAM_RELEASE_ID/)
   assert.match(workflow, /PREVIOUS_UPSTREAM_RELEASE_TAG.*UPSTREAM_RELEASE_TAG/)
 })

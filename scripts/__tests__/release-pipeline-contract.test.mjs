@@ -125,7 +125,7 @@ test('contract rejects a return to calendar release versions', async () => {
   files.set(
     path,
     files.get(path).replace(
-      'node scripts/next-release-version.mjs "$PREVIOUS_RELEASE_VERSION"',
+      'node scripts/next-release-version.mjs "$LATEST_RELEASE_VERSION"',
       'date -u +%Y.%m.%d',
     ),
   )
@@ -294,10 +294,10 @@ test('contract requires fail-closed release discovery and a private upstream rel
   assert.ok(violations.some((violation) => violation.code === 'sync.upstream_release_ref'))
 })
 
-test('contract keeps branch and commit overrides out of scheduled upstream rounds', async () => {
+test('contract rejects branch and commit overrides for upstream source selection', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/upstream-theme-sync.yml'
-  files.set(path, files.get(path).replace('[[ "$SCHEDULED_ROUND" == "true" ]]', '[[ "$SCHEDULED_ROUND" == "disabled" ]]'))
+  files.set(path, files.get(path).replaceAll('DISCOVERED_UPSTREAM_RELEASE_TAG', 'UPSTREAM_REF'))
 
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
   assert.ok(violations.some((violation) => violation.code === 'sync.release_source_tag'))
@@ -428,4 +428,62 @@ test('contract requires reusable CI to validate the generated Go module version'
 
   const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
   assert.ok(violations.some((violation) => violation.code === 'ci.go_version'))
+})
+
+test('contract requires latest-release versioning and recovery when release metadata lags the source branch', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(
+    path,
+    files.get(path)
+      .replaceAll('LATEST_RELEASE_VERSION', 'PREVIOUS_RELEASE_VERSION')
+      .replaceAll('UPSTREAM_PUBLICATION_PENDING', 'DISABLED_PUBLICATION_PENDING'),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.release_version'))
+  assert.ok(violations.some((violation) => violation.code === 'sync.published_release_recovery'))
+})
+
+test('contract requires the binary job to verify expected upstream tag and SHA metadata', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/theme-binary-release.yml'
+  files.set(
+    path,
+    files.get(path)
+      .replaceAll('EXPECTED_UPSTREAM_RELEASE_TAG', 'DISABLED_EXPECTED_TAG')
+      .replaceAll('EXPECTED_UPSTREAM_SHA', 'DISABLED_EXPECTED_SHA')
+      .replaceAll('VERIFIED_UPSTREAM_SHA', 'DISABLED_VERIFIED_SHA'),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'binary.upstream_source_identity'))
+})
+
+test('contract requires the sync job to pass its selected source identity to binary publication', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(
+    path,
+    files.get(path)
+      .replaceAll('expected_upstream_release_tag:', 'disabled_upstream_release_tag:')
+      .replaceAll('expected_upstream_sha:', 'disabled_upstream_sha:'),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.binary_source_identity'))
+})
+
+test('contract requires duplicate-release checks to compare source metadata before skipping', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/theme-binary-release.yml'
+  files.set(
+    path,
+    files.get(path)
+      .replaceAll('EXISTING_RELEASE_SOURCE_MATCH', 'DISABLED_SOURCE_MATCH')
+      .replaceAll('EXISTING_UPSTREAM_SHA', 'DISABLED_UPSTREAM_SHA'),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'binary.release_source_recovery'))
 })

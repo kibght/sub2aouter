@@ -6,15 +6,16 @@ const workflowPath = new URL('../../.github/workflows/upstream-theme-sync.yml', 
 
 const workflow = await readFile(workflowPath, 'utf8')
 
-test('scheduled sync builds the latest published upstream release tag', () => {
+test('all upstream syncs build the discovered latest published release tag', () => {
   assert.match(workflow, /steps\.upstream_release\.outputs\.tag/)
   assert.match(workflow, /refs\/tags\/\$\{UPSTREAM_RELEASE_TAG\}:\$\{UPSTREAM_RELEASE_REF\}/)
   assert.match(workflow, /git worktree add --detach \"\$GENERATED_DIR\" \"\$UPSTREAM_RELEASE_REF\"/)
-  assert.match(workflow, /Scheduled upstream rounds must use the published release tag/)
+  assert.match(workflow, /\[\[ \"\$DISCOVERED_UPSTREAM_RELEASE\" != \"true\" \]\]/)
+  assert.doesNotMatch(workflow, /upstream_ref:|UPSTREAM_REF|FETCH_HEAD/)
   assert.doesNotMatch(workflow, /MAIN_UPSTREAM_VERSION/)
 })
 
-test('scheduled sync validates the source VERSION inside a published release tag', () => {
+test('upstream sync validates the source VERSION inside a published release tag', () => {
   assert.match(workflow, /TAG_UPSTREAM_VERSION=.*git show "\$UPSTREAM_RELEASE_REF":backend\/cmd\/server\/VERSION/)
   assert.match(workflow, /RELEASE_VERSION_FROM_TAG=/)
   assert.match(workflow, /contains invalid VERSION/)
@@ -34,13 +35,12 @@ test('repository releases initialize upstream release metadata before exporting 
 
   assert.ok(repositorySourceBlock)
   assert.match(repositorySourceBlock, /UPSTREAM_RELEASE_PUBLISHED=false/)
-  assert.match(repositorySourceBlock, /UPSTREAM_SOURCE_FROM_MAIN=false/)
+  assert.match(repositorySourceBlock, /RELEASE_KIND=\"repository\"/)
 })
 
-test('manual branch or commit overrides use a verified source VERSION', () => {
-  assert.match(workflow, /Using explicitly requested upstream branch or commit/)
-  assert.match(workflow, /git fetch --depth=1 --force upstream \"\$UPSTREAM_REF\"/)
-  assert.match(workflow, /git worktree add --detach \"\$GENERATED_DIR\" FETCH_HEAD/)
-  assert.match(workflow, /Requested upstream ref \$UPSTREAM_REF contains invalid VERSION/)
-  assert.match(workflow, /UPSTREAM_SOURCE_FROM_MAIN=true/)
+test('the next themed version increments from the latest published themed Release', () => {
+  assert.match(workflow, /repos\/\$\{GITHUB_REPOSITORY\}\/releases\/latest/)
+  assert.match(workflow, /LATEST_RELEASE_TAG=.*jq -r '\.tag_name \/\/ \"\"'/)
+  assert.match(workflow, /LATEST_RELEASE_VERSION=\"\$\{LATEST_RELEASE_TAG#v\}\"/)
+  assert.match(workflow, /node scripts\/next-release-version\.mjs \"\$LATEST_RELEASE_VERSION\"/)
 })

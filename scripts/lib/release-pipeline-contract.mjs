@@ -109,13 +109,14 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.upstream_release_ref', syncPath, sync.includes('refs/apophis/upstream-release') && !sync.includes(':refs/tags/${UPSTREAM_RELEASE_TAG}'), 'Upstream release tags must use a private ref and never collide with themed release tags.')
   check('sync.release_source_tag', syncPath,
     sync.includes('UPSTREAM_RELEASE_TAG') &&
+    sync.includes('DISCOVERED_UPSTREAM_RELEASE_TAG') &&
     sync.includes('git fetch --depth=1 --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:${UPSTREAM_RELEASE_REF}"') &&
     sync.includes('git worktree add --detach "$GENERATED_DIR" "$UPSTREAM_RELEASE_REF"') &&
     sync.includes('TAG_UPSTREAM_VERSION') &&
-    sync.includes('UPSTREAM_SOURCE_FROM_MAIN=true') &&
-    sync.includes('git fetch --depth=1 --force upstream "$UPSTREAM_REF"') &&
-    sync.includes('[[ "$SCHEDULED_ROUND" == "true" ]]'),
-    'Scheduled upstream synchronization must build the latest published release tag; explicit manual refs may opt into a verified branch or commit.')
+    !sync.includes('upstream_ref:') &&
+    !sync.includes('UPSTREAM_REF') &&
+    !sync.includes('FETCH_HEAD'),
+    'Every upstream synchronization must build only the discovered published release tag.')
   check('sync.release_version_metadata', syncPath,
     sync.includes('RELEASE_VERSION_FROM_TAG') &&
     sync.includes('TAG_UPSTREAM_VERSION') &&
@@ -124,7 +125,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.upstream_monotonic', syncPath, sync.includes('merge-base --is-ancestor "$PREVIOUS_UPSTREAM_SHA" "$UPSTREAM_SHA"'), 'Scheduled Sub2API synchronization must reject downgrades and unrelated release history.')
   check('sync.upstream_release_recovery', syncPath, sync.includes('UPSTREAM_RECOVERY_FROM_UNRELEASED') && sync.includes('\"$PREVIOUS_UPSTREAM_RELEASE_TAG\" == unreleased-*') && sync.includes('\"$UPSTREAM_RELEASE_TAG\" != unreleased-*') && sync.includes('\"$UPSTREAM_RELEASE_ID\"') && sync.includes('merge-base --is-ancestor \"$UPSTREAM_SHA\" \"$PREVIOUS_UPSTREAM_SHA\"'), 'Scheduled Sub2API synchronization may recover only from a descendant unreleased snapshot to its published upstream Release ancestor.')
   check('sync.upstream_release_identity', syncPath, sync.includes('UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_TAG') && sync.includes('.apophis-upstream-release-id') && sync.includes('UPSTREAM_IDENTITY_AND_SHA_MATCH') && sync.includes('"$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA"'), 'Scheduled Sub2API syncs must deduplicate only when Release identity and source SHA match.')
-  check('sync.skip_unchanged', syncPath, sync.includes('SCHEDULED_ROUND') && hasPattern(sync, /PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Coordinated hourly runs must skip unchanged upstream revisions.')
+  check('sync.skip_unchanged', syncPath, sync.includes('SCHEDULED_ROUND') && hasPattern(sync, /PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Upstream runs must skip unchanged source revisions once the latest binary Release includes them.')
   check('sync.theme_overlay', syncPath, sync.includes('node scripts/apply-theme.mjs --root .'), 'Sync must apply the Apophis overlay to fetched upstream source.')
   check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-canvas-sha') && sync.includes('.apophis-release-notes.md'), 'Sync must persist upstream, repository, Canvas, and release notes metadata.')
   check('sync.repository_recovery', syncPath, sync.includes('repository_release:') && sync.includes('PREVIOUS_CANVAS_SHA') && sync.includes('Repository source drift is intentionally not published') && sync.includes('UPSTREAM_ALREADY_SYNCHRONIZED'), 'Scheduled syncs may publish Canvas drift, while repository-only changes require explicit repository_release=true.')
@@ -139,7 +140,24 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.repository_checkout', syncPath, hasPattern(sync, /name: Checkout theme source[\s\S]{0,300}ref: main/) && !sync.includes("github.event_name == 'push'"), 'Manual and coordinated publication must checkout main explicitly.')
   check('sync.repository_source_sha', syncPath, sync.includes('RELEASE_SOURCE_SHA="$(git rev-parse HEAD)"') && !sync.includes('RELEASE_SOURCE_SHA="${{ github.sha }}"'), 'Repository release metadata must come from the commit actually checked out and built.')
   check('sync.repository_notes', syncPath, sync.includes('## \u672c\u6b21\u4fee\u590d\u5185\u5bb9') && sync.includes('Capture repository release notes') && sync.includes('具体修复内容见本次发布提交说明'), 'Explicit repository releases must publish concrete fix notes.')
-  check('sync.release_version', syncPath, sync.includes('PREVIOUS_RELEASE_VERSION') && sync.includes('node scripts/next-release-version.mjs \"$PREVIOUS_RELEASE_VERSION\"'), 'Sync must migrate the next release to v0.1.200 and increment the persisted version.')
+  check('sync.release_version', syncPath,
+    sync.includes('LATEST_RELEASE_VERSION') &&
+    sync.includes('repos/${GITHUB_REPOSITORY}/releases/latest') &&
+    sync.includes('node scripts/next-release-version.mjs \"$LATEST_RELEASE_VERSION\"'),
+    'New release versions must increment from the latest published themed Release.')
+  check('sync.published_release_recovery', syncPath,
+    sync.includes('LATEST_RELEASE_UPSTREAM_SHA') &&
+    sync.includes('LATEST_RELEASE_UPSTREAM_TAG') &&
+    sync.includes('UPSTREAM_PUBLICATION_PENDING') &&
+    sync.includes('\"$UPSTREAM_PUBLICATION_PENDING\" != \"true\"'),
+    'A source already recorded on themed-release must be republished when the latest binary Release contains older upstream metadata.')
+  check('sync.binary_source_identity', syncPath,
+    sync.includes('upstream_release_tag: ${{ steps.release_outputs.outputs.upstream_release_tag }}') &&
+    sync.includes('upstream_sha: ${{ steps.release_outputs.outputs.upstream_sha }}') &&
+    sync.includes('expected_upstream_release_tag: ${{ needs.sync-build-publish.outputs.upstream_release_tag }}') &&
+    sync.includes('expected_upstream_sha: ${{ needs.sync-build-publish.outputs.upstream_sha }}') &&
+    sync.includes('if [[ \"${RELEASE_KIND:-}\" == \"upstream\" ]]'),
+    'The sync job must pass the selected upstream Release tag and SHA to binary publication.')
   check('sync.explicit_release_version', syncPath,
     sync.includes('release_version:') &&
     sync.includes('RELEASE_VERSION_OVERRIDE') &&
@@ -172,7 +190,14 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     workflowRestore.includes('git checkout origin/themed-release -- "$workflow"') &&
     workflowRestore.includes('rm -f "$workflow"'),
   'Sync must restore non-owned workflow snapshots through one shared helper before verification and final publication.')
-  check('sync.binary_recovery', syncPath, sync.includes('NEEDS_BINARY_RELEASE') && sync.includes('gh release view "$PREVIOUS_RELEASE_TAG"') && sync.includes('targetCommitish') && sync.includes('run_binary=$RUN_BINARY') && sync.includes('effective_version=$EFFECTIVE_VERSION'), 'Sync must recover a missing, incomplete, draft, prerelease, or mis-targeted binary release without minting another version.')
+  check('sync.binary_recovery', syncPath,
+    sync.includes('NEEDS_BINARY_RELEASE') &&
+    sync.includes('gh release view "$LATEST_RELEASE_TAG"') &&
+    sync.includes('LATEST_RELEASE_VERSION') &&
+    sync.includes('targetCommitish') &&
+    sync.includes('run_binary=$RUN_BINARY') &&
+    sync.includes('effective_version=$EFFECTIVE_VERSION'),
+    'Sync must inspect and repair the latest published binary Release without minting another version.')
   check('sync.binary_call', syncPath,
     sync.includes('binary-release:') &&
     sync.includes('uses: ./.github/workflows/theme-binary-release.yml') &&
@@ -289,6 +314,17 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     !binary.includes('workflow_run:'),
   'Binary release must expose reusable and manual inputs without recursive workflow_run triggers.')
   check('binary.source_guard', binaryPath, binary.includes('name: Verify themed release matches main repository and canvas') && binary.includes('RELEASE_REPOSITORY_SHA') && binary.includes('MAIN_REPOSITORY_SHA') && binary.includes('MAIN_CANVAS_SHA') && binary.includes('RELEASE_CANVAS_SHA'), 'Binary release must reject a themed snapshot that does not match main repository and Canvas revisions.')
+  check('binary.upstream_source_identity', binaryPath,
+    binary.includes('expected_upstream_release_tag:') &&
+    binary.includes('expected_upstream_sha:') &&
+    binary.includes('EXPECTED_UPSTREAM_RELEASE_TAG') &&
+    binary.includes('EXPECTED_UPSTREAM_SHA') &&
+    binary.includes('RELEASE_UPSTREAM_TAG') &&
+    binary.includes('RELEASE_UPSTREAM_SHA') &&
+    binary.includes('refs/tags/${RELEASE_UPSTREAM_TAG}:refs/apophis/verified-upstream-release') &&
+    binary.includes('VERIFIED_UPSTREAM_SHA') &&
+    binary.includes('Themed release source SHA does not match upstream Release'),
+    'Binary publication must verify the generated source metadata against the exact upstream Release selected for the run.')
   check('binary.canvas_freshness', binaryPath, binary.includes('LATEST_CANVAS_SHA') && binary.includes('node scripts/resolve-github-release.mjs') && binary.includes('--repository basketikun/infinite-canvas'), 'Binary publication must stop when the themed Canvas is behind the latest published upstream release.')
   check('binary.checkout', binaryPath, binary.includes("ref: ${{ inputs.release_ref || 'themed-release' }}"), 'Binary release must build the requested immutable generated release ref.')
   check('binary.version', binaryPath, binary.includes('cat backend/cmd/server/VERSION'), 'Binary release must reuse the generated version.')
@@ -296,6 +332,12 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('binary.notes', binaryPath, binary.includes('.apophis-release-title') && binary.includes('.apophis-release-notes.md') && binary.includes('--notes-file'), 'Binary release must include the generated repository or upstream notes file.')
   check('binary.artifacts', binaryPath, binary.includes('name: Verify GoReleaser artifacts') && binary.includes('linux_amd64.tar.gz') && binary.includes('linux_arm64.tar.gz') && binary.includes('windows_amd64.zip') && binary.includes('darwin_amd64.tar.gz') && binary.includes('darwin_arm64.tar.gz') && binary.includes('dist/checksums.txt'), 'Binary release must verify Linux, Windows, macOS, and checksum artifacts before publishing.')
   check('binary.release_recovery', binaryPath, binary.includes('RELEASE_EXISTS') && binary.includes('gh release upload "$RELEASE_TAG"') && binary.includes('--clobber') && binary.includes('gh release edit "$RELEASE_TAG"') && binary.includes('name: Verify published GitHub release') && binary.includes('Missing published release asset'), 'Binary publication must repair incomplete releases and verify the final GitHub Release state.')
+  check('binary.release_source_recovery', binaryPath,
+    binary.includes('EXISTING_RELEASE_SOURCE_MATCH') &&
+    binary.includes('EXISTING_UPSTREAM_SHA') &&
+    binary.includes('EXISTING_UPSTREAM_TAG') &&
+    binary.includes('\"$EXISTING_RELEASE_SOURCE_MATCH\" == \"true\"'),
+    'Binary publication must rebuild a complete existing tag when its upstream source metadata is stale.')
   check('binary.tag_alignment', binaryPath,
     binary.includes('git tag -f "$RELEASE_TAG"') &&
     binary.includes('git push --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"'),
