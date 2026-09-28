@@ -33,6 +33,17 @@ func EvaluatePluginCompatibility(manifest PluginManifest, host PluginHostInfo) P
 \t\t}
 \t}
 }
+
+func matchesSemverRange(version, expression string) bool {
+\treturn false
+}
+`,
+    'backend/internal/service/plugin_compatibility_test.go': `package service
+
+import "testing"
+
+func TestEvaluatePluginCompatibilityRejectsProtocolMismatch(t *testing.T) {
+}
 `,
     'backend/internal/service/wire.go': `package service
 
@@ -106,7 +117,7 @@ func providePluginHostInfo(buildInfo handler.BuildInfo) service.PluginHostInfo {
   return root
 }
 
-test('separates the themed release version from the plugin compatibility version', async () => {
+test('checks both fork and upstream versions for plugin compatibility', async () => {
   const root = await fixture()
 
   assert.equal(await applySub2PluginCompatibility({ root }), true)
@@ -118,10 +129,22 @@ test('separates the themed release version from the plugin compatibility version
     'utf8',
   )
   assert.match(compatibility, /CompatibilityVersion string/)
-  assert.match(compatibility, /CurrentSub2API:\s+pluginCompatibilityVersion\(host\)/)
-  assert.match(compatibility, /matchesSemverRange\(pluginCompatibilityVersion\(host\)/)
-  assert.match(compatibility, /normalizeSemver\(pluginCompatibilityVersion\(host\)\)/)
-  assert.match(compatibility, /fmt\.Sprintf\("当前 Sub2API %s 不满足插件要求 %s", pluginCompatibilityVersion\(host\)/)
+  assert.match(compatibility, /func pluginHostVersions\(host PluginHostInfo\) \[\]string/)
+  assert.match(compatibility, /host\.Version, host\.CompatibilityVersion/)
+  assert.match(compatibility, /CurrentSub2API:\s+pluginHostVersionDisplay\(host\)/)
+  assert.match(compatibility, /pluginHostVersionMatches\(host, manifest\.Requires\.Sub2API\)/)
+  assert.match(compatibility, /pluginTestedAgainstHostVersion\(tested, host\)/)
+  assert.match(compatibility, /fmt\.Sprintf\("%s \(fork\), %s \(upstream\)"/)
+  assert.match(compatibility, /strings\.Split\(expression, "\|\|"\)/)
+  assert.match(compatibility, /func matchesSemverRangeConjunction\(/)
+
+  const compatibilityTests = await readFile(
+    path.join(root, 'backend/internal/service/plugin_compatibility_test.go'),
+    'utf8',
+  )
+  assert.match(compatibilityTests, /TestEvaluatePluginCompatibilityUsesForkAndUpstreamVersions/)
+  assert.match(compatibilityTests, /TestMatchesSemverRangeSupportsAlternatives/)
+  assert.match(compatibilityTests, /assert\.False\(t, result\.Tested\)/)
 
   const main = await readFile(path.join(root, 'backend/cmd/server/main.go'), 'utf8')
   assert.match(main, /go:embed UPSTREAM_VERSION/)
