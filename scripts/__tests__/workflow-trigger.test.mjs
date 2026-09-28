@@ -91,3 +91,17 @@ test('the watchdog runs independently away from the coordinator boundary', async
   assert.match(watchdog, /stale-after-minutes 120/)
   assert.match(watchdog, /stuck-after-minutes 90/)
 })
+
+test('explicit release versions can republish an already-synchronized upstream tree', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  const skipMessage = 'Upstream release identity and source SHA are already synchronized; skipping duplicate publication.'
+  const skipIndex = workflow.indexOf(skipMessage)
+  const conditionStart = workflow.lastIndexOf('if [[', skipIndex)
+  const condition = workflow.slice(conditionStart, skipIndex)
+
+  assert.ok(skipIndex >= 0, 'unchanged upstream skip branch must exist')
+  assert.match(workflow, /Explicit release version for a repository or synchronized-upstream republish/)
+  assert.match(condition, /UPSTREAM_ALREADY_SYNCHRONIZED/)
+  assert.match(condition, /UPSTREAM_PUBLICATION_PENDING/)
+  assert.match(condition, /-z "\$RELEASE_VERSION_OVERRIDE"/)
+})

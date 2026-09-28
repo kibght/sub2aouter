@@ -14,7 +14,7 @@ on:
         default: false
         type: boolean
       release_version:
-        description: Explicit release version for a verified repository republish
+        description: Explicit release version for a repository or synchronized-upstream republish
         required: false
         default: ''
         type: string
@@ -310,7 +310,7 @@ jobs:
             echo "RELEASE_IMAGE_TAG=$RELEASE_IMAGE_TAG" >> "$GITHUB_ENV"
             echo "Upstream is unchanged, but Canvas metadata drifted; publishing repository state."
           elif [[ "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$PREVIOUS_REPOSITORY_SHA" != "$CURRENT_REPOSITORY_SHA" ]]; then
-            echo "Repository source drift is intentionally not published without repository_release=true."
+            echo "Repository source drift is intentionally not published without repository_release=true or an explicit release_version."
           fi
 
           if [[ "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$UPSTREAM_PUBLICATION_PENDING" != "true" && "$NEEDS_BINARY_RELEASE" == "true" ]]; then
@@ -320,7 +320,7 @@ jobs:
             exit 0
           fi
 
-          if [[ "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$UPSTREAM_PUBLICATION_PENDING" != "true" ]]; then
+          if [[ "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$UPSTREAM_PUBLICATION_PENDING" != "true" && -z "$RELEASE_VERSION_OVERRIDE" ]]; then
             echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
             echo "Upstream release identity and source SHA are already synchronized; skipping duplicate publication."
             exit 0
