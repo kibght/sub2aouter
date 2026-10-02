@@ -46,7 +46,7 @@ test('active documentation matches the hourly coordinator and on-demand version 
     assert.match(readme, /\u6bcf\u5c0f\u65f6/)
     assert.doesNotMatch(readme, /\u6bcf 30 \u5206\u949f\u5b9a\u65f6\u89e6\u53d1/)
     assert.doesNotMatch(readme, /\u7248\u672c\u5361\u7247\u6bcf 30 \u5206\u949f\u68c0\u67e5/)
-    assert.match(readme, /`0\.1\.x`/)
+    assert.match(readme, /`0\.x`/)
     assert.doesNotMatch(readme, /`2026\./)
   }
 })

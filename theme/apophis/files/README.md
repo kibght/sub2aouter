@@ -103,7 +103,7 @@ themed-release   GHCR 镜像
 10. Push the immutable `themed-release` snapshot and pass its exact commit to the reusable binary workflow.
 11. Wait for every binary asset and checksum to be published and verified.
 12. Promote the same immutable image version to `latest` only after binary publication succeeds.
-13. Docker images and binary Releases share one monotonically increasing `0.1.x` version.
+13. Docker images and binary Releases share one monotonically increasing `0.x` version.
 14. The admin version card checks `kibght/sub2aouter`; manual refresh bypasses its cache.
 15. Release notes preserve the matched upstream Release metadata and full changelog.
 16. Fallback to a commit summary is allowed only when the upstream explicitly has no Release; other API failures stop the run.

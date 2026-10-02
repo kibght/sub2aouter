@@ -15,6 +15,11 @@ test('all upstream syncs build the discovered latest published release tag', () 
   assert.doesNotMatch(workflow, /MAIN_UPSTREAM_VERSION/)
 })
 
+test('latest themed release validation accepts the v0.2 release line', () => {
+  assert.match(workflow, /\^v\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$/)
+  assert.doesNotMatch(workflow, /\^v0\\\.1\\\.\[0-9\]\+\$/)
+})
+
 test('upstream sync validates the source VERSION inside a published release tag', () => {
   assert.match(workflow, /TAG_UPSTREAM_VERSION=.*git show "\$UPSTREAM_RELEASE_REF":backend\/cmd\/server\/VERSION/)
   assert.match(workflow, /RELEASE_VERSION_FROM_TAG=/)

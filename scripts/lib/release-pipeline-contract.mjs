@@ -360,6 +360,10 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   const releaseVersionPath = 'scripts/lib/release-version.mjs'
   const releaseVersion = files.get(releaseVersionPath) || ''
   check('release_version.bootstrap', releaseVersionPath, releaseVersion.includes('FIRST_RELEASE_PATCH = 200'), 'Release version generation must bootstrap at v0.1.200.')
+  check('release_version.cutover', releaseVersionPath,
+    releaseVersion.includes('RELEASE_CUTOVER_PATCH = 270') &&
+    releaseVersion.includes('NEXT_RELEASE_MINOR = 2'),
+    'Release version generation must cut over from v0.1.270 to v0.2.0.')
 
   const servicePath = 'backend/internal/service/update_service.go'
   const service = files.get(servicePath) || ''
