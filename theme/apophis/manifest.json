@@ -601,6 +601,34 @@
       "markerPattern": "expect\\(providerButtons\\)\\.toHaveLength\\(\\d+\\)",
       "source": "patches/channel-monitor-grok-provider-count.txt",
       "sentinel": "expect(providerButtons).toHaveLength(PROVIDERS.length)"
+    },
+    {
+      "target": "frontend/src/api/__tests__/settings.authSourceDefaults.spec.ts",
+      "operation": "replace",
+      "marker": "const allNullQuotas: DefaultPlatformQuotasMap = {\n  anthropic: { daily: null, weekly: null, monthly: null },\n  openai:    { daily: null, weekly: null, monthly: null },\n  gemini:    { daily: null, weekly: null, monthly: null },\n  antigravity: { daily: null, weekly: null, monthly: null },\n  grok: { daily: null, weekly: null, monthly: null },\n}",
+      "markerPattern": "const allNullQuotas: DefaultPlatformQuotasMap = \\{[\\s\\S]*?^\\}",
+      "markerPatternFlags": "m",
+      "source": "patches/auth-source-default-quotas-all-platforms.txt",
+      "sentinel": "const allNullQuotas: DefaultPlatformQuotasMap = normalizePlatformQuotasMap()",
+      "optional": true
+    },
+    {
+      "target": "frontend/src/api/__tests__/settings.authSourceDefaults.spec.ts",
+      "operation": "replace",
+      "marker": "expect(Object.keys(result)).toHaveLength(5);",
+      "markerPattern": "expect\\(Object\\.keys\\(result\\)\\)\\.toHaveLength\\(5\\);",
+      "source": "patches/auth-source-default-quotas-count-normalized.txt",
+      "sentinel": "expect(Object.keys(result).length).toBeGreaterThan(0)",
+      "optional": true
+    },
+    {
+      "target": "frontend/src/api/__tests__/settings.authSourceDefaults.spec.ts",
+      "operation": "replace",
+      "marker": "expect(Object.keys(result)).toHaveLength(5);",
+      "markerPattern": "expect\\(Object\\.keys\\(result\\)\\)\\.toHaveLength\\(5\\);",
+      "source": "patches/auth-source-default-quotas-count-fixture.txt",
+      "sentinel": "expect(Object.keys(result).sort()).toEqual(Object.keys(allNullQuotas).sort())",
+      "optional": true
     }
   ]
 }

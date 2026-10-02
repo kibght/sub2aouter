@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { applyTheme, checkTheme } from '../lib/theme-overlay.mjs'
 
 async function fixture() {
@@ -109,6 +110,78 @@ test('supports regex replacement patches for upstream numeric drift', async () =
   assert.equal(await readFile(path.join(root, 'frontend/providers.spec.ts'), 'utf8'), 'expect(providerButtons).toHaveLength(PROVIDERS.length)\n')
   assert.equal(first.changed, true)
   assert.equal(second.changed, false)
+})
+
+test('auth source quota compatibility accepts upstream platform additions', async () => {
+  const target = 'frontend/src/api/__tests__/settings.authSourceDefaults.spec.ts'
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+  const manifest = JSON.parse(await readFile(path.join(repoRoot, 'theme/apophis/manifest.json'), 'utf8'))
+  const patches = manifest.patches.filter((patch) => patch.target === target)
+  assert.equal(patches.length, 3)
+  assert.match(patches[0].marker, /^const allNullQuotas:[\s\S]*^}/m)
+  assert.notEqual(patches[0].marker, 'const allNullQuotas: DefaultPlatformQuotasMap = {')
+
+  const overlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-auth-quota-overlay-'))
+  await mkdir(path.join(overlay, 'patches'), { recursive: true })
+  for (const patch of patches) {
+    await writeFile(
+      path.join(overlay, patch.source),
+      await readFile(path.join(repoRoot, 'theme/apophis', patch.source), 'utf8'),
+    )
+  }
+  await writeFile(path.join(overlay, 'manifest.json'), JSON.stringify({ patches }))
+
+  const basePlatforms = ['anthropic', 'openai', 'gemini', 'antigravity', 'grok']
+  for (const platforms of [basePlatforms, [...basePlatforms, 'typesafe']]) {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-auth-quota-root-'))
+    await mkdir(path.dirname(path.join(root, target)), { recursive: true })
+    const platformEntries = platforms
+      .map((platform) => '  ' + platform + ': { daily: null, weekly: null, monthly: null },')
+      .join('\n')
+    const source = [
+      'const allNullQuotas: DefaultPlatformQuotasMap = {',
+      platformEntries,
+      '}',
+      'expect(Object.keys(result)).toHaveLength(5);',
+      'expect(Object.keys(result)).toHaveLength(5);',
+      '',
+    ].join('\n')
+    await writeFile(path.join(root, target), source)
+
+    const first = await applyTheme({ root, overlay })
+    const second = await applyTheme({ root, overlay })
+    const patched = await readFile(path.join(root, target), 'utf8')
+
+    assert.match(patched, /const allNullQuotas: DefaultPlatformQuotasMap = normalizePlatformQuotasMap\(\)/)
+    assert.doesNotMatch(patched, /toHaveLength\(5\)/)
+    assert.match(patched, /Object\.keys\(result\)\.length\)\.toBeGreaterThan\(0\)/)
+    assert.match(patched, /Object\.keys\(allNullQuotas\)\.sort\(\)/)
+    assert.equal(first.changed, true)
+    assert.equal(second.changed, false)
+  }
+
+  const driftOverlay = await mkdtemp(path.join(os.tmpdir(), 'sub2api-auth-quota-drift-overlay-'))
+  await mkdir(path.join(driftOverlay, 'patches'), { recursive: true })
+  await writeFile(
+    path.join(driftOverlay, patches[0].source),
+    await readFile(path.join(repoRoot, 'theme/apophis', patches[0].source), 'utf8'),
+  )
+  await writeFile(path.join(driftOverlay, 'manifest.json'), JSON.stringify({ patches: [patches[0]] }))
+
+  const driftRoot = await mkdtemp(path.join(os.tmpdir(), 'sub2api-auth-quota-drift-root-'))
+  await mkdir(path.dirname(path.join(driftRoot, target)), { recursive: true })
+  const driftedSource = [
+    'const allNullQuotas: DefaultPlatformQuotasMap = {',
+    '  anthropic: { daily: null, weekly: null, monthly: null },',
+    '  openai: { daily: null, weekly: null, monthly: null },',
+    '  }',
+    '',
+  ].join('\n')
+  await writeFile(path.join(driftRoot, target), driftedSource)
+
+  const driftResult = await applyTheme({ root: driftRoot, overlay: driftOverlay })
+  assert.equal(driftResult.changed, false)
+  assert.equal(await readFile(path.join(driftRoot, target), 'utf8'), driftedSource)
 })
 
 test('repository pointer patches preserve the official update flow', async () => {
