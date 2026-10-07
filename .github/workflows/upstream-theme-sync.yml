@@ -379,6 +379,11 @@ jobs:
         run: node scripts/apply-theme.mjs --root .
         working-directory: ${{ env.GENERATED_DIR }}
 
+      - name: Reconcile upstream test compatibility
+        if: env.SHOULD_PUBLISH == 'true'
+        run: node scripts/apply-upstream-test-compatibility.mjs --root .
+        working-directory: ${{ env.GENERATED_DIR }}
+
       - name: Apply Sub2API plugin compatibility integration
         if: env.SHOULD_PUBLISH == 'true'
         shell: bash
