@@ -1,0 +1,3 @@
+            <div class="app-header-user-copy hidden text-left md:block">
+              <div class="app-header-user-name text-sm font-medium text-gray-900 dark:text-white">
+                {{ displayName }}
