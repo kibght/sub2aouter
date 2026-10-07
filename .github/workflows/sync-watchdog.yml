@@ -41,7 +41,7 @@ jobs:
           HEALTH_ERROR=/tmp/sync-health-error.log
           if node scripts/check-sync-health.mjs \
             --repository "$GITHUB_REPOSITORY" \
-            --stale-after-minutes 120 \
+            --stale-after-minutes 75 \
             --stuck-after-minutes 90 \
             --release-ref themed-release \
             --json-output "$HEALTH_JSON" \

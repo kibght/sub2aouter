@@ -293,6 +293,7 @@ export function evaluateSyncHealth(options) {
     stuckAfterMinutes = 90,
     workflows = [],
     release = null,
+    upstream = null,
   } = options || {}
 
   const now = validDate(nowValue)
@@ -394,6 +395,24 @@ export function evaluateSyncHealth(options) {
     }
   }
 
+  let upstreamDetails = null
+  if (upstream?.found) {
+    const currentTag = String(upstream.synchronizedTag || '').trim()
+    const currentId = String(upstream.synchronizedId || '').trim()
+    const synchronized = currentTag === upstream.tag && currentId === String(upstream.id)
+    upstreamDetails = {
+      tag: upstream.tag,
+      id: String(upstream.id),
+      publishedAt: upstream.publishedAt,
+      synchronizedTag: currentTag,
+      synchronizedId: currentId,
+      state: synchronized ? 'healthy' : 'recoverable',
+    }
+    if (!synchronized) {
+      recoverableReasons.push(`Upstream release ${upstream.tag} (${upstream.id}) is not synchronized; generated source records ${currentTag || 'none'} (${currentId || 'none'}).`)
+    }
+  }
+
   let state = 'healthy'
   let reasons = []
   if (criticalReasons.length > 0) {
@@ -419,5 +438,6 @@ export function evaluateSyncHealth(options) {
     stuckAfterMinutes,
     workflows: details,
     release: releaseDetails,
+    upstream: upstreamDetails,
   }
 }

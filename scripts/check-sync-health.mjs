@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { appendFile, writeFile } from 'node:fs/promises'
+import { fetchLatestRelease } from './lib/github-release.mjs'
 
 import {
   evaluateSyncHealth,
@@ -51,10 +52,13 @@ async function main() {
   const coordinator = args['coordinator-workflow'] || 'infinite-canvas-upstream-sync.yml'
   const publisher = args['publisher-workflow'] || 'upstream-theme-sync.yml'
   const releaseRef = args['release-ref'] || 'themed-release'
-  const [coordinatorSnapshot, publisherSnapshot, versionText] = await Promise.all([
+  const [coordinatorSnapshot, publisherSnapshot, versionText, upstream, synchronizedTag, synchronizedId] = await Promise.all([
     fetchWorkflowSnapshot({ repository, workflowId: coordinator, name: 'Infinite Canvas coordinator', token }),
     fetchWorkflowSnapshot({ repository, workflowId: publisher, name: 'Themed upstream publisher', token }),
     fetchRepositoryContent({ repository, path: 'backend/cmd/server/VERSION', ref: releaseRef, token }),
+    fetchLatestRelease({ repository: args['upstream-repository'] || 'Wei-Shaw/sub2api', token }),
+    fetchRepositoryContent({ repository, path: '.apophis-upstream-release-tag', ref: releaseRef, token }),
+    fetchRepositoryContent({ repository, path: '.apophis-upstream-release-id', ref: releaseRef, token }),
   ])
   const version = versionText.trim()
   if (!/^\d+\.\d+\.\d+$/.test(version)) {
@@ -72,6 +76,7 @@ async function main() {
     stuckAfterMinutes: Number(args['stuck-after-minutes'] || 90),
     workflows,
     release,
+    upstream: { ...upstream, synchronizedTag, synchronizedId },
   })
   const json = `${JSON.stringify(result, null, 2)}\n`
   process.stdout.write(json)

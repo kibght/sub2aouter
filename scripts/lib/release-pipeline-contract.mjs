@@ -298,7 +298,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.watchdog', watchdogPath,
     hasPattern(watchdog, /cron:\s*'41 \* \* \* \*'/) &&
     watchdog.includes('node scripts/check-sync-health.mjs') &&
-    watchdog.includes('stale-after-minutes 120') &&
+    watchdog.includes('stale-after-minutes 75') &&
     watchdog.includes('stuck-after-minutes 90') &&
     watchdog.includes('--release-ref themed-release') &&
     watchdog.includes('gh workflow run infinite-canvas-upstream-sync.yml') &&

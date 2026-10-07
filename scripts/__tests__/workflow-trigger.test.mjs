@@ -88,7 +88,7 @@ test('the watchdog runs independently away from the coordinator boundary', async
   const watchdog = await readFile('.github/workflows/sync-watchdog.yml', 'utf8')
   assert.match(watchdog, /cron:\s*'41 \* \* \* \*'/)
   assert.match(watchdog, /workflow_dispatch:/)
-  assert.match(watchdog, /stale-after-minutes 120/)
+  assert.match(watchdog, /stale-after-minutes 75/)
   assert.match(watchdog, /stuck-after-minutes 90/)
 })
 
