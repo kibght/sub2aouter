@@ -1,0 +1,1 @@
+            class="app-header-user flex items-center gap-2 rounded-xl p-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-dark-800"

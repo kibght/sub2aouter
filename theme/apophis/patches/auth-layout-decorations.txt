@@ -1,0 +1,1 @@
+    <div class="auth-decorations pointer-events-none absolute inset-0 overflow-hidden">
