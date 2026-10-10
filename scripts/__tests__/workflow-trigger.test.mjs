@@ -1,0 +1,107 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import test from 'node:test'
+
+test('upstream theme workflow never publishes automatically on main push', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  assert.match(workflow, /\non:\n  workflow_dispatch:/)
+  assert.doesNotMatch(workflow, /\n  push:/)
+})
+
+test('manual repository publication checks out and records main explicitly', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  assert.match(workflow, /ref: main/)
+  assert.match(workflow, /RELEASE_SOURCE_SHA="\$\(git rev-parse HEAD\)"/)
+  assert.doesNotMatch(workflow, /RELEASE_SOURCE_SHA="\$\{\{ github\.sha \}\}"/)
+})
+
+test('upstream theme workflow runs the full regression suite before publishing latest', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  assert.match(workflow, /pnpm run test:run/)
+  assert.doesNotMatch(workflow, /pnpm exec vitest run \\/)
+  const tests = workflow.indexOf('pnpm run test:run')
+  const backend = workflow.indexOf('name: Backend unit tests')
+  const immutablePush = workflow.indexOf('name: Push immutable themed image')
+  const releaseBranch = workflow.indexOf('name: Update generated release branch')
+  const binaryJob = workflow.indexOf('\n  binary-release:\n')
+  const latestJob = workflow.indexOf('\n  promote-latest:\n')
+  const latestPush = workflow.indexOf('docker push "${IMAGE}:latest"', latestJob)
+  assert.ok(tests >= 0 && tests < backend)
+  assert.ok(backend < immutablePush)
+  assert.ok(immutablePush < releaseBranch)
+  assert.ok(releaseBranch < binaryJob)
+  assert.ok(binaryJob < latestJob && latestJob < latestPush)
+  assert.equal(workflow.slice(0, binaryJob).includes('docker push "${IMAGE}:latest"'), false)
+})
+test('upstream sync verifies the release contract before fetching upstream', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  const contract = workflow.indexOf('name: Verify release pipeline contract')
+  const fetch = workflow.indexOf('name: Prepare release source')
+  assert.match(workflow, /node scripts\/verify-release-pipeline\.mjs --root \./)
+  assert.ok(contract >= 0, 'release contract step must exist')
+  assert.ok(contract < fetch, 'release contract must run before fetching upstream')
+})
+
+
+test('manual repository releases build the checked out main commit without fetching upstream', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  assert.match(workflow, /REPOSITORY_RELEASE.*true/)
+  assert.match(workflow, /git worktree add --detach "\$GENERATED_DIR" "\$\{\{ github\.sha \}\}"/)
+  assert.match(workflow, /RELEASE_KIND="repository"/)
+  assert.match(workflow, /\u672c\u6b21\u4fee\u590d\u5185\u5bb9/)
+  assert.match(workflow, /\.apophis-release-notes\.md/)
+  assert.match(workflow, /rm -rf \"\$GENERATED_DIR\/theme\" \"\$GENERATED_DIR\/scripts\"/)
+})
+
+test('the coordinated upstream round fetches the published release tag with retries', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  const coordinator = await readFile('.github/workflows/infinite-canvas-upstream-sync.yml', 'utf8')
+  assert.match(coordinator, /cron:\s*'17 \* \* \* \*'/)
+  assert.doesNotMatch(coordinator, /cron:\s*'\*\/30 \* \* \* \*'/)
+  assert.doesNotMatch(workflow, /schedule:/)
+  assert.match(workflow, /SCHEDULED_ROUND/)
+  assert.match(workflow, /source scripts\/ci\/retry\.sh/)
+  assert.match(workflow, /retry_with_backoff 5 5 git fetch --depth=1 --force upstream "refs\/tags\/\$\{UPSTREAM_RELEASE_TAG\}:\$\{UPSTREAM_RELEASE_REF\}"/)
+})
+
+test('every upstream sync uses the discovered published release tag', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  assert.match(workflow, /DISCOVERED_UPSTREAM_RELEASE_TAG/)
+  assert.match(workflow, /git fetch --depth=1 --force upstream "refs\/tags\/\$\{UPSTREAM_RELEASE_TAG\}:\$\{UPSTREAM_RELEASE_REF\}"/)
+  assert.match(workflow, /git worktree add --detach "\$GENERATED_DIR" "\$UPSTREAM_RELEASE_REF"/)
+  assert.doesNotMatch(workflow, /upstream_ref:|UPSTREAM_REF|FETCH_HEAD/)
+})
+
+test('upstream sync deduplicates by release identity before falling back to SHA', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  assert.match(workflow, /UPSTREAM_RELEASE_ID/)
+  assert.match(workflow, /\.apophis-upstream-release-id/)
+  assert.match(workflow, /PREVIOUS_UPSTREAM_RELEASE_ID/)
+  assert.match(workflow, /PREVIOUS_UPSTREAM_RELEASE_TAG/)
+  assert.match(workflow, /RELEASE_KIND.*upstream.*PREVIOUS_UPSTREAM_SHA.*UPSTREAM_SHA/)
+  assert.match(workflow, /UPSTREAM_PUBLICATION_PENDING/)
+  assert.match(workflow, /PREVIOUS_UPSTREAM_RELEASE_ID.*UPSTREAM_RELEASE_ID/)
+  assert.match(workflow, /PREVIOUS_UPSTREAM_RELEASE_TAG.*UPSTREAM_RELEASE_TAG/)
+})
+
+test('the watchdog runs independently away from the coordinator boundary', async () => {
+  const watchdog = await readFile('.github/workflows/sync-watchdog.yml', 'utf8')
+  assert.match(watchdog, /cron:\s*'41 \* \* \* \*'/)
+  assert.match(watchdog, /workflow_dispatch:/)
+  assert.match(watchdog, /stale-after-minutes 75/)
+  assert.match(watchdog, /stuck-after-minutes 90/)
+})
+
+test('explicit release versions can republish an already-synchronized upstream tree', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  const skipMessage = 'Upstream release identity and source SHA are already synchronized; skipping duplicate publication.'
+  const skipIndex = workflow.indexOf(skipMessage)
+  const conditionStart = workflow.lastIndexOf('if [[', skipIndex)
+  const condition = workflow.slice(conditionStart, skipIndex)
+
+  assert.ok(skipIndex >= 0, 'unchanged upstream skip branch must exist')
+  assert.match(workflow, /Explicit release version for a repository or synchronized-upstream republish/)
+  assert.match(condition, /UPSTREAM_ALREADY_SYNCHRONIZED/)
+  assert.match(condition, /UPSTREAM_PUBLICATION_PENDING/)
+  assert.match(condition, /-z "\$RELEASE_VERSION_OVERRIDE"/)
+})
