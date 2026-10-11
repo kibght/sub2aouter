@@ -213,9 +213,10 @@ jobs:
           fi
           LATEST_RELEASE_VERSION="${LATEST_RELEASE_TAG#v}"
           LATEST_RELEASE_REF=refs/apophis/latest-published-release
-          retry_with_backoff 5 5 git fetch origin "refs/tags/${LATEST_RELEASE_TAG}:${LATEST_RELEASE_REF}"
+          retry_with_backoff 5 5 git fetch --force origin "refs/tags/${LATEST_RELEASE_TAG}:${LATEST_RELEASE_REF}"
           LATEST_RELEASE_UPSTREAM_SHA="$(git show "${LATEST_RELEASE_REF}:.apophis-upstream-sha" 2>/dev/null | tr -d '[:space:]' || true)"
           LATEST_RELEASE_UPSTREAM_TAG="$(git show "${LATEST_RELEASE_REF}:.apophis-upstream-release-tag" 2>/dev/null | tr -d '[:space:]' || true)"
+          LATEST_RELEASE_UPSTREAM_ID="$(git show "${LATEST_RELEASE_REF}:.apophis-upstream-release-id" 2>/dev/null | tr -d '[:space:]' || true)"
           echo "Latest published themed release: $LATEST_RELEASE_TAG."
 
           NEEDS_BINARY_RELEASE=false
@@ -295,7 +296,10 @@ jobs:
           UPSTREAM_ALREADY_SYNCHRONIZED="$UPSTREAM_IDENTITY_AND_SHA_MATCH"
 
           UPSTREAM_PUBLICATION_PENDING=false
-          if [[ "$RELEASE_KIND" == "upstream" && ( "$LATEST_RELEASE_UPSTREAM_SHA" != "$UPSTREAM_SHA" || "$LATEST_RELEASE_UPSTREAM_TAG" != "$UPSTREAM_RELEASE_TAG" ) ]]; then
+          source scripts/ci/release-identity.sh
+          if [[ "$RELEASE_KIND" == "upstream" ]] && ! release_identity_matches \
+            "$LATEST_RELEASE_UPSTREAM_SHA" "$LATEST_RELEASE_UPSTREAM_TAG" "$LATEST_RELEASE_UPSTREAM_ID" \
+            "$UPSTREAM_SHA" "$UPSTREAM_RELEASE_TAG" "$UPSTREAM_RELEASE_ID"; then
             UPSTREAM_PUBLICATION_PENDING=true
             echo "Themed branch contains $UPSTREAM_RELEASE_TAG ($UPSTREAM_SHA), but latest binary release $LATEST_RELEASE_TAG contains ${LATEST_RELEASE_UPSTREAM_TAG:-no upstream tag} (${LATEST_RELEASE_UPSTREAM_SHA:-no upstream SHA}); publication is pending."
           fi
@@ -420,44 +424,17 @@ jobs:
           printf '%s\n' "$RELEASE_VERSION" > backend/cmd/server/VERSION
           printf '%s\n' "$UPSTREAM_SHA" > .apophis-upstream-sha
           printf '%s\n' "$RELEASE_KIND" > .apophis-release-kind
+          if [[ "$RELEASE_KIND" == "repository" ]]; then
+            bash "$GITHUB_WORKSPACE/scripts/ci/preserve-upstream-metadata.sh" "$GENERATED_DIR"
+          fi
+          if [[ -n "${UPSTREAM_RELEASE_TAG:-}" ]]; then
+            printf '%s\n' "$UPSTREAM_RELEASE_TAG" > .apophis-upstream-release-tag
+          fi
           if [[ -n "${UPSTREAM_RELEASE_ID:-}" ]]; then
             printf '%s\n' "$UPSTREAM_RELEASE_ID" > .apophis-upstream-release-id
           fi
           printf '%s\n' "$CURRENT_REPOSITORY_SHA" > .apophis-repository-sha
           printf '%s\n' "$CURRENT_CANVAS_SHA" > .apophis-canvas-sha
-
-      - name: Capture repository release notes
-        if: env.SHOULD_PUBLISH == 'true' && env.RELEASE_KIND == 'repository'
-        shell: bash
-        run: |
-          set -euo pipefail
-          TITLE_FILE="$GENERATED_DIR/.apophis-release-title"
-          NOTES_FILE="$GENERATED_DIR/.apophis-release-notes.md"
-          BASE_SHA="${{ github.event.before }}"
-
-          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-            BASE_SHA="$PREVIOUS_REPOSITORY_SHA"
-          fi
-
-          printf 'Sub2Aouter %s\n' "$RELEASE_VERSION" > "$TITLE_FILE"
-          {
-            printf '## 本次修复内容\n\n'
-            if [[ -n "$BASE_SHA" && ! "$BASE_SHA" =~ ^0+$ ]] &&
-               git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null &&
-               git merge-base --is-ancestor "$BASE_SHA" "$RELEASE_SOURCE_SHA" &&
-               [[ "$BASE_SHA" != "$RELEASE_SOURCE_SHA" ]]; then
-              git log --reverse --format='- %s (`%h`).' "${BASE_SHA}..${RELEASE_SOURCE_SHA}"
-            else
-              commit_subject="$(git log -1 --format='%s' "$RELEASE_SOURCE_SHA" 2>/dev/null || true)"
-              if [[ -n "$commit_subject" ]]; then
-                printf -- '- %s (`%s`).\n' "$commit_subject" "${RELEASE_SOURCE_SHA:0:12}"
-              else
-                printf -- '- 已合入提交 `%s`，具体修复内容见本次发布提交说明。\n' "${RELEASE_SOURCE_SHA:0:12}"
-              fi
-            fi
-            printf '\n---\n\n'
-            printf '本次仓库发布基于提交 `%s`，对应上游提交 `%s`。\n' "$RELEASE_SOURCE_SHA" "$UPSTREAM_SHA"
-          } > "$NOTES_FILE"
 
       - name: Capture upstream release notes
         if: env.SHOULD_PUBLISH == 'true' && env.RELEASE_KIND == 'upstream'
@@ -467,112 +444,24 @@ jobs:
         run: |
           set -euo pipefail
           source scripts/ci/retry.sh
-          NOTES_FILE="$GENERATED_DIR/.apophis-upstream-release-notes.md"
-          TAG_FILE="$GENERATED_DIR/.apophis-upstream-release-tag"
-          NAME_FILE="$GENERATED_DIR/.apophis-upstream-release-name"
-          URL_FILE="$GENERATED_DIR/.apophis-upstream-release-url"
-          ID_FILE="$GENERATED_DIR/.apophis-upstream-release-id"
-
-          write_fallback_notes() {
-            local short_sha="${UPSTREAM_SHA:0:12}"
-            local upstream_version="${UPSTREAM_SOURCE_VERSION:-}"
-            if [[ -n "${UPSTREAM_RELEASE_TAG:-}" ]]; then
-              printf '%s\n' "$UPSTREAM_RELEASE_TAG" > "$TAG_FILE"
-              printf '%s\n' "Sub2API $UPSTREAM_RELEASE_TAG" > "$NAME_FILE"
-              printf '%s\n' "https://github.com/Wei-Shaw/sub2api/releases/tag/$UPSTREAM_RELEASE_TAG" > "$URL_FILE"
-            elif [[ "$upstream_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              printf '%s\n' "v${upstream_version}" > "$TAG_FILE"
-              printf '%s\n' "Sub2API v${upstream_version}" > "$NAME_FILE"
-              printf '%s\n' "https://github.com/Wei-Shaw/sub2api/commit/${UPSTREAM_SHA}" > "$URL_FILE"
-            else
-              printf '%s\n' "unreleased-${short_sha}" > "$TAG_FILE"
-              printf '%s\n' "上游版本 ${short_sha}" > "$NAME_FILE"
-              printf '%s\n' "https://github.com/Wei-Shaw/sub2api/commit/${UPSTREAM_SHA}" > "$URL_FILE"
-            fi
-            {
-              printf '未找到与上游提交 %s 匹配的已发布版本。\n\n' "$UPSTREAM_SHA"
-              printf '## 上游提交\n\n'
-              if [[ -n "${PREVIOUS_UPSTREAM_SHA:-}" ]] && git -C "$GENERATED_DIR" cat-file -e "${PREVIOUS_UPSTREAM_SHA}^{commit}" 2>/dev/null; then
-                git -C "$GENERATED_DIR" log --max-count=50 --format='%h' "${PREVIOUS_UPSTREAM_SHA}..${UPSTREAM_SHA}" | while read -r commit; do printf -- '- 上游提交 `%s`。\n' "$commit"; done
-              else
-                git -C "$GENERATED_DIR" log -n 20 --format='%h' "$UPSTREAM_SHA" | while read -r commit; do printf -- '- 上游提交 `%s`。\n' "$commit"; done
-              fi
-            } > "$NOTES_FILE"
-          }
-
-          if [[ "${UPSTREAM_RELEASE_PUBLISHED:-false}" != "true" ]]; then
-            echo "No published upstream release metadata; using the source VERSION and commit summary."
-            write_fallback_notes
-            exit 0
-          fi
-
-          if [[ -z "${UPSTREAM_RELEASE_TAG:-}" ]]; then
-            echo "No captured upstream release tag; using commit summary."
-            write_fallback_notes
-            exit 0
-          fi
-
           RELEASE_ENDPOINT="repos/Wei-Shaw/sub2api/releases/tags/${UPSTREAM_RELEASE_TAG}"
-          if ! UPSTREAM_RELEASE_NAME="$(retry_with_backoff 3 5 gh api "$RELEASE_ENDPOINT" --jq '.name // .tag_name // ""')" ||
-             ! UPSTREAM_RELEASE_URL="$(retry_with_backoff 3 5 gh api "$RELEASE_ENDPOINT" --jq '.html_url // ""')"; then
-            echo "无法读取上游发布信息，改用提交摘要。"
-            write_fallback_notes
-            exit 0
-          fi
-          if [[ -z "$UPSTREAM_RELEASE_URL" ]]; then
-            echo "上游最新发布信息不完整，改用提交摘要。"
-            write_fallback_notes
-            exit 0
-          fi
+          RELEASE_JSON=/tmp/apophis-upstream-notes.json
+          retry_with_backoff 3 5 gh api "$RELEASE_ENDPOINT" > "$RELEASE_JSON"
+          test "$(jq -r '.tag_name' "$RELEASE_JSON")" = "$UPSTREAM_RELEASE_TAG"
+          test "$(jq -r '.id | tostring' "$RELEASE_JSON")" = "$UPSTREAM_RELEASE_ID"
+          jq -r '.body // ""' "$RELEASE_JSON" > "$GENERATED_DIR/.apophis-upstream-release-notes.md"
+          jq -r '.name // .tag_name' "$RELEASE_JSON" > "$GENERATED_DIR/.apophis-upstream-release-name"
+          jq -r '.html_url' "$RELEASE_JSON" > "$GENERATED_DIR/.apophis-upstream-release-url"
+          test -s "$GENERATED_DIR/.apophis-upstream-release-notes.md"
 
-          retry_with_backoff 3 5 git -C "$GENERATED_DIR" fetch --deepen=500 upstream "refs/tags/${UPSTREAM_RELEASE_TAG}" || true
-          if ! retry_with_backoff 3 5 git -C "$GENERATED_DIR" fetch --force upstream "refs/tags/${UPSTREAM_RELEASE_TAG}:${UPSTREAM_RELEASE_REF}"; then
-            echo "无法获取上游标签 $UPSTREAM_RELEASE_TAG，改用提交摘要。"
-            write_fallback_notes
-            exit 0
-          fi
-
-          UPSTREAM_RELEASE_SHA="$(git -C "$GENERATED_DIR" rev-list -n 1 "$UPSTREAM_RELEASE_REF")"
-          if ! git -C "$GENERATED_DIR" merge-base --is-ancestor "$UPSTREAM_RELEASE_SHA" "$UPSTREAM_SHA"; then
-            echo "上游发布版本 $UPSTREAM_RELEASE_TAG 不属于提交 $UPSTREAM_SHA，改用提交摘要。"
-            write_fallback_notes
-            exit 0
-          fi
-
-          if [[ -z "${UPSTREAM_RELEASE_ID:-}" ]]; then
-            UPSTREAM_RELEASE_ID="$(retry_with_backoff 3 5 gh api "$RELEASE_ENDPOINT" --jq '.id // ""')"
-          fi
-          printf '%s\n' "$UPSTREAM_RELEASE_TAG" > "$TAG_FILE"
-          printf '%s\n' "$UPSTREAM_RELEASE_NAME" > "$NAME_FILE"
-          printf '%s\n' "$UPSTREAM_RELEASE_URL" > "$URL_FILE"
-          if [[ -n "$UPSTREAM_RELEASE_ID" ]]; then
-            printf '%s\n' "$UPSTREAM_RELEASE_ID" > "$ID_FILE"
-          fi
-          if ! retry_with_backoff 3 5 gh api "$RELEASE_ENDPOINT" --jq '.body // ""' > "$NOTES_FILE"; then
-            echo "无法读取上游发布说明，改用提交摘要。"
-            write_fallback_notes
-            exit 0
-          fi
-          if [[ ! -s "$NOTES_FILE" ]]; then
-            printf '上游发布版本 %s 没有提供发布说明。\n' "$UPSTREAM_RELEASE_TAG" > "$NOTES_FILE"
-          fi
-          echo "已记录上游发布版本 $UPSTREAM_RELEASE_TAG，对应提交 $UPSTREAM_RELEASE_SHA。"
-
-      - name: Compose upstream release notes
-        if: env.SHOULD_PUBLISH == 'true' && env.RELEASE_KIND == 'upstream'
-        shell: bash
+      - name: Compose concrete release notes
+        if: env.SHOULD_PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANVAS_RELEASE_TAG: ${{ steps.canvas_release.outputs.tag }}
         run: |
-          set -euo pipefail
-          UPSTREAM_RELEASE_TAG="$(tr -d '[:space:]' < "$GENERATED_DIR/.apophis-upstream-release-tag")"
-          UPSTREAM_RELEASE_NAME="$(cat "$GENERATED_DIR/.apophis-upstream-release-name")"
-          UPSTREAM_RELEASE_URL="$(tr -d '[:space:]' < "$GENERATED_DIR/.apophis-upstream-release-url")"
-          printf 'Sub2Aouter %s（基于上游 %s）\n' "$RELEASE_VERSION" "$UPSTREAM_RELEASE_TAG" > "$GENERATED_DIR/.apophis-release-title"
-          {
-            printf '> 基于上游版本 [%s](%s)（%s）。\n\n' "$UPSTREAM_RELEASE_NAME" "$UPSTREAM_RELEASE_URL" "$UPSTREAM_RELEASE_TAG"
-            cat "$GENERATED_DIR/.apophis-upstream-release-notes.md"
-            printf '\n\n---\n\n'
-            printf 'Apophis 主题版本 %s，生成自上游提交 `%s`。\n' "$RELEASE_VERSION" "$UPSTREAM_SHA"
-          } > "$GENERATED_DIR/.apophis-release-notes.md"
+          node scripts/write-release-notes.mjs
+          test -s "$GENERATED_DIR/.apophis-release-notes.md"
 
       - name: Setup pnpm
         if: env.SHOULD_PUBLISH == 'true'

@@ -59,7 +59,7 @@ test('contract rejects literal question-mark placeholders in upstream release no
   files.set(
     path,
     files.get(path).replace(
-      "cat \"$GENERATED_DIR/.apophis-upstream-release-notes.md\"",
+      "node scripts/write-release-notes.mjs",
       "printf '???????%s\\n\\n' \"$UPSTREAM_RELEASE_URL\"",
     ),
   )

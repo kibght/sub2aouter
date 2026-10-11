@@ -11,6 +11,10 @@ export const RELEASE_PIPELINE_FILES = Object.freeze([
   'scripts/resolve-github-release.mjs',
   'scripts/check-sync-health.mjs',
   'scripts/ci/retry.sh',
+  'scripts/ci/release-identity.sh',
+  'scripts/ci/preserve-upstream-metadata.sh',
+  'scripts/write-release-notes.mjs',
+  'scripts/lib/release-notes.mjs',
   'scripts/ci/restore-workflow-snapshots.sh',
   'scripts/lib/github-release.mjs',
   'scripts/lib/sync-health.mjs',
@@ -127,10 +131,10 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.upstream_release_identity', syncPath, sync.includes('UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_TAG') && sync.includes('.apophis-upstream-release-id') && sync.includes('UPSTREAM_IDENTITY_AND_SHA_MATCH') && sync.includes('"$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA"'), 'Scheduled Sub2API syncs must deduplicate only when Release identity and source SHA match.')
   check('sync.skip_unchanged', syncPath, sync.includes('SCHEDULED_ROUND') && hasPattern(sync, /PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Upstream runs must skip unchanged source revisions once the latest binary Release includes them.')
   check('sync.theme_overlay', syncPath, sync.includes('node scripts/apply-theme.mjs --root .'), 'Sync must apply the Apophis overlay to fetched upstream source.')
-  check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-canvas-sha') && sync.includes('.apophis-release-notes.md'), 'Sync must persist upstream, repository, Canvas, and release notes metadata.')
+  check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-canvas-sha') && sync.includes('scripts/write-release-notes.mjs') && sync.includes('scripts/ci/preserve-upstream-metadata.sh'), 'Sync must persist upstream, repository, Canvas, and release notes metadata.')
   check('sync.repository_recovery', syncPath, sync.includes('repository_release:') && sync.includes('PREVIOUS_CANVAS_SHA') && sync.includes('Repository source drift is intentionally not published') && sync.includes('UPSTREAM_ALREADY_SYNCHRONIZED'), 'Scheduled syncs may publish Canvas drift, while repository-only changes require explicit repository_release=true.')
   check('sync.canvas_freshness', syncPath, sync.includes('name: Verify Infinite Canvas dependency is current') && sync.includes('LATEST_CANVAS_SHA') && sync.includes('node scripts/resolve-github-release.mjs') && sync.includes('--repository basketikun/infinite-canvas'), 'Theme publication must stop when main is behind the latest published Infinite Canvas release.')
-  check('sync.release_notes_encoding', syncPath, sync.includes('cat "$GENERATED_DIR/.apophis-upstream-release-notes.md"') && !/\?{4,}/.test(sync), 'Release notes must preserve readable text instead of emitting literal question-mark placeholders.')
+  check('sync.release_notes_encoding', syncPath, sync.includes('node scripts/write-release-notes.mjs') && !/\?{4,}/.test(sync), 'Release notes must use the concrete notes composer without encoding placeholders.')
   check('sync.repository_source', syncPath,
     sync.includes('git worktree add --detach "$GENERATED_DIR" "${{ github.sha }}"') &&
     sync.includes('RELEASE_KIND="repository"') &&
@@ -139,7 +143,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     'Explicit repository releases must build the checked out main commit without fetching upstream source.')
   check('sync.repository_checkout', syncPath, hasPattern(sync, /name: Checkout theme source[\s\S]{0,300}ref: main/) && !sync.includes("github.event_name == 'push'"), 'Manual and coordinated publication must checkout main explicitly.')
   check('sync.repository_source_sha', syncPath, sync.includes('RELEASE_SOURCE_SHA="$(git rev-parse HEAD)"') && !sync.includes('RELEASE_SOURCE_SHA="${{ github.sha }}"'), 'Repository release metadata must come from the commit actually checked out and built.')
-  check('sync.repository_notes', syncPath, sync.includes('## \u672c\u6b21\u4fee\u590d\u5185\u5bb9') && sync.includes('Capture repository release notes') && sync.includes('具体修复内容见本次发布提交说明'), 'Explicit repository releases must publish concrete fix notes.')
+  check('sync.repository_notes', syncPath, sync.includes('Compose concrete release notes') && (files.get('scripts/write-release-notes.mjs') || '').includes('changelogChanges'), 'Repository and Canvas publications must include concrete changelog entries.')
   check('sync.release_version', syncPath,
     sync.includes('LATEST_RELEASE_VERSION') &&
     sync.includes('repos/${GITHUB_REPOSITORY}/releases/latest') &&
