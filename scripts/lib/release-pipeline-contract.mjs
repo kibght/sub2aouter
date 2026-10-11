@@ -8,6 +8,10 @@ export const RELEASE_PIPELINE_FILES = Object.freeze([
   '.github/workflows/backend-ci.yml',
   '.github/workflows/automation-alert.yml',
   '.github/workflows/sync-watchdog.yml',
+  '.github/workflows/security-scan.yml',
+  '.github/workflows/release.yml',
+  'scripts/ci/check-security.sh',
+  'tools/check_pnpm_audit_exceptions.py',
   'scripts/resolve-github-release.mjs',
   'scripts/check-sync-health.mjs',
   'scripts/ci/retry.sh',
@@ -312,6 +316,24 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
 
   const binaryPath = '.github/workflows/theme-binary-release.yml'
   const binary = files.get(binaryPath) || ''
+  check('security.generated_source', syncPath,
+    hasOrderedMarkers(sync, ['bash scripts/ci/check-security.sh frontend', 'bash scripts/ci/check-security.sh backend', 'name: Push immutable themed image']) &&
+    sync.includes('cp tools/check_pnpm_audit_exceptions.py') &&
+    sync.includes('cp .github/audit-exceptions.yml') &&
+    sync.includes('cmp "$GITHUB_WORKSPACE/.github/workflows/security-scan.yml"') &&
+    workflowRestore.includes('security-scan.yml|release.yml'),
+    'Generated source must retain the current audit policy and pass both scans before publishing images.')
+  check('security.binary_source', binaryPath,
+    hasOrderedMarkers(binary, ['bash scripts/ci/check-security.sh frontend', 'bash scripts/ci/check-security.sh backend', 'git tag -f "$RELEASE_TAG"', 'gh release create']),
+    'Binary publication must scan the checked out source before updating tags or releases.')
+  const security = files.get('.github/workflows/security-scan.yml') || ''
+  const legacyRelease = files.get('.github/workflows/release.yml') || ''
+  check('security.tag_release', '.github/workflows/release.yml',
+    legacyRelease.includes('needs: [update-version, build-frontend, security]') &&
+    legacyRelease.includes('uses: ./.github/workflows/security-scan.yml') &&
+    legacyRelease.includes('ref: ${{ github.event.inputs.tag || github.sha }}') &&
+    security.includes('workflow_call:') && security.includes('ref: ${{ inputs.ref || github.sha }}'),
+    'Tag releases must await security scans of the same selected source.')
   check('binary.reusable_entry', binaryPath,
     hasPattern(binary, /\n  workflow_call:\n[\s\S]*release_ref:/) &&
     hasPattern(binary, /\n  workflow_dispatch:\n[\s\S]*release_ref:/) &&

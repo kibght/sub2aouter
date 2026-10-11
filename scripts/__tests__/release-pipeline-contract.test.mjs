@@ -28,6 +28,25 @@ test('current repository satisfies the automatic release and frontend update con
   assert.deepEqual(violations, [])
 })
 
+test('publication gates reject missing scans and tags advanced before scanning', async () => {
+  for (const [path, marker, replacement, code] of [
+    ['.github/workflows/upstream-theme-sync.yml', 'bash scripts/ci/check-security.sh backend', 'true', 'security.generated_source'],
+    ['.github/workflows/theme-binary-release.yml', 'bash scripts/ci/check-security.sh frontend', 'true', 'security.binary_source'],
+    ['.github/workflows/release.yml', 'needs: [update-version, build-frontend, security]', 'needs: [update-version, build-frontend]', 'security.tag_release'],
+  ]) {
+    const files = await loadContractFiles()
+    files.set(path, files.get(path).replace(marker, replacement))
+    const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+    assert.ok(violations.some((entry) => entry.code === code), code)
+  }
+  const files = await loadContractFiles()
+  const path = '.github/workflows/theme-binary-release.yml'
+  const source = files.get(path).replace('git tag -f "$RELEASE_TAG"', '')
+  files.set(path, source.replace('bash scripts/ci/check-security.sh frontend', 'git tag -f "$RELEASE_TAG"\n          bash scripts/ci/check-security.sh frontend'))
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((entry) => entry.code === 'security.binary_source'))
+})
+
 test('contract requires Docker builds to use the generated Go module version', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/upstream-theme-sync.yml'

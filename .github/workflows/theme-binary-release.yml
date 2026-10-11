@@ -196,8 +196,6 @@ jobs:
           fi
           echo "RELEASE_EXISTS=$RELEASE_EXISTS" >> "$GITHUB_ENV"
           echo "SHOULD_PUBLISH=true" >> "$GITHUB_ENV"
-          git tag -f "$RELEASE_TAG"
-          retry_with_backoff 4 10 git push --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
 
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         if: env.SHOULD_PUBLISH == 'true'
@@ -217,6 +215,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
         if: env.SHOULD_PUBLISH == 'true'
         working-directory: frontend
+
+      - name: Scan release frontend dependencies
+        if: env.SHOULD_PUBLISH == 'true'
+        run: bash scripts/ci/check-security.sh frontend
 
       - run: pnpm run build
         if: env.SHOULD_PUBLISH == 'true'
@@ -243,6 +245,19 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache: false
+
+      - name: Scan release backend dependencies
+        if: env.SHOULD_PUBLISH == 'true'
+        run: bash scripts/ci/check-security.sh backend
+
+      - name: Align verified release tag
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          git tag -f "$RELEASE_TAG"
+          retry_with_backoff 4 10 git push --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
 
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         if: env.SHOULD_PUBLISH == 'true'
@@ -330,6 +345,15 @@ jobs:
               exit 1
             }
           done
+
+      - name: Preserve security report
+        if: ${{ always() && env.SHOULD_PUBLISH == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: binary-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sub2api-security/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Write binary release summary
         if: ${{ always() }}

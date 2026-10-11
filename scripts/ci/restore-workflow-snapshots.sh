@@ -9,7 +9,7 @@ for workflow in "$WORKFLOW_DIR"/*.yml "$WORKFLOW_DIR"/*.yaml; do
   [[ -e "$workflow" ]] || continue
   name="${workflow##*/}"
   case "$name" in
-    upstream-theme-sync.yml|infinite-canvas-upstream-sync.yml|backend-ci.yml|theme-binary-release.yml|automation-alert.yml|sync-watchdog.yml)
+    upstream-theme-sync.yml|infinite-canvas-upstream-sync.yml|backend-ci.yml|theme-binary-release.yml|automation-alert.yml|sync-watchdog.yml|security-scan.yml|release.yml)
       ;;
     *)
       if git cat-file -e "origin/themed-release:$workflow" 2>/dev/null; then

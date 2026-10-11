@@ -1,13 +1,61 @@
 package repository
 
 import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+// Go 1.27 registers x/net/http2 through Protocols instead of TLSNextProto.
+func requireHTTP2Configured(t *testing.T, tr *http.Transport, msg string) {
+	t.Helper()
+	require.NotNil(t, tr.Protocols, msg)
+	require.True(t, tr.Protocols.HTTP2(), msg)
+}
+
+func TestBuildUpstreamTransport_NegotiatesExpectedProtocol(t *testing.T) {
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+	for _, tc := range []struct {
+		mode      string
+		wantMajor int
+	}{
+		{upstreamProtocolModeOpenAIH2, 2},
+		{upstreamProtocolModeDefault, 1},
+		{upstreamProtocolModeOpenAIH1, 1},
+		{upstreamProtocolModeOpenAIH1Fallback, 1},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			tr, err := buildUpstreamTransport(http2KeepAliveTestPoolSettings(), nil, tc.mode)
+			require.NoError(t, err)
+			defer tr.CloseIdleConnections()
+			roots := x509.NewCertPool()
+			roots.AddCert(srv.Certificate())
+			if tr.TLSClientConfig == nil {
+				tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+			}
+			tr.TLSClientConfig.RootCAs = roots
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := tr.RoundTrip(req)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Equal(t, tc.wantMajor, resp.ProtoMajor)
+		})
+	}
+}
 
 func http2KeepAliveTestPoolSettings() poolSettings {
 	return poolSettings{
@@ -34,7 +82,7 @@ func TestEnableOpenAIHTTP2KeepAlive_EnablesPingHealthCheck(t *testing.T) {
 	require.Positive(t, h2.ReadIdleTimeout, "必须启用空闲 PING 探测以剔除死连接")
 	require.Equal(t, openAIHTTP2ReadIdleTimeout, h2.ReadIdleTimeout)
 	require.Equal(t, openAIHTTP2PingTimeout, h2.PingTimeout, "PING 无响应必须有超时判定")
-	require.NotNil(t, tr.TLSNextProto["h2"], "http2 必须已挂到底层 http.Transport 上")
+	requireHTTP2Configured(t, tr, "http2 必须已挂到底层 http.Transport 上")
 }
 
 // openai_h2 模式构建的 Transport 必须带上 H2 PING 健康探测，从源头剔除死连接。
@@ -42,7 +90,7 @@ func TestBuildUpstreamTransport_OpenAIH2_EnablesPingHealthCheck(t *testing.T) {
 	tr, err := buildUpstreamTransport(http2KeepAliveTestPoolSettings(), nil, upstreamProtocolModeOpenAIH2)
 	require.NoError(t, err)
 	require.True(t, tr.ForceAttemptHTTP2, "openai_h2 必须启用 HTTP/2")
-	require.NotNil(t, tr.TLSNextProto["h2"], "openai_h2 必须显式配置 http2 以启用 ReadIdleTimeout")
+	requireHTTP2Configured(t, tr, "openai_h2 必须显式配置 http2 以启用 ReadIdleTimeout")
 }
 
 // 非 H2 模式（default/h1）不应因本次改动被误配置：default 走 Go 自动 H2（惰性配置，
@@ -62,6 +110,6 @@ func TestBuildUpstreamTransport_OpenAIH2_WithHTTPProxy_EnablesKeepAlive(t *testi
 	tr, err := buildUpstreamTransport(http2KeepAliveTestPoolSettings(), proxyURL, upstreamProtocolModeOpenAIH2)
 	require.NoError(t, err)
 	require.True(t, tr.ForceAttemptHTTP2)
-	require.NotNil(t, tr.TLSNextProto["h2"], "经代理的 openai_h2 也必须启用 http2 keepalive")
+	requireHTTP2Configured(t, tr, "经代理的 openai_h2 也必须启用 http2 keepalive")
 	require.NotNil(t, tr.Proxy, "HTTP 代理仍须通过 Transport.Proxy 生效")
 }
