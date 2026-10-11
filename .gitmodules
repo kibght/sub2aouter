@@ -1,0 +1,4 @@
+[submodule "integrations/infinite-canvas"]
+	path = integrations/infinite-canvas
+	url = https://github.com/basketikun/infinite-canvas.git
+	branch = main
