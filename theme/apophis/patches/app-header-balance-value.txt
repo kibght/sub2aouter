@@ -1,0 +1,1 @@
+          <span class="app-header-balance-value text-sm font-semibold text-primary-700 dark:text-primary-300">

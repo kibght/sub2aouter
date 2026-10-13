@@ -1,0 +1,2 @@
+        glow: '0 0 20px hsl(var(--foreground) / 0.12)',
+        'glow-lg': '0 0 40px hsl(var(--foreground) / 0.16)',
