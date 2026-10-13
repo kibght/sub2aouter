@@ -42,7 +42,10 @@ test('repository metadata is copied byte-for-byte from the generated source', ()
     git('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'fixture')
     const output = path.join(temp, 'output')
     mkdirSync(output)
-    execFileSync(bash, [path.join(root, 'scripts/ci/preserve-upstream-metadata.sh').replaceAll('\\', '/'), output.replaceAll('\\', '/'), 'HEAD'], { cwd: temp })
+    execFileSync(bash, [path.join(root, 'scripts/ci/preserve-upstream-metadata.sh').replaceAll('\\', '/'), output.replaceAll('\\', '/'), 'HEAD'], {
+      cwd: temp,
+      env: { ...process.env, UPSTREAM_RELEASE_TAG: '', UPSTREAM_RELEASE_ID: '' },
+    })
     for (const field of Object.keys(files)) assert.deepEqual(readFileSync(path.join(output, '.apophis-upstream-release-' + field)), readFileSync(path.join(temp, '.apophis-upstream-release-' + field)))
   } finally { rmSync(temp, { recursive: true, force: true }) }
 })
