@@ -1,0 +1,13 @@
+.dark .settings-tabs-shell {
+  border-color: hsl(var(--border));
+  background: hsl(var(--card) / 0.96);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+.dark .settings-tab::before {
+  background: hsl(var(--muted));
+}
+
+.dark .settings-tab-active {
+  box-shadow: none;
+}
