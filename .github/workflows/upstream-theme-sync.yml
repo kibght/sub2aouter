@@ -388,6 +388,11 @@ jobs:
         run: node scripts/apply-theme.mjs --root .
         working-directory: ${{ env.GENERATED_DIR }}
 
+      - name: Reconcile upstream Go toolchain images
+        if: env.SHOULD_PUBLISH == 'true'
+        run: node scripts/reconcile-upstream-go-toolchain.mjs --root .
+        working-directory: ${{ env.GENERATED_DIR }}
+
       - name: Reconcile upstream test compatibility
         if: env.SHOULD_PUBLISH == 'true'
         run: node scripts/apply-upstream-test-compatibility.mjs --root .
