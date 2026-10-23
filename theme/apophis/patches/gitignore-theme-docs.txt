@@ -1,0 +1,3 @@
+
+!docs/images/
+!docs/images/theme-overview.png

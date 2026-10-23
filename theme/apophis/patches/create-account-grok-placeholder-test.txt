@@ -1,0 +1,4 @@
+    expect(
+      source.includes("? 'xai-...'") ||
+      (source.includes("case 'grok':") && source.includes("return 'xai-...'"))
+    ).toBe(true)

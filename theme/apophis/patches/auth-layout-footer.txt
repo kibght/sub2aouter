@@ -1,0 +1,1 @@
+      <div class="auth-footer mt-6 text-center text-sm">
