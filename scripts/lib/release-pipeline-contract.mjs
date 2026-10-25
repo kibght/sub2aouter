@@ -17,6 +17,7 @@ export const RELEASE_PIPELINE_FILES = Object.freeze([
   'scripts/ci/retry.sh',
   'scripts/ci/release-identity.sh',
   'scripts/ci/preserve-upstream-metadata.sh',
+  'scripts/sync-published-upstream.mjs',
   'scripts/write-release-notes.mjs',
   'scripts/lib/release-notes.mjs',
   'scripts/ci/restore-workflow-snapshots.sh',
@@ -172,8 +173,24 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     sync.includes('upstream_sha: ${{ steps.release_outputs.outputs.upstream_sha }}') &&
     sync.includes('expected_upstream_release_tag: ${{ needs.sync-build-publish.outputs.upstream_release_tag }}') &&
     sync.includes('expected_upstream_sha: ${{ needs.sync-build-publish.outputs.upstream_sha }}') &&
-    sync.includes('if [[ \"${RELEASE_KIND:-}\" == \"upstream\" ]]'),
+    sync.includes('if [[ \"${RELEASE_KIND:-}\" == \"upstream\" ]]') &&
+    sync.includes('repository_sync_release_tag: ${{ steps.release_outputs.outputs.repository_sync_release_tag }}') &&
+    sync.includes('if [[ \"${UPSTREAM_RELEASE_PUBLISHED:-false}\" == \"true\" ]]') &&
+    sync.includes('INITIAL_UPSTREAM_RELEASE_TAG: v0.2.17'),
     'The sync job must pass the selected upstream Release tag and SHA to binary publication.')
+  const repositorySync = files.get('scripts/sync-published-upstream.mjs') || ''
+  check('sync.repository_upstream_delta', 'scripts/sync-published-upstream.mjs',
+    sync.includes('sync-repository-code:') &&
+    sync.includes('Apply only the published upstream release delta to main') &&
+    sync.includes('needs.sync-build-publish.outputs.repository_sync_release_tag') &&
+    repositorySync.includes('.apophis-repository-upstream-sha') &&
+    repositorySync.includes('.apophis-repository-upstream-tag') &&
+    repositorySync.includes('INITIAL_UPSTREAM_RELEASE_TAG') &&
+    repositorySync.includes("'diff', '--binary', '--no-ext-diff', baseSha, upstreamSha, '--', '.',") &&
+    repositorySync.includes("':(exclude)backend/cmd/server/VERSION'") &&
+    repositorySync.includes("['apply', '--3way', '--index']") &&
+    repositorySync.includes('`HEAD:refs/heads/${TARGET_BRANCH}`'),
+    'After a verified upstream release, only the delta since the last main sync may be applied and pushed to main.')
   check('sync.explicit_release_version', syncPath,
     sync.includes('release_version:') &&
     sync.includes('RELEASE_VERSION_OVERRIDE') &&
@@ -223,6 +240,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.latest_promotion', syncPath,
     sync.includes('promote-latest:') &&
     sync.includes('needs: [sync-build-publish, binary-release]') &&
+    sync.includes('needs: [sync-build-publish, binary-release, promote-latest, sync-repository-code]') &&
     sync.includes("needs.binary-release.result == 'success'") &&
     sync.includes('needs.sync-build-publish.outputs.should_promote_latest') &&
     latestPushIndex > promoteLatestIndex &&

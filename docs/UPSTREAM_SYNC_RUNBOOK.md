@@ -12,6 +12,8 @@
 
 同步只跟随上游**已发布 Release**。上游 `main` 上尚未发布的 commit 不会被定时流程直接发布。
 
+每次正式 Sub2API Release 通过构建和二进制发布后，流程会把该 Release 相对仓库 `main` 上次同步基线的代码差异提交回 `main`。首次同步以已核实的上游 `v0.2.17` tag 为基线；后续使用 `.apophis-repository-upstream-sha` 和 `.apophis-repository-upstream-tag`。未被上游改动的仓库文件不会复制或覆盖；同一代码段发生冲突、tag 不存在或上游历史无法验证时，写回步骤会失败并告警，不会推送部分结果。
+
 ## 2. 发布不变量
 
 以下任一条件不满足时，流程必须停止，不得移动 `latest`：

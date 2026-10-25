@@ -39,9 +39,14 @@ jobs:
       release_version: ${{ steps.release_outputs.outputs.release_version }}
       upstream_release_tag: ${{ steps.release_outputs.outputs.upstream_release_tag }}
       upstream_sha: ${{ steps.release_outputs.outputs.upstream_sha }}
+      repository_sync_release_tag: ${{ steps.release_outputs.outputs.repository_sync_release_tag }}
+      repository_sync_sha: ${{ steps.release_outputs.outputs.repository_sync_sha }}
     env:
       UPSTREAM_REPOSITORY: https://github.com/Wei-Shaw/sub2api.git
       UPSTREAM_RELEASE_REF: refs/apophis/upstream-release
+      # main uses the repository's themed VERSION, so it cannot identify the
+      # previous Sub2API release until the first sync writes its markers.
+      INITIAL_UPSTREAM_RELEASE_TAG: v0.2.17
       REPOSITORY_RELEASE: ${{ inputs.repository_release || false }}
       SCHEDULED_ROUND: ${{ inputs.scheduled_round || false }}
       RELEASE_VERSION_OVERRIDE: ${{ inputs.release_version || '' }}
@@ -651,6 +656,12 @@ jobs:
             UPSTREAM_RELEASE_TAG_OUTPUT="${UPSTREAM_RELEASE_TAG:-}"
             UPSTREAM_SHA_OUTPUT="${UPSTREAM_SHA:-}"
           fi
+          REPOSITORY_SYNC_RELEASE_TAG_OUTPUT=""
+          REPOSITORY_SYNC_SHA_OUTPUT=""
+          if [[ "${UPSTREAM_RELEASE_PUBLISHED:-false}" == "true" ]]; then
+            REPOSITORY_SYNC_RELEASE_TAG_OUTPUT="${UPSTREAM_RELEASE_TAG:-}"
+            REPOSITORY_SYNC_SHA_OUTPUT="${UPSTREAM_SHA:-}"
+          fi
 
           if [[ "${SHOULD_PUBLISH:-false}" == "true" ]]; then
             RUN_BINARY=true
@@ -673,6 +684,8 @@ jobs:
             echo "release_version=$EFFECTIVE_VERSION"
             echo "upstream_release_tag=$UPSTREAM_RELEASE_TAG_OUTPUT"
             echo "upstream_sha=$UPSTREAM_SHA_OUTPUT"
+            echo "repository_sync_release_tag=$REPOSITORY_SYNC_RELEASE_TAG_OUTPUT"
+            echo "repository_sync_sha=$REPOSITORY_SYNC_SHA_OUTPUT"
             echo "effective_version=$EFFECTIVE_VERSION"
           } >> "$GITHUB_OUTPUT"
 
@@ -717,8 +730,28 @@ jobs:
           docker tag "${IMAGE}:${RELEASE_VERSION}" "${IMAGE}:latest"
           retry_with_backoff 4 10 docker push "${IMAGE}:latest"
 
-  summary:
+  sync-repository-code:
     needs: [sync-build-publish, binary-release, promote-latest]
+    if: ${{ always() && needs.sync-build-publish.result == 'success' && needs.binary-release.result != 'failure' && needs.binary-release.result != 'cancelled' && needs.promote-latest.result != 'failure' && needs.promote-latest.result != 'cancelled' && needs.sync-build-publish.outputs.repository_sync_release_tag != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      UPSTREAM_RELEASE_TAG: ${{ needs.sync-build-publish.outputs.repository_sync_release_tag }}
+      UPSTREAM_SHA: ${{ needs.sync-build-publish.outputs.repository_sync_sha }}
+    steps:
+      - name: Checkout repository source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Apply only the published upstream release delta to main
+        run: node scripts/sync-published-upstream.mjs .
+
+  summary:
+    needs: [sync-build-publish, binary-release, promote-latest, sync-repository-code]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -730,6 +763,7 @@ jobs:
           RELEASE_VERSION: ${{ needs.sync-build-publish.outputs.release_version }}
           BINARY_RESULT: ${{ needs.binary-release.result }}
           PROMOTE_RESULT: ${{ needs.promote-latest.result }}
+          REPOSITORY_SYNC_RESULT: ${{ needs.sync-repository-code.result }}
         shell: bash
         run: |
           {
@@ -740,18 +774,20 @@ jobs:
             echo "- Release version: \`${RELEASE_VERSION:-unchanged}\`"
             echo "- Binary publication: \`${BINARY_RESULT}\`"
             echo "- Latest promotion: \`${PROMOTE_RESULT}\`"
+            echo "- Repository code sync: \`${REPOSITORY_SYNC_RESULT}\`"
             echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           } >> "$GITHUB_STEP_SUMMARY"
 
   alert-failure:
-    needs: [sync-build-publish, binary-release, promote-latest]
-    if: ${{ always() && (needs.sync-build-publish.result == 'failure' || needs.binary-release.result == 'failure' || needs.promote-latest.result == 'failure') }}
+    needs: [sync-build-publish, binary-release, promote-latest, sync-repository-code]
+    if: ${{ always() && (needs.sync-build-publish.result == 'failure' || needs.binary-release.result == 'failure' || needs.promote-latest.result == 'failure' || needs.sync-repository-code.result == 'failure') }}
     uses: ./.github/workflows/automation-alert.yml
     with:
       workflow_name: Sync Upstream With Apophis Theme
       severity: critical
       summary: >-
         source=${{ needs.sync-build-publish.result }}, binary=${{ needs.binary-release.result }},
-        promote-latest=${{ needs.promote-latest.result }}, version=${{ needs.sync-build-publish.outputs.release_version }}.
+        promote-latest=${{ needs.promote-latest.result }}, repository-code=${{ needs.sync-repository-code.result }},
+        version=${{ needs.sync-build-publish.outputs.release_version }}.
       run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     secrets: inherit
