@@ -411,16 +411,6 @@ jobs:
           printf '%s\n' "$COMPATIBILITY_VERSION" > backend/cmd/server/UPSTREAM_VERSION
           node scripts/apply-sub2-plugin-compatibility.mjs --root .
 
-      - name: Carry bot binding feature branch
-        if: env.SHOULD_PUBLISH == 'true'
-        shell: bash
-        working-directory: ${{ env.GENERATED_DIR }}
-        run: |
-          set -euo pipefail
-          source "$GITHUB_WORKSPACE/scripts/ci/retry.sh"
-          retry_with_backoff 5 5 git fetch origin +refs/heads/feat/bot-binding:refs/remotes/origin/feat/bot-binding
-          node scripts/apply-bot-binding.mjs --root . --ref origin/feat/bot-binding
-
       - name: Carry Infinite Canvas integration
         if: env.SHOULD_PUBLISH == 'true'
         shell: bash
