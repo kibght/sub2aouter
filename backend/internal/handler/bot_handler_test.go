@@ -162,7 +162,9 @@ func TestBotHandlerCreateBindingCode(t *testing.T) {
 	data := decodeBotData(t, rec)
 	require.Equal(t, "ABCD-EFGH", data["code"])
 	require.Equal(t, "/绑定账号 ABCD-EFGH", data["command"])
-	require.Greater(t, data["expires_in_seconds"].(float64), float64(0))
+	expiresIn, ok := data["expires_in_seconds"].(float64)
+	require.True(t, ok)
+	require.Greater(t, expiresIn, float64(0))
 }
 
 func TestBotHandlerCreateBindingCodeRequiresLogin(t *testing.T) {
@@ -193,7 +195,8 @@ func TestBotHandlerListBindingsReturnsItems(t *testing.T) {
 	items, ok := data["items"].([]any)
 	require.True(t, ok)
 	require.Len(t, items, 1)
-	item := items[0].(map[string]any)
+	item, ok := items[0].(map[string]any)
+	require.True(t, ok)
 	require.Equal(t, "qq", item["platform"])
 	require.Equal(t, "123456", item["external_id"])
 }
@@ -237,7 +240,8 @@ func TestBotHandlerRedeemMasksUserEmail(t *testing.T) {
 	require.Equal(t, "bot", data["token_type"])
 	require.Equal(t, "bt_abcdefgh_secret", data["bot_token"])
 	require.NotContains(t, rec.Body.String(), "alice@example.com")
-	user := data["user"].(map[string]any)
+	user, ok := data["user"].(map[string]any)
+	require.True(t, ok)
 	require.Equal(t, "a***@example.com", user["email"])
 }
 
@@ -302,9 +306,11 @@ func TestBotHandlerAPIKeysNeverExposeFullKey(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.NotContains(t, rec.Body.String(), fullKey)
 	data := decodeBotData(t, rec)
-	items := data["items"].([]any)
+	items, ok := data["items"].([]any)
+	require.True(t, ok)
 	require.Len(t, items, 1)
-	item := items[0].(map[string]any)
+	item, ok := items[0].(map[string]any)
+	require.True(t, ok)
 	require.Contains(t, item["key_masked"], "***")
 	require.NotContains(t, item["key_masked"], fullKey)
 }

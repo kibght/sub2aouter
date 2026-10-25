@@ -243,7 +243,7 @@ func NormalizeBotBindingCode(raw string) string {
 		case ' ', '\t', '\r', '\n', '-', '_', '.', '，':
 			continue
 		}
-		b.WriteRune(r)
+		_, _ = b.WriteRune(r)
 	}
 	return b.String()
 }
@@ -267,7 +267,7 @@ func normalizeBotBindingPlatform(raw string) (string, error) {
 	for _, r := range strings.ToLower(strings.TrimSpace(raw)) {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_', r == '-', r == ':', r == '.':
-			b.WriteRune(r)
+			_, _ = b.WriteRune(r)
 		}
 	}
 	platform := b.String()
