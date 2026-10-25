@@ -38,6 +38,23 @@ function ensureFile(p) {
   if (!existsSync(path.join(root, p))) fail('missing file: ' + p)
 }
 
+// 在第一个 anchor 之后插入纯新增内容（anchor 本身不重复写入）。
+function insertAfter(p, anchor, addition, marker) {
+  ensureFile(p)
+  const text = read(p)
+  if (marker && text.includes(marker)) return false
+  const index = text.indexOf(anchor)
+  if (index < 0) {
+    fail('anchor not found in ' + p + ': ' + anchor.split('\n')[0].slice(0, 80))
+    return false
+  }
+  if (checkOnly) return true
+  const at = index + anchor.length
+  writeFile(p, text.slice(0, at) + addition + text.slice(at))
+  return true
+}
+
+// 在第一个 anchor 之前插入纯新增内容。
 function insertBefore(p, anchor, addition, marker) {
   ensureFile(p)
   const text = read(p)
@@ -152,7 +169,7 @@ if (checkOnly) {
   }
 }
 
-// 后端接线
+// ---- 后端接线 ----
 replaceAll(
   'backend/internal/handler/handler.go',
   '\tBatchImage       *BatchImageHandler\n}',
@@ -173,44 +190,44 @@ insertBefore(
     '}\n\n',
   'func ProvideBotHandler(',
 )
-insertBefore(
+insertAfter(
   'backend/internal/handler/wire.go',
   '\tbatchImageHandler *BatchImageHandler,\n',
-  '\tbatchImageHandler *BatchImageHandler,\n\tbotHandler *BotHandler,\n',
+  '\tbotHandler *BotHandler,\n',
   'botHandler *BotHandler',
 )
-insertBefore(
+insertAfter(
   'backend/internal/handler/wire.go',
   '\t\tBatchImage:       batchImageHandler,\n',
-  '\t\tBatchImage:       batchImageHandler,\n\t\tBot:              botHandler,\n',
+  '\t\tBot:              botHandler,\n',
   'Bot:              botHandler',
 )
-insertBefore(
+insertAfter(
   'backend/internal/handler/wire.go',
   '\tProvideBatchImageHandler,\n',
-  '\tProvideBatchImageHandler,\n\tProvideBotHandler,\n',
+  '\tProvideBotHandler,\n',
   'ProvideBotHandler,\n',
 )
-insertBefore(
+insertAfter(
   'backend/internal/server/middleware/wire.go',
-  '\tNewStepUpAuthMiddleware,\n)',
-  '\tNewStepUpAuthMiddleware,\n\tNewBotAuthMiddleware,\n)',
+  '\tNewStepUpAuthMiddleware,\n',
+  '\tNewBotAuthMiddleware,\n',
   'NewBotAuthMiddleware',
 )
-insertBefore(
+insertAfter(
   'backend/internal/service/wire.go',
   '\tNewUserService,\n',
-  '\tNewUserService,\n\tNewBotBindingService,\n',
+  '\tNewBotBindingService,\n',
   'NewBotBindingService',
 )
-insertBefore(
+insertAfter(
   'backend/internal/repository/wire.go',
   '\tNewUserRepository,\n',
-  '\tNewUserRepository,\n\tNewBotBindingRepository,\n',
+  '\tNewBotBindingRepository,\n',
   'NewBotBindingRepository',
 )
 
-// 路由
+// ---- 路由 ----
 replaceAll(
   'backend/internal/server/router.go',
   '\tstepUpAuth middleware2.StepUpAuthMiddleware,\n\tapiKeyService *service.APIKeyService,',
@@ -245,18 +262,17 @@ insertInLine(
   'botAuth, ',
   'stepUpAuth, botAuth, apiKeyService',
 )
-insertBefore(
+insertAfter(
   'backend/internal/server/routes/user.go',
   '\t\t\tuser.GET("/platform-quotas", h.User.GetMyPlatformQuotas)\n',
-  '\t\t\tuser.GET("/platform-quotas", h.User.GetMyPlatformQuotas)\n\n' +
-    '\t\t\t// 聊天机器人绑定：网站生成一次性绑定码，机器人用绑定码换取独立令牌。\n' +
+  '\n\t\t\t// 聊天机器人绑定：网站生成一次性绑定码，机器人用绑定码换取独立令牌。\n' +
     '\t\t\tuser.POST("/bot-bindings/code", h.Bot.CreateBindingCode)\n' +
     '\t\t\tuser.GET("/bot-bindings", h.Bot.ListBindings)\n' +
     '\t\t\tuser.DELETE("/bot-bindings/:id", h.Bot.RevokeBinding)\n',
   'user.POST("/bot-bindings/code"',
 )
 
-// wire_gen 等价插入
+// ---- wire_gen 等价插入 ----
 insertBefore(
   'backend/cmd/server/wire_gen.go',
   '\thandlers := handler.ProvideHandlers(',
@@ -288,24 +304,23 @@ insertInLine(
   'stepUpAuthMiddleware, botAuthMiddleware,',
 )
 
-// 前端
-insertBefore(
+// ---- 前端 ----
+insertAfter(
   'frontend/src/views/user/ProfileView.vue',
   '      <ProfilePasskeyCard :enabled="passkeyEnabled" />\n',
-  '      <ProfilePasskeyCard :enabled="passkeyEnabled" />\n      <ProfileBotBindingCard />\n',
+  '      <ProfileBotBindingCard />\n',
   '<ProfileBotBindingCard />',
 )
-insertBefore(
+insertAfter(
   'frontend/src/views/user/ProfileView.vue',
   "import ProfilePasskeyCard from '@/components/user/profile/ProfilePasskeyCard.vue'\n",
-  "import ProfilePasskeyCard from '@/components/user/profile/ProfilePasskeyCard.vue'\nimport ProfileBotBindingCard from '@/components/user/profile/ProfileBotBindingCard.vue'\n",
+  "import ProfileBotBindingCard from '@/components/user/profile/ProfileBotBindingCard.vue'\n",
   'ProfileBotBindingCard.vue',
 )
-insertBefore(
+insertAfter(
   'frontend/src/api/index.ts',
   "export { passkeyAPI, type PasskeyCredentialSummary } from './passkey'\n",
-  "export { passkeyAPI, type PasskeyCredentialSummary } from './passkey'\n" +
-    'export {\n  botBindingsAPI,\n  type BotBinding,\n  type BotBindingCode,\n  type BotBindingListResponse,\n} from \'./botBindings\'\n',
+  'export {\n  botBindingsAPI,\n  type BotBinding,\n  type BotBindingCode,\n  type BotBindingListResponse,\n} from \'./botBindings\'\n',
   'botBindingsAPI',
 )
 
@@ -354,18 +369,16 @@ for (const locale of ['zh', 'en']) {
   if (!checkOnly) writeFile(target, current.slice(0, index) + block + current.slice(index))
 }
 
-insertBefore(
+insertAfter(
   'frontend/src/views/user/__tests__/ProfileView.spec.ts',
   "          ProfileTotpCard: { template: '<div data-testid=\"profile-totp-card\" />' },\n",
-  "          ProfileTotpCard: { template: '<div data-testid=\"profile-totp-card\" />' },\n" +
-    "          ProfileBotBindingCard: { template: '<div data-testid=\"profile-bot-binding-card\" />' },\n",
+  "          ProfileBotBindingCard: { template: '<div data-testid=\"profile-bot-binding-card\" />' },\n",
   'profile-bot-binding-card',
 )
-insertBefore(
+insertAfter(
   'frontend/src/views/user/__tests__/ProfileView.spec.ts',
   "    expect(wrapper.get('[data-testid=\"profile-shell\"]').html()).toContain('profile-totp-card')\n",
-  "    expect(wrapper.get('[data-testid=\"profile-shell\"]').html()).toContain('profile-totp-card')\n" +
-    "    expect(wrapper.get('[data-testid=\"profile-shell\"]').html()).toContain('profile-bot-binding-card')\n",
+  "    expect(wrapper.get('[data-testid=\"profile-shell\"]').html()).toContain('profile-bot-binding-card')\n",
   "toContain('profile-bot-binding-card')",
 )
 
