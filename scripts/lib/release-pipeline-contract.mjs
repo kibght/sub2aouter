@@ -176,7 +176,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     sync.includes('if [[ \"${RELEASE_KIND:-}\" == \"upstream\" ]]') &&
     sync.includes('repository_sync_release_tag: ${{ steps.release_outputs.outputs.repository_sync_release_tag }}') &&
     sync.includes('if [[ \"${UPSTREAM_RELEASE_PUBLISHED:-false}\" == \"true\" ]]') &&
-    sync.includes('INITIAL_UPSTREAM_RELEASE_TAG: v0.2.17'),
+    sync.includes('INITIAL_UPSTREAM_RELEASE_TAG: v0.2.18'),
     'The sync job must pass the selected upstream Release tag and SHA to binary publication.')
   const repositorySync = files.get('scripts/sync-published-upstream.mjs') || ''
   check('sync.repository_upstream_delta', 'scripts/sync-published-upstream.mjs',
