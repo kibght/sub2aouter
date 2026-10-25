@@ -40,6 +40,11 @@ func RegisterUserRoutes(
 			user.GET("/api-keys/:id/usage/daily", panelRateLimiter.Heavy(), h.Usage.GetMyAPIKeyDailyUsage)
 			user.GET("/platform-quotas", h.User.GetMyPlatformQuotas)
 
+			// 聊天机器人绑定：网站生成一次性绑定码，机器人用绑定码换取独立令牌。
+			user.POST("/bot-bindings/code", h.Bot.CreateBindingCode)
+			user.GET("/bot-bindings", h.Bot.ListBindings)
+			user.DELETE("/bot-bindings/:id", h.Bot.RevokeBinding)
+
 			// 通知邮箱管理
 			notifyEmail := user.Group("/notify-email")
 			{

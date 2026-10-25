@@ -20,6 +20,12 @@ export { userChannelsAPI } from './channels'
 export * as batchImageAPI from './batchImage'
 export { totpAPI } from './totp'
 export { passkeyAPI, type PasskeyCredentialSummary } from './passkey'
+export {
+  botBindingsAPI,
+  type BotBinding,
+  type BotBindingCode,
+  type BotBindingListResponse,
+} from './botBindings'
 export { default as announcementsAPI } from './announcements'
 export { channelMonitorUserAPI } from './channelMonitor'
 

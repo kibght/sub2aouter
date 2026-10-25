@@ -164,6 +164,17 @@ func ProvideAdminSettingHandler(settingService *service.SettingService, emailSer
 	return h
 }
 
+// ProvideBotHandler 创建机器人接口处理器。
+// 依赖以窄接口保存，便于单测注入假实现，同时不影响 Wire 解析具体依赖。
+func ProvideBotHandler(
+	bindings *service.BotBindingService,
+	usage *service.UsageService,
+	apiKeys *service.APIKeyService,
+	users *service.UserService,
+) *BotHandler {
+	return NewBotHandler(bindings, usage, apiKeys, users)
+}
+
 // ProvideHandlers creates the Handlers struct
 func ProvideHandlers(
 	authHandler *AuthHandler,
@@ -186,6 +197,7 @@ func ProvideHandlers(
 	modelPlazaHandler *ModelPlazaHandler,
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
+	botHandler *BotHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
@@ -210,6 +222,7 @@ func ProvideHandlers(
 		ModelPlaza:       modelPlazaHandler,
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
+		Bot:              botHandler,
 	}
 }
 
@@ -235,6 +248,7 @@ var ProviderSet = wire.NewSet(
 	NewModelPlazaHandler,
 	NewAsyncImageHandler,
 	ProvideBatchImageHandler,
+	ProvideBotHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,
