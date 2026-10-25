@@ -425,6 +425,15 @@ jobs:
           node scripts/apply-sub2-infinite-canvas-integration.mjs --root "$GENERATED_DIR"
           node scripts/apply-infinite-canvas-patches.mjs --root "$GENERATED_DIR/integrations/infinite-canvas"
 
+      - name: Fetch bot binding source branch
+        if: env.SHOULD_PUBLISH == 'true'
+        run: git fetch --depth=1 origin "refs/heads/feat/deepseek-bot-binding:refs/remotes/origin/feat/deepseek-bot-binding"
+
+      - name: Apply bot binding integration
+        if: env.SHOULD_PUBLISH == 'true'
+        run: node scripts/apply-bot-binding.mjs --root . --ref origin/feat/deepseek-bot-binding
+        working-directory: ${{ env.GENERATED_DIR }}
+
       - name: Write unified release metadata
         if: env.SHOULD_PUBLISH == 'true'
         shell: bash
@@ -499,6 +508,7 @@ jobs:
           node scripts/apply-theme.mjs --root . --check
           node scripts/apply-sub2-plugin-compatibility.mjs --root . --check
           node scripts/apply-sub2-infinite-canvas-integration.mjs --root . --check
+          node scripts/apply-bot-binding.mjs --root . --ref origin/feat/deepseek-bot-binding --check
           node scripts/check-encoding.mjs .
           node --test scripts/__tests__/*.test.mjs
 
