@@ -731,15 +731,14 @@ jobs:
           retry_with_backoff 4 10 docker push "${IMAGE}:latest"
 
   sync-repository-code:
-    needs: [sync-build-publish, binary-release, promote-latest]
-    if: ${{ always() && needs.sync-build-publish.result == 'success' && needs.binary-release.result != 'failure' && needs.binary-release.result != 'cancelled' && needs.promote-latest.result != 'failure' && needs.promote-latest.result != 'cancelled' && needs.sync-build-publish.outputs.repository_sync_release_tag != '' }}
+    if: ${{ inputs.repository_release != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: write
     env:
-      UPSTREAM_RELEASE_TAG: ${{ needs.sync-build-publish.outputs.repository_sync_release_tag }}
-      UPSTREAM_SHA: ${{ needs.sync-build-publish.outputs.repository_sync_sha }}
+      UPSTREAM_REPOSITORY: https://github.com/Wei-Shaw/sub2api.git
+      INITIAL_UPSTREAM_RELEASE_TAG: v0.2.17
     steps:
       - name: Checkout repository source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -747,8 +746,40 @@ jobs:
           fetch-depth: 0
           ref: main
 
+      - name: Discover latest published Sub2API release
+        id: upstream_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/resolve-github-release.mjs \
+            --repository Wei-Shaw/sub2api \
+            --json-output /tmp/repository-sync-upstream-release.json \
+            --github-output "$GITHUB_OUTPUT"
+          if [[ "$(jq -r '.found' /tmp/repository-sync-upstream-release.json)" != "true" ]]; then
+            echo "No published Sub2API release was found; refusing to sync a branch snapshot." >&2
+            exit 1
+          fi
+
       - name: Apply only the published upstream release delta to main
-        run: node scripts/sync-published-upstream.mjs .
+        env:
+          UPSTREAM_RELEASE_TAG: ${{ steps.upstream_release.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          if [[ ! "$UPSTREAM_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid Sub2API release tag: $UPSTREAM_RELEASE_TAG" >&2
+            exit 1
+          fi
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream "$UPSTREAM_REPOSITORY"
+          retry_with_backoff 5 5 git fetch --depth=1000 --force upstream \
+            "refs/tags/${UPSTREAM_RELEASE_TAG}:refs/apophis/repository-sync-release"
+          UPSTREAM_SHA="$(git rev-parse refs/apophis/repository-sync-release^{commit})"
+          export UPSTREAM_SHA
+          node scripts/sync-published-upstream.mjs .
 
   summary:
     needs: [sync-build-publish, binary-release, promote-latest, sync-repository-code]

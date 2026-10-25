@@ -182,7 +182,10 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.repository_upstream_delta', 'scripts/sync-published-upstream.mjs',
     sync.includes('sync-repository-code:') &&
     sync.includes('Apply only the published upstream release delta to main') &&
-    sync.includes('needs.sync-build-publish.outputs.repository_sync_release_tag') &&
+    sync.includes('node scripts/resolve-github-release.mjs') &&
+    sync.includes('--repository Wei-Shaw/sub2api') &&
+    sync.includes('steps.upstream_release.outputs.tag') &&
+    sync.includes('git fetch --depth=1000 --force upstream') &&
     repositorySync.includes('.apophis-repository-upstream-sha') &&
     repositorySync.includes('.apophis-repository-upstream-tag') &&
     repositorySync.includes('INITIAL_UPSTREAM_RELEASE_TAG') &&
