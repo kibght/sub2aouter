@@ -52,6 +52,7 @@ export default {
           900: '#111113',
           950: '#09090b'
         },
+
         // 主色调 - Teal/Cyan 青色系
         primary: {
           DEFAULT: 'hsl(var(--primary) / <alpha-value>)',

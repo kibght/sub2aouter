@@ -5,12 +5,83 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"golang.org/x/sync/singleflight"
+	"sync"
 )
+
+const (
+	GrokDefaultBaseURLModeAPI     = "api"
+	GrokDefaultBaseURLModeUSEast1 = "us-east-1"
+	GrokDefaultBaseURLModeUSWest2 = "us-west-2"
+	GrokDefaultBaseURLModeEUWest1 = "eu-west-1"
+	GrokDefaultBaseURLModeCLI     = "cli"
+)
+
+func normalizeGrokDefaultBaseURLMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case GrokDefaultBaseURLModeAPI:
+		return GrokDefaultBaseURLModeAPI
+	case GrokDefaultBaseURLModeUSEast1:
+		return GrokDefaultBaseURLModeUSEast1
+	case GrokDefaultBaseURLModeUSWest2:
+		return GrokDefaultBaseURLModeUSWest2
+	case GrokDefaultBaseURLModeEUWest1:
+		return GrokDefaultBaseURLModeEUWest1
+	case GrokDefaultBaseURLModeCLI:
+		return GrokDefaultBaseURLModeCLI
+	default:
+		return GrokDefaultBaseURLModeCLI
+	}
+}
+
+func GrokBaseURLForMode(mode string) string {
+	switch normalizeGrokDefaultBaseURLMode(mode) {
+	case GrokDefaultBaseURLModeAPI:
+		return xai.DefaultBaseURL
+	case GrokDefaultBaseURLModeUSEast1:
+		return xai.DefaultUSEast1BaseURL
+	case GrokDefaultBaseURLModeUSWest2:
+		return xai.DefaultUSWest2BaseURL
+	case GrokDefaultBaseURLModeEUWest1:
+		return xai.DefaultEUWest1BaseURL
+	default:
+		return xai.DefaultCLIBaseURL
+	}
+}
+
+func (s *SettingService) GetGrokDefaultBaseURLMode(ctx context.Context) string {
+	if s == nil || s.settingRepo == nil {
+		return GrokDefaultBaseURLModeCLI
+	}
+	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gatewayForwardingDBTimeout)
+	defer cancel()
+	raw, err := s.settingRepo.GetValue(dbCtx, SettingKeyGrokDefaultBaseURLMode)
+	if err != nil {
+		return GrokDefaultBaseURLModeCLI
+	}
+	return normalizeGrokDefaultBaseURLMode(raw)
+}
+
+func (s *SettingService) GetGrokDefaultBaseURL(ctx context.Context) string {
+	return GrokBaseURLForMode(s.GetGrokDefaultBaseURLMode(ctx))
+}
+
+func (s *SettingService) ResolveGrokBaseURL(ctx context.Context, account *Account) string {
+	def := xai.DefaultCLIBaseURL
+	if s != nil {
+		def = s.GetGrokDefaultBaseURL(ctx)
+	}
+	if account == nil {
+		return def
+	}
+	return account.GetGrokBaseURLOr(def)
+}
 
 var (
 	ErrRegistrationDisabled   = infraerrors.Forbidden("REGISTRATION_DISABLED", "registration is currently disabled")
@@ -57,9 +128,14 @@ type SettingService struct {
 	antigravityUAVersionSF      singleflight.Group
 	openAICodexUACache          atomic.Value // *cachedOpenAICodexUserAgent
 	openAICodexUASF             singleflight.Group
+	openAICodexVersionCache     atomic.Value // *cachedOpenAICodexClientVersion
+	openAICodexVersionSF        singleflight.Group
+	claudeCodeVersionCache      atomic.Value // *cachedClaudeCodeClientVersion
+	claudeCodeVersionSF         singleflight.Group
 	codexRestrictionPolicyCache atomic.Value // *cachedCodexRestrictionPolicy
 	codexRestrictionPolicySF    singleflight.Group
 
+	cyberSessionBlockRuntimeMu    sync.Mutex
 	cyberSessionBlockRuntimeCache atomic.Value // *cachedCyberSessionBlockRuntime
 	cyberSessionBlockRuntimeSF    singleflight.Group
 
@@ -76,6 +152,10 @@ type SettingService struct {
 	// instance owns its own cache, no shared package-level state.
 	openAIQuotaAutoPauseSettingsCache atomic.Value // *cachedOpenAIQuotaAutoPauseSettings
 	openAIQuotaAutoPauseSettingsSF    singleflight.Group
+	openAIAPIKeyHealthBreakerCache    atomic.Value // *cachedOpenAIAPIKeyHealthBreakerSettings
+
+	channelMonitorRuntimeListenersMu sync.Mutex
+	channelMonitorRuntimeListeners   []func()
 }
 
 // DefaultPlatformQuotaSetting 单 platform 三档限额（nil = 沿用上层；0 = 显式禁用；>0 = 上限）
@@ -83,6 +163,11 @@ type DefaultPlatformQuotaSetting struct {
 	DailyLimitUSD   *float64 `json:"daily"`
 	WeeklyLimitUSD  *float64 `json:"weekly"`
 	MonthlyLimitUSD *float64 `json:"monthly"`
+}
+
+// HasAnyLimit 报告是否至少配置了一档限额（0 也算配置）。nil receiver 视为未配置。
+func (q *DefaultPlatformQuotaSetting) HasAnyLimit() bool {
+	return q != nil && (q.DailyLimitUSD != nil || q.WeeklyLimitUSD != nil || q.MonthlyLimitUSD != nil)
 }
 
 type ProviderDefaultGrantSettings struct {
@@ -298,6 +383,52 @@ func (s *SettingService) GetAllSettings(ctx context.Context) (*SystemSettings, e
 // This is used for cache invalidation (e.g., HTML cache in frontend server)
 func (s *SettingService) SetOnUpdateCallback(callback func()) {
 	s.onUpdate = callback
+}
+
+// SubscribeChannelMonitorRuntime registers a listener that is invoked after
+// settings are successfully persisted (and process caches refreshed).
+// Used by ChannelMonitorRunner / ChannelMonitorV2Aggregator for immediate
+// mode flips without waiting for poll intervals.
+func (s *SettingService) SubscribeChannelMonitorRuntime(listener func()) (unsubscribe func()) {
+	if s == nil || listener == nil {
+		return func() {}
+	}
+	s.channelMonitorRuntimeListenersMu.Lock()
+	s.channelMonitorRuntimeListeners = append(s.channelMonitorRuntimeListeners, listener)
+	idx := len(s.channelMonitorRuntimeListeners) - 1
+	s.channelMonitorRuntimeListenersMu.Unlock()
+	return func() {
+		s.channelMonitorRuntimeListenersMu.Lock()
+		defer s.channelMonitorRuntimeListenersMu.Unlock()
+		if idx < 0 || idx >= len(s.channelMonitorRuntimeListeners) {
+			return
+		}
+		s.channelMonitorRuntimeListeners[idx] = nil
+	}
+}
+
+func (s *SettingService) notifyChannelMonitorRuntimeListeners() {
+	if s == nil {
+		return
+	}
+	s.channelMonitorRuntimeListenersMu.Lock()
+	listeners := make([]func(), 0, len(s.channelMonitorRuntimeListeners))
+	for _, l := range s.channelMonitorRuntimeListeners {
+		if l != nil {
+			listeners = append(listeners, l)
+		}
+	}
+	s.channelMonitorRuntimeListenersMu.Unlock()
+	for _, l := range listeners {
+		func(fn func()) {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					_ = recovered // keep settings path healthy
+				}
+			}()
+			fn()
+		}(l)
+	}
 }
 
 // SetVersion sets the application version for injection into public settings

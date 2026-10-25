@@ -8,7 +8,7 @@ import (
 )
 
 func TestBotBindingsMigrationKeepsSecretsHashedAndBindingsUnique(t *testing.T) {
-	content, err := FS.ReadFile("192_bot_bindings.sql")
+	content, err := FS.ReadFile("247_bot_bindings.sql")
 	require.NoError(t, err)
 	sql := string(content)
 
@@ -35,7 +35,7 @@ func TestBotBindingsMigrationKeepsSecretsHashedAndBindingsUnique(t *testing.T) {
 }
 
 func TestBotBindingsScopeUniqueIndexToUser(t *testing.T) {
-	content, err := FS.ReadFile("193_bot_bindings_scope_unique_to_user.sql")
+	content, err := FS.ReadFile("248_bot_bindings_scope_unique_to_user.sql")
 	require.NoError(t, err)
 	sql := string(content)
 

@@ -29,6 +29,9 @@ import (
 //go:embed VERSION
 var embeddedVersion string
 
+//go:embed UPSTREAM_VERSION
+var embeddedUpstreamVersion string
+
 // Build-time variables (can be set by ldflags)
 var (
 	Version   = ""
@@ -144,8 +147,9 @@ func runMainServer() {
 	}
 
 	buildInfo := handler.BuildInfo{
-		Version:   Version,
-		BuildType: BuildType,
+		Version:              Version,
+		BuildType:            BuildType,
+		CompatibilityVersion: strings.TrimSpace(embeddedUpstreamVersion),
 	}
 
 	app, err := initializeApplication(buildInfo)
@@ -153,6 +157,11 @@ func runMainServer() {
 		log.Fatalf("Failed to initialize application: %v", err)
 	}
 	defer app.Cleanup()
+	if app.PluginManager != nil {
+		if err := app.PluginManager.Start(context.Background()); err != nil {
+			log.Printf("Plugin manager started in degraded state: %v", err)
+		}
+	}
 	if app.PromptAudit != nil {
 		if err := app.PromptAudit.Start(context.Background()); err != nil {
 			// Startup continues so unrelated APIs stay up. Fail-closed (unavailable)

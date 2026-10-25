@@ -65,6 +65,7 @@ dockers:
     use: buildx
     extra_files:
       - deploy/docker-entrypoint.sh
+      - backend/resources
     build_flag_templates:
       - "--platform=linux/amd64"
       - "--label=org.opencontainers.image.version={{ .Version }}"
@@ -80,6 +81,7 @@ dockers:
     use: buildx
     extra_files:
       - deploy/docker-entrypoint.sh
+      - backend/resources
     build_flag_templates:
       - "--platform=linux/arm64"
       - "--label=org.opencontainers.image.version={{ .Version }}"
@@ -95,6 +97,7 @@ dockers:
     use: buildx
     extra_files:
       - deploy/docker-entrypoint.sh
+      - backend/resources
     build_flag_templates:
       - "--platform=linux/amd64"
       - "--label=org.opencontainers.image.version={{ .Version }}"
@@ -110,6 +113,7 @@ dockers:
     use: buildx
     extra_files:
       - deploy/docker-entrypoint.sh
+      - backend/resources
     build_flag_templates:
       - "--platform=linux/arm64"
       - "--label=org.opencontainers.image.version={{ .Version }}"
@@ -168,8 +172,6 @@ release:
   github:
     owner: "{{ .Env.GITHUB_REPO_OWNER }}"
     name: "{{ .Env.GITHUB_REPO_NAME }}"
-  # Make reruns replace same-named assets instead of failing with 422 already_exists.
-  replace_existing_artifacts: true
   draft: false
   prerelease: auto
   name_template: "Sub2API {{.Version}}"

@@ -138,8 +138,8 @@ func (s *authCacheStub) IncrementCreateAttemptCount(ctx context.Context, userID 
 	return nil
 }
 
-func (s *authCacheStub) DeleteCreateAttemptCount(ctx context.Context, userID int64) error {
-	return nil
+func (s *authCacheStub) IncrementCreateCount(ctx context.Context, userID int64, window time.Duration) (int64, error) {
+	return 0, nil
 }
 
 func (s *authCacheStub) IncrementDailyUsage(ctx context.Context, apiKey string) error {
@@ -295,13 +295,14 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesReasoningEffortPolicy(t *testi
 			Concurrency: 3,
 		},
 		Group: &Group{
-			ID:                 groupID,
-			Name:               "openai",
-			Platform:           PlatformOpenAI,
-			Status:             StatusActive,
-			SubscriptionType:   SubscriptionTypeStandard,
-			RateMultiplier:     1,
-			MaxReasoningEffort: "medium",
+			ID:                          groupID,
+			Name:                        "composite",
+			Platform:                    PlatformComposite,
+			Status:                      StatusActive,
+			SubscriptionType:            SubscriptionTypeStandard,
+			RateMultiplier:              1,
+			MaxReasoningEffort:          "medium",
+			MaxReasoningEffortOverLimit: ReasoningEffortOverLimitDeny,
 			ReasoningEffortMappings: []ReasoningEffortMapping{
 				{From: "max", To: "xhigh"},
 			},
@@ -313,7 +314,9 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesReasoningEffortPolicy(t *testi
 
 	require.NotNil(t, roundTrip)
 	require.NotNil(t, roundTrip.Group)
+	require.Equal(t, PlatformComposite, roundTrip.Group.Platform)
 	require.Equal(t, "medium", roundTrip.Group.MaxReasoningEffort)
+	require.Equal(t, ReasoningEffortOverLimitDeny, roundTrip.Group.MaxReasoningEffortOverLimit)
 	require.Equal(t, apiKey.Group.ReasoningEffortMappings, roundTrip.Group.ReasoningEffortMappings)
 }
 
