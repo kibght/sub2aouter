@@ -28,6 +28,21 @@ test('current repository satisfies the automatic release and frontend update con
   assert.deepEqual(violations, [])
 })
 
+test('release contract rejects an upstream workflow without the bot binding overlay', async () => {
+  const files = await loadContractFiles()
+  const path = '.github/workflows/upstream-theme-sync.yml'
+  files.set(
+    path,
+    files.get(path).replace(
+      'node scripts/apply-bot-binding.mjs --root . --ref origin/feat/deepseek-bot-binding',
+      'node scripts/apply-theme.mjs --root .',
+    ),
+  )
+
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((violation) => violation.code === 'sync.bot_binding_overlay'))
+})
+
 test('publication gates reject missing scans and tags advanced before scanning', async () => {
   for (const [path, marker, replacement, code] of [
     ['.github/workflows/upstream-theme-sync.yml', 'bash scripts/ci/check-security.sh backend', 'true', 'security.generated_source'],
