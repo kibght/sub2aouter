@@ -1,0 +1,54 @@
+.dark .sticky-header-cell {
+  background-color: hsl(var(--muted));
+}
+
+/* Sticky 列基础样式 */
+.sticky-col {
+  position: sticky;
+  z-index: 20; /* 表体固定列 */
+}
+
+/* 单列固定（无勾选列时） */
+.sticky-col-left {
+  left: 0;
+}
+
+/* 双列固定（有勾选列时）：第一列（勾选） */
+.sticky-col-left-first {
+  left: 0;
+}
+
+/* 双列固定（有勾选列时）：第二列（名称） */
+.sticky-col-left-second {
+  left: var(--select-col-width);
+}
+
+/* 操作列固定 */
+.sticky-col-right {
+  right: 0;
+}
+
+/* 表头 sticky 列 - 需要比普通表头单元格更高的 z-index */
+.sticky-header-cell.sticky-col {
+  z-index: 220; /* 高于普通表头单元格和表体固定列 */
+}
+
+/* 表体 sticky 列背景 */
+tbody .sticky-col {
+  background-color: hsl(var(--card));
+}
+
+.dark tbody .sticky-col {
+  background-color: hsl(var(--card));
+}
+
+/* hover 状态保持 */
+tbody tr:hover .sticky-col {
+  background-color: hsl(var(--muted));
+}
+
+.dark tbody tr:hover .sticky-col {
+  background-color: hsl(var(--muted));
+}
+
+/* 阴影只在可滚动时显示 */

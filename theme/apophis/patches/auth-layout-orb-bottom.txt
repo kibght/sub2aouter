@@ -1,0 +1,1 @@
+        class="auth-orb auth-orb-bottom absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-primary-500/15 blur-3xl"

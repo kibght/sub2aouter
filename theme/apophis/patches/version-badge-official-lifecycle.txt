@@ -1,0 +1,11 @@
+onMounted(() => {
+  if (isAdmin.value) {
+    // Use cached version if available, otherwise fetch
+    appStore.fetchVersion(false)
+  }
+  document.addEventListener('click', handleClickOutside)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
