@@ -335,6 +335,8 @@ jobs:
             exit 0
           fi
 
+          # An explicit version is an intentional republish request, even when
+          # the repository and Canvas source SHAs already match the last release.
           if [[ "$RELEASE_KIND" == "repository" && "$PREVIOUS_REPOSITORY_SHA" == "$RELEASE_SOURCE_SHA" && "$PREVIOUS_CANVAS_SHA" == "$CURRENT_CANVAS_SHA" && -z "$RELEASE_VERSION_OVERRIDE" ]]; then
             if [[ "$NEEDS_BINARY_RELEASE" == "true" ]]; then
               echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
