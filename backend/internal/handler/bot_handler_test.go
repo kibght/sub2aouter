@@ -193,7 +193,8 @@ func TestBotHandlerClaimsQQBalanceAlertsForAuthenticatedBinding(t *testing.T) {
 	items, ok := data["items"].([]any)
 	require.True(t, ok)
 	require.Len(t, items, 1)
-	item := items[0].(map[string]any)
+	item, ok := items[0].(map[string]any)
+	require.True(t, ok)
 	require.Equal(t, float64(8), item["id"])
 	require.Equal(t, float64(2), item["current_balance"])
 }

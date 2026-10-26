@@ -294,7 +294,7 @@ func (h *UserHandler) BindEmailIdentity(c *gin.Context) {
 		return
 	}
 
-	updatedUser, err := h.authService.BindEmailIdentity(
+	_, err := h.authService.BindEmailIdentity(
 		c.Request.Context(),
 		subject.UserID,
 		req.Email,
@@ -305,7 +305,7 @@ func (h *UserHandler) BindEmailIdentity(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	updatedUser, err = h.userService.GetProfile(c.Request.Context(), subject.UserID)
+	updatedUser, err := h.userService.GetProfile(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
