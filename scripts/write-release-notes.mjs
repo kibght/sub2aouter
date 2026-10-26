@@ -18,11 +18,10 @@ let previousRepository = ''
 try {
   previousRepository = git('.', 'show', baseRef + ':.apophis-repository-sha')
 } catch {
-  // Releases before repository metadata was introduced still share the source
-  // history with the current checkout. Use that history's common ancestor as
-  // the comparison point instead of refusing the first repository release.
-  git('.', 'fetch', '--force', 'origin', 'refs/heads/main:refs/apophis/repository-main')
-  previousRepository = git('.', 'merge-base', baseRef, 'refs/apophis/repository-main')
+  // Releases before repository metadata was introduced keep the source
+  // revision as the generated release commit's first parent. Use that stable
+  // source baseline instead of refusing the first repository release.
+  previousRepository = git('.', 'rev-parse', baseRef + '^1')
 }
 const previousUpstream = git('.', 'show', baseRef + ':.apophis-upstream-sha')
 const canvasRoot = path.resolve("integrations/infinite-canvas")
