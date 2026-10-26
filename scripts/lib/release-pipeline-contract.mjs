@@ -22,6 +22,7 @@ export const RELEASE_PIPELINE_FILES = Object.freeze([
   'scripts/lib/release-notes.mjs',
   'scripts/ci/restore-workflow-snapshots.sh',
   'scripts/apply-bot-binding.mjs',
+  'scripts/apply-qq-bot-binding.mjs',
   'scripts/lib/github-release.mjs',
   'scripts/lib/sync-health.mjs',
   'backend/internal/service/update_service.go',
@@ -137,13 +138,19 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.upstream_release_identity', syncPath, sync.includes('UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_TAG') && sync.includes('.apophis-upstream-release-id') && sync.includes('UPSTREAM_IDENTITY_AND_SHA_MATCH') && sync.includes('"$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA"'), 'Scheduled Sub2API syncs must deduplicate only when Release identity and source SHA match.')
   check('sync.skip_unchanged', syncPath, sync.includes('SCHEDULED_ROUND') && hasPattern(sync, /PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Upstream runs must skip unchanged source revisions once the latest binary Release includes them.')
   check('sync.theme_overlay', syncPath, sync.includes('node scripts/apply-theme.mjs --root .'), 'Sync must apply the Apophis overlay to fetched upstream source.')
-  const botBindingFetch = sync.indexOf('git fetch --depth=1 origin "refs/heads/feat/deepseek-bot-binding:refs/remotes/origin/feat/deepseek-bot-binding"')
-  const botBindingApply = sync.indexOf('node scripts/apply-bot-binding.mjs --root . --ref origin/feat/deepseek-bot-binding')
-  const botBindingCheck = sync.indexOf('node scripts/apply-bot-binding.mjs --root . --ref origin/feat/deepseek-bot-binding --check')
+  const botBindingFetch = sync.indexOf('git fetch --depth=2 origin "refs/heads/feat/qq-bot-binding:refs/remotes/origin/feat/qq-bot-binding"')
+  const botBindingApply = sync.indexOf('node scripts/apply-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding')
+  const botBindingCheck = sync.indexOf('node scripts/apply-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding --check')
   check('sync.bot_binding_overlay', syncPath,
     botBindingFetch >= 0 && botBindingFetch < botBindingApply && botBindingApply < botBindingCheck &&
-    (files.get('scripts/apply-bot-binding.mjs') || '').includes("origin/feat/deepseek-bot-binding"),
+    (files.get('scripts/apply-bot-binding.mjs') || '').includes("origin/feat/qq-bot-binding"),
     'Sync must fetch the bot binding branch, apply its overlay, and verify the generated integration.')
+  const qqBotApply = sync.indexOf('node scripts/apply-qq-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding')
+  const qqBotCheck = sync.indexOf('node scripts/apply-qq-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding --check')
+  check('sync.qq_bot_binding_overlay', syncPath,
+    qqBotApply >= 0 && qqBotApply < qqBotCheck &&
+    (files.get('scripts/apply-qq-bot-binding.mjs') || '').includes("origin/feat/qq-bot-binding"),
+    'Sync must apply and verify the QQ balance-alert delta from the unified bot branch.')
   check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-canvas-sha') && sync.includes('scripts/write-release-notes.mjs') && sync.includes('scripts/ci/preserve-upstream-metadata.sh'), 'Sync must persist upstream, repository, Canvas, and release notes metadata.')
   check('sync.repository_recovery', syncPath, sync.includes('repository_release:') && sync.includes('PREVIOUS_CANVAS_SHA') && sync.includes('Repository source drift is intentionally not published') && sync.includes('UPSTREAM_ALREADY_SYNCHRONIZED'), 'Scheduled syncs may publish Canvas drift, while repository-only changes require explicit repository_release=true.')
   check('sync.canvas_freshness', syncPath, sync.includes('name: Verify Infinite Canvas dependency is current') && sync.includes('LATEST_CANVAS_SHA') && sync.includes('node scripts/resolve-github-release.mjs') && sync.includes('--repository basketikun/infinite-canvas'), 'Theme publication must stop when main is behind the latest published Infinite Canvas release.')
