@@ -15,6 +15,7 @@ const baseRef = 'refs/apophis/release-notes-base'
 git('.', 'fetch', '--force', 'origin', 'refs/tags/' + baseTag + ':' + baseRef)
 const previousCanvas = git('.', 'rev-parse', baseRef + ':integrations/infinite-canvas')
 let previousRepository = ''
+let repositoryBaselineFromMetadata = true
 try {
   previousRepository = git('.', 'show', baseRef + ':.apophis-repository-sha')
 } catch {
@@ -22,6 +23,7 @@ try {
   // revision as the generated release commit's first parent. Use that stable
   // source baseline instead of refusing the first repository release.
   previousRepository = git('.', 'rev-parse', baseRef + '^1')
+  repositoryBaselineFromMetadata = false
 }
 const previousUpstream = git('.', 'show', baseRef + ':.apophis-upstream-sha')
 const canvasRoot = path.resolve("integrations/infinite-canvas")
@@ -46,7 +48,7 @@ if (env.RELEASE_KIND === "repository" || previousUpstream === env.UPSTREAM_SHA) 
   const base = previousRepository
   const head = env.CURRENT_REPOSITORY_SHA
   if (!/^[0-9a-f]{40}$/.test(base || "") || !/^[0-9a-f]{40}$/.test(head || "")) throw new Error("Repository notes require the last published revision.")
-  git(".", "merge-base", "--is-ancestor", base, head)
+  if (repositoryBaselineFromMetadata) git(".", "merge-base", "--is-ancestor", base, head)
   repository = concreteSubjects(git(".", "log", "--reverse", "--format=%s", `${base}..${head}`).split("\n"))
 }
 const upstream = env.RELEASE_KIND === "upstream" && previousUpstream !== env.UPSTREAM_SHA
