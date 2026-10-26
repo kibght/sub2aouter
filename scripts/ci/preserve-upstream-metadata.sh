@@ -19,4 +19,9 @@ if [[ -n "${UPSTREAM_RELEASE_ID:-}" ]]; then
   printf '%s\n' "$UPSTREAM_RELEASE_ID" > "$ROOT/.apophis-upstream-release-id"
 fi
 test -s "$ROOT/.apophis-upstream-release-tag"
-test -s "$ROOT/.apophis-upstream-release-id"
+# Older themed releases recorded only the upstream tag. Preserve an ID when
+# one exists, but allow repository-only releases to inherit that valid legacy
+# metadata without manufacturing an upstream release identity.
+if [[ -e "$ROOT/.apophis-upstream-release-id" ]]; then
+  test -s "$ROOT/.apophis-upstream-release-id"
+fi
