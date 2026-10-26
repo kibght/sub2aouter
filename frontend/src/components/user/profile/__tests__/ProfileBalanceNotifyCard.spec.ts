@@ -2,14 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import ProfileBalanceNotifyCard from '../ProfileBalanceNotifyCard.vue'
 
-const { sendNotifyEmailCode, verifyNotifyEmail, getProfile } = vi.hoisted(() => ({
+const { sendNotifyEmailCode, verifyNotifyEmail, getProfile, updateProfile } = vi.hoisted(() => ({
   sendNotifyEmailCode: vi.fn(),
   verifyNotifyEmail: vi.fn(),
-  getProfile: vi.fn()
+  getProfile: vi.fn(),
+  updateProfile: vi.fn()
 }))
 
 vi.mock('@/api', () => ({
-  userAPI: { sendNotifyEmailCode, verifyNotifyEmail, getProfile }
+  userAPI: { sendNotifyEmailCode, verifyNotifyEmail, getProfile, updateProfile }
 }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: null }) }))
 vi.mock('@/stores/app', () => ({
@@ -37,6 +38,7 @@ describe('ProfileBalanceNotifyCard', () => {
     vi.resetAllMocks()
     sendNotifyEmailCode.mockResolvedValue({})
     getProfile.mockResolvedValue({ balance_notify_extra_emails: [] })
+    updateProfile.mockResolvedValue({ balance_notify_qq_enabled: true })
   })
 
   afterEach(() => {
@@ -48,7 +50,7 @@ describe('ProfileBalanceNotifyCard', () => {
     const request = deferred()
     sendNotifyEmailCode.mockReturnValueOnce(request.promise)
     const wrapper = mount(ProfileBalanceNotifyCard, {
-      props: { enabled: true, threshold: null, extraEmails: [], systemDefaultThreshold: 5, userEmail: '' }
+      props: { enabled: true, qqEnabled: false, hasQqBinding: false, threshold: null, extraEmails: [], systemDefaultThreshold: 5, userEmail: '' }
     })
     await wrapper.get('input[type="email"]').setValue('new@example.com')
     await button(wrapper, 'common.add').trigger('click')
@@ -67,6 +69,7 @@ describe('ProfileBalanceNotifyCard', () => {
     const wrapper = mount(ProfileBalanceNotifyCard, {
       props: {
         enabled: true, threshold: null, systemDefaultThreshold: 5, userEmail: '',
+        qqEnabled: false, hasQqBinding: false,
         extraEmails: [{ email: 'saved@example.com', disabled: false, verified: false }]
       }
     })
@@ -82,7 +85,7 @@ describe('ProfileBalanceNotifyCard', () => {
     const requests = [deferred(), deferred()]
     verifyNotifyEmail.mockImplementation((email: string) => requests[emails.indexOf(email)]!.promise)
     const wrapper = mount(ProfileBalanceNotifyCard, {
-      props: { enabled: true, threshold: null, extraEmails: [], systemDefaultThreshold: 5, userEmail: '' }
+      props: { enabled: true, qqEnabled: false, hasQqBinding: false, threshold: null, extraEmails: [], systemDefaultThreshold: 5, userEmail: '' }
     })
 
     for (const email of emails) {
@@ -110,5 +113,29 @@ describe('ProfileBalanceNotifyCard', () => {
     expect(pendingEmails(wrapper)).toEqual([emails[2]])
     expect((pendingRows(wrapper)[0]!.get('input').element as HTMLInputElement).value).toBe('123456')
     expect(getProfile).toHaveBeenCalledTimes(2)
+  })
+
+  it('disables QQ alerts when the account has no QQ binding', async () => {
+    const wrapper = mount(ProfileBalanceNotifyCard, {
+      props: { enabled: true, qqEnabled: false, hasQqBinding: false, threshold: null, extraEmails: [], systemDefaultThreshold: 5, userEmail: '' }
+    })
+
+    expect((wrapper.find('input[type="checkbox"]').element as HTMLInputElement).disabled).toBe(false)
+    const qqToggle = wrapper.findAll('input[type="checkbox"]')[1]!
+    expect((qqToggle.element as HTMLInputElement).disabled).toBe(true)
+    expect(wrapper.text()).toContain('profile.balanceNotify.qqBindingRequired')
+    await qqToggle.setValue(true)
+    expect(updateProfile).not.toHaveBeenCalled()
+  })
+
+  it('saves the QQ alert toggle when a QQ binding exists', async () => {
+    const wrapper = mount(ProfileBalanceNotifyCard, {
+      props: { enabled: true, qqEnabled: false, hasQqBinding: true, threshold: null, extraEmails: [], systemDefaultThreshold: 5, userEmail: '' }
+    })
+    const qqToggle = wrapper.findAll('input[type="checkbox"]')[1]!
+
+    await qqToggle.setValue(true)
+
+    expect(updateProfile).toHaveBeenCalledWith({ balance_notify_qq_enabled: true })
   })
 })

@@ -3,6 +3,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,32 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type authCurrentUserQQPreferenceStub struct{}
+
+func (authCurrentUserQQPreferenceStub) EnqueueBalanceLow(context.Context, int64, service.BalanceLowQQAlert) error {
+	return nil
+}
+
+func (authCurrentUserQQPreferenceStub) HasActiveQQBinding(context.Context, int64) (bool, error) {
+	return true, nil
+}
+
+func (authCurrentUserQQPreferenceStub) GetQQBalanceNotifyEnabled(context.Context, int64) (bool, error) {
+	return true, nil
+}
+
+func (authCurrentUserQQPreferenceStub) SetQQBalanceNotifyEnabled(context.Context, int64, bool) error {
+	return nil
+}
+
+func (authCurrentUserQQPreferenceStub) ClaimBalanceLow(context.Context, int64, int64, time.Time, time.Time, int) ([]service.BalanceLowQQAlert, error) {
+	return nil, nil
+}
+
+func (authCurrentUserQQPreferenceStub) AckBalanceLow(context.Context, int64, int64, int64) error {
+	return nil
+}
 
 func TestAuthHandlerGetCurrentUserReturnsProfileCompatibilityFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -46,6 +73,7 @@ func TestAuthHandlerGetCurrentUserReturnsProfileCompatibilityFields(t *testing.T
 	handler := &AuthHandler{
 		userService: service.NewUserService(repo, nil, nil, nil),
 	}
+	handler.userService.SetBalanceNotifyQQRepository(authCurrentUserQQPreferenceStub{})
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -63,6 +91,7 @@ func TestAuthHandlerGetCurrentUserReturnsProfileCompatibilityFields(t *testing.T
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
 	require.Equal(t, 0, resp.Code)
 	require.Equal(t, true, resp.Data["email_bound"])
+	require.Equal(t, true, resp.Data["balance_notify_qq_enabled"])
 	require.Equal(t, true, resp.Data["linuxdo_bound"])
 	require.Equal(t, "https://cdn.example.com/linuxdo.png", resp.Data["avatar_url"])
 

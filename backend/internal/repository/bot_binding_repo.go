@@ -95,6 +95,16 @@ func (r *botBindingRepository) RedeemCode(ctx context.Context, params service.Bo
 	`, userID, params.Platform, now, params.ExternalID); err != nil {
 		return nil, fmt.Errorf("revoke previous bot binding: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM balance_low_qq_deliveries
+		WHERE user_id = $1
+		  AND binding_id IN (
+			SELECT id FROM bot_bindings
+			WHERE user_id = $1 AND platform = $2 AND external_id = $3 AND revoked_at = $4
+		  )
+	`, userID, params.Platform, params.ExternalID, now); err != nil {
+		return nil, fmt.Errorf("clear alerts for replaced bot binding: %w", err)
+	}
 
 	var activeCount int64
 	if err := tx.QueryRowContext(ctx, `
@@ -188,7 +198,12 @@ func (r *botBindingRepository) ListByUserID(ctx context.Context, userID int64) (
 }
 
 func (r *botBindingRepository) RevokeByID(ctx context.Context, userID, bindingID int64, revokedAt time.Time) error {
-	result, err := r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin revoke bot binding: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, `
 		UPDATE bot_bindings
 		SET revoked_at = $3, updated_at = $3
 		WHERE id = $2 AND user_id = $1 AND revoked_at IS NULL
@@ -202,6 +217,26 @@ func (r *botBindingRepository) RevokeByID(ctx context.Context, userID, bindingID
 	}
 	if affected == 0 {
 		return service.ErrBotBindingNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM balance_low_qq_deliveries WHERE user_id = $1 AND binding_id = $2
+	`, userID, bindingID); err != nil {
+		return fmt.Errorf("clear alerts for revoked bot binding: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE user_balance_notify_qq
+		SET enabled = FALSE, updated_at = $2
+		WHERE user_id = $1
+		  AND enabled = TRUE
+		  AND NOT EXISTS (
+			SELECT 1 FROM bot_bindings
+			WHERE user_id = $1 AND platform = 'qq' AND revoked_at IS NULL
+		  )
+	`, userID, revokedAt); err != nil {
+		return fmt.Errorf("disable QQ alerts after last QQ binding is revoked: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit revoke bot binding: %w", err)
 	}
 	return nil
 }

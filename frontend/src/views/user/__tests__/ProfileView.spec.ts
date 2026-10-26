@@ -4,10 +4,12 @@ import ProfileView from '@/views/user/ProfileView.vue'
 
 const {
   fetchPublicSettingsMock,
+  listBotBindingsMock,
   refreshUserMock,
   authState
 } = vi.hoisted(() => ({
   fetchPublicSettingsMock: vi.fn(),
+  listBotBindingsMock: vi.fn(),
   refreshUserMock: vi.fn(),
   authState: {
     user: null as Record<string, unknown> | null,
@@ -18,6 +20,14 @@ const {
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => authState
 }))
+
+vi.mock('@/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api')>()
+  return {
+    ...actual,
+    botBindingsAPI: { list: listBotBindingsMock }
+  }
+})
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
@@ -43,6 +53,8 @@ describe('ProfileView', () => {
   beforeEach(() => {
     refreshUserMock.mockReset()
     fetchPublicSettingsMock.mockReset()
+    listBotBindingsMock.mockReset()
+    listBotBindingsMock.mockResolvedValue({ items: [] })
     refreshUserMock.mockResolvedValue(undefined)
     authState.refreshUser = refreshUserMock
     authState.user = {
@@ -62,7 +74,7 @@ describe('ProfileView', () => {
     }
     fetchPublicSettingsMock.mockResolvedValue({
       contact_info: '',
-      balance_low_notify_enabled: false,
+      balance_low_notify_enabled: true,
       balance_low_notify_threshold: 0,
       linuxdo_oauth_enabled: true,
       wechat_oauth_enabled: true,
@@ -80,7 +92,10 @@ describe('ProfileView', () => {
           AppLayout: { template: '<div><slot /></div>' },
           StatCard: { template: '<div class="stat-card" />' },
           ProfileInfoCard: { template: '<div data-testid="profile-info-card" />' },
-          ProfileBalanceNotifyCard: { template: '<div data-testid="profile-balance-notify-card" />' },
+          ProfileBalanceNotifyCard: {
+            props: ['hasQqBinding'],
+            template: '<div data-testid="profile-balance-notify-card">{{ hasQqBinding }}</div>'
+          },
           ProfilePasswordForm: { template: '<div data-testid="profile-password-form" />' },
           ProfileTotpCard: { template: '<div data-testid="profile-totp-card" />' },
           ProfileBotBindingCard: { template: '<div data-testid="profile-bot-binding-card" />' },
@@ -97,5 +112,32 @@ describe('ProfileView', () => {
     expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-password-form')
     expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-totp-card')
     expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-bot-binding-card')
+    expect(wrapper.get('[data-testid="profile-balance-notify-card"]').text()).toBe('false')
+  })
+
+  it('enables the QQ notification setting only for a bound QQ account', async () => {
+    listBotBindingsMock.mockResolvedValue({
+      items: [{ id: 1, platform: 'qq', external_id: '123', token_prefix: 'bt_', bound_at: '', last_used_at: null, created_at: '' }]
+    })
+    const wrapper = mount(ProfileView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          ProfileInfoCard: true,
+          ProfileBalanceNotifyCard: {
+            props: ['hasQqBinding'],
+            template: '<div data-testid="profile-balance-notify-card">{{ hasQqBinding }}</div>'
+          },
+          ProfilePasswordForm: true,
+          ProfileTotpCard: true,
+          ProfilePasskeyCard: true,
+          Icon: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="profile-balance-notify-card"]').text()).toBe('true')
   })
 })

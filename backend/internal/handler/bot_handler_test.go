@@ -93,6 +93,41 @@ type stubBotUsers struct {
 	err  error
 }
 
+type stubBalanceNotifyQQRepo struct {
+	alerts       []service.BalanceLowQQAlert
+	claimUserID  int64
+	claimBinding int64
+	claimErr     error
+	ackUserID    int64
+	ackBinding   int64
+	ackAlertID   int64
+	ackErr       error
+}
+
+func (s *stubBalanceNotifyQQRepo) EnqueueBalanceLow(context.Context, int64, service.BalanceLowQQAlert) error {
+	return nil
+}
+func (s *stubBalanceNotifyQQRepo) HasActiveQQBinding(context.Context, int64) (bool, error) {
+	return true, nil
+}
+func (s *stubBalanceNotifyQQRepo) GetQQBalanceNotifyEnabled(context.Context, int64) (bool, error) {
+	return false, nil
+}
+func (s *stubBalanceNotifyQQRepo) SetQQBalanceNotifyEnabled(context.Context, int64, bool) error {
+	return nil
+}
+func (s *stubBalanceNotifyQQRepo) ClaimBalanceLow(_ context.Context, userID, bindingID int64, _, _ time.Time, _ int) ([]service.BalanceLowQQAlert, error) {
+	s.claimUserID = userID
+	s.claimBinding = bindingID
+	return s.alerts, s.claimErr
+}
+func (s *stubBalanceNotifyQQRepo) AckBalanceLow(_ context.Context, userID, bindingID, alertID int64) error {
+	s.ackUserID = userID
+	s.ackBinding = bindingID
+	s.ackAlertID = alertID
+	return s.ackErr
+}
+
 func (s *stubBotUsers) GetByID(_ context.Context, _ int64) (*service.User, error) {
 	if s.err != nil {
 		return nil, s.err
@@ -133,9 +168,66 @@ func newBotTestRouter(opts botTestRouterOptions) *gin.Engine {
 	bot.POST("/unbind", opts.handler.Unbind)
 	bot.GET("/api-keys", opts.handler.APIKeys)
 	bot.GET("/usage/stats", opts.handler.UsageStats)
+	bot.GET("/balance-alerts", opts.handler.BalanceLowAlerts)
+	bot.POST("/balance-alerts/:id/ack", opts.handler.AckBalanceLowAlert)
 
 	router.POST("/bot-bindings/redeem", opts.handler.Redeem)
 	return router
+}
+
+func TestBotHandlerClaimsQQBalanceAlertsForAuthenticatedBinding(t *testing.T) {
+	queue := &stubBalanceNotifyQQRepo{alerts: []service.BalanceLowQQAlert{{ID: 8, Balance: 2, Threshold: 5, SiteName: "Example"}}}
+	h := NewBotHandler(&stubBotBindings{}, &stubBotUsage{}, &stubBotAPIKeys{}, &stubBotUsers{})
+	h.SetBalanceNotifyQQRepository(queue)
+	router := newBotTestRouter(botTestRouterOptions{
+		handler: h, userID: 7, binding: &service.BotBinding{ID: 11, UserID: 7, Platform: "qq"}, withAuth: true,
+	})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/bot/balance-alerts", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, int64(7), queue.claimUserID)
+	require.Equal(t, int64(11), queue.claimBinding)
+	data := decodeBotData(t, rec)
+	items, ok := data["items"].([]any)
+	require.True(t, ok)
+	require.Len(t, items, 1)
+	item, ok := items[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, float64(8), item["id"])
+	require.Equal(t, float64(2), item["current_balance"])
+}
+
+func TestBotHandlerAckScopesAlertToAuthenticatedQQBinding(t *testing.T) {
+	queue := &stubBalanceNotifyQQRepo{}
+	h := NewBotHandler(&stubBotBindings{}, &stubBotUsage{}, &stubBotAPIKeys{}, &stubBotUsers{})
+	h.SetBalanceNotifyQQRepository(queue)
+	router := newBotTestRouter(botTestRouterOptions{
+		handler: h, userID: 7, binding: &service.BotBinding{ID: 11, UserID: 7, Platform: "qq"}, withAuth: true,
+	})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/bot/balance-alerts/8/ack", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, int64(7), queue.ackUserID)
+	require.Equal(t, int64(11), queue.ackBinding)
+	require.Equal(t, int64(8), queue.ackAlertID)
+}
+
+func TestBotHandlerBalanceAlertsRejectsNonQQBinding(t *testing.T) {
+	queue := &stubBalanceNotifyQQRepo{}
+	h := NewBotHandler(&stubBotBindings{}, &stubBotUsage{}, &stubBotAPIKeys{}, &stubBotUsers{})
+	h.SetBalanceNotifyQQRepository(queue)
+	router := newBotTestRouter(botTestRouterOptions{
+		handler: h, userID: 7, binding: &service.BotBinding{ID: 11, UserID: 7, Platform: "telegram"}, withAuth: true,
+	})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/bot/balance-alerts", nil))
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Zero(t, queue.claimBinding)
 }
 
 func decodeBotData(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {

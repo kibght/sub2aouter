@@ -951,6 +951,8 @@ export default {
       title: '余额不足提醒',
       description: '当账户余额低于阈值时发送邮件提醒',
       enabled: '启用余额不足提醒',
+      qqEnabled: 'QQ 机器人私聊提醒',
+      qqBindingRequired: '请先绑定 QQ 机器人账号',
       threshold: '自定义提醒阈值',
       thresholdHint: '留空使用系统默认值',
       thresholdPlaceholder: '输入金额',

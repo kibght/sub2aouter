@@ -65,6 +65,7 @@ func TestAPIContracts(t *testing.T) {
 					"balance_notify_threshold_type": "",
 					"balance_notify_threshold": null,
 					"balance_notify_extra_emails": null,
+					"balance_notify_qq_enabled": false,
 					"total_recharged": 0,
 					"linuxdo_bound": false,
 					"oidc_bound": false,
