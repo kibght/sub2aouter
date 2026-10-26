@@ -32,11 +32,14 @@ export function previousReleaseTag(releases, version) {
     .sort((a, b) => compare(parse(b.tag_name), parse(a.tag_name)))[0]?.tag_name || ''
 }
 
-export function composeReleaseNotes({ upstream = "", canvas = "", repository = "", canvasTag = "" }) {
+export function composeReleaseNotes({ upstream = "", canvas = "", repository = "", integrations = [], canvasTag = "" }) {
   const sections = []
   if (upstream.trim()) sections.push(upstreamChanges(upstream))
   if (canvas.trim()) sections.push(`### Infinite Canvas ${canvasTag}\n\n${canvas.trim()}`)
   if (repository.trim()) sections.push(repository.trim())
+  for (const integration of integrations) {
+    if (integration?.trim()) sections.push(integration.trim())
+  }
   const body = sections.join("\n\n").trim()
   if (!/^[+*-] \S/m.test(body)) throw new Error("Concrete release changes are required; refusing a hash-only or empty release.")
   if (body.includes("\uFFFD") || /\?{4,}/.test(body)) throw new Error("Invalid release notes encoding.")

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process"
-import { readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { changelogChanges, concreteSubjects, composeReleaseNotes, previousReleaseTag } from "./lib/release-notes.mjs"
 
@@ -53,6 +53,16 @@ if (env.RELEASE_KIND === "repository" || previousUpstream === env.UPSTREAM_SHA) 
 }
 const upstream = env.RELEASE_KIND === "upstream" && previousUpstream !== env.UPSTREAM_SHA
   ? readFileSync(path.join(generated, ".apophis-upstream-release-notes.md"), "utf8") : ""
-const body = composeReleaseNotes({ upstream, canvas, repository, canvasTag: env.CANVAS_RELEASE_TAG || "" })
+const integrations = []
+if (existsSync(path.join(generated, "backend/internal/repository/balance_notify_qq_repo.go"))) {
+  integrations.push(`### QQ Bot Integration
+
+- Website users can create, list, and revoke QQ bot bindings from their profile.
+- When a user's balance first falls below the configured threshold, the existing email alert can be accompanied by a QQ private-message alert.
+- QQ alerts are persisted until the bot claims and acknowledges them; unacknowledged alerts can be retried after the claim timeout.
+- Alert payloads include the alert ID, current balance, threshold, site name, and recharge link, with binding ownership enforced by the server.
+- Bot endpoints require administrator authentication in addition to the binding token, and the QQ alert switch is accepted only for users with a valid binding.`)
+}
+const body = composeReleaseNotes({ upstream, canvas, repository, integrations, canvasTag: env.CANVAS_RELEASE_TAG || "" })
 writeFileSync(path.join(generated, ".apophis-release-title"), `Sub2Aouter ${env.RELEASE_VERSION}\n`, "utf8")
 writeFileSync(path.join(generated, ".apophis-release-notes.md"), body, "utf8")

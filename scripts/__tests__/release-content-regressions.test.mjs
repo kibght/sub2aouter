@@ -74,3 +74,12 @@ test('upstream notes preserve actual changes without provenance and upstream ins
   assert.match(body, /- Preserve tools\./)
   assert.doesNotMatch(body, /source metadata|docker pull|Installation/)
 })
+
+test('release notes include concrete integration details', () => {
+  const body = composeReleaseNotes({
+    repository: '- ci: sync unified QQ bot branch',
+    integrations: ['### QQ Bot Integration\n\n- QQ alerts are persisted until acknowledged.'],
+  })
+  assert.match(body, /QQ Bot Integration/)
+  assert.match(body, /persisted until acknowledged/)
+})
