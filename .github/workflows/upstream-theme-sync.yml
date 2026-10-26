@@ -335,7 +335,7 @@ jobs:
             exit 0
           fi
 
-          if [[ "$RELEASE_KIND" == "repository" && "$PREVIOUS_REPOSITORY_SHA" == "$RELEASE_SOURCE_SHA" && "$PREVIOUS_CANVAS_SHA" == "$CURRENT_CANVAS_SHA" ]]; then
+          if [[ "$RELEASE_KIND" == "repository" && "$PREVIOUS_REPOSITORY_SHA" == "$RELEASE_SOURCE_SHA" && "$PREVIOUS_CANVAS_SHA" == "$CURRENT_CANVAS_SHA" && -z "$RELEASE_VERSION_OVERRIDE" ]]; then
             if [[ "$NEEDS_BINARY_RELEASE" == "true" ]]; then
               echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
               echo "NEEDS_BINARY_RELEASE=true" >> "$GITHUB_ENV"
