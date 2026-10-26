@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// 把 feat/deepseek-bot-binding 分支上的机器人绑定功能叠加到上游生成树里。
+// 把 feat/qq-bot-binding 分支上的机器人绑定功能叠加到上游生成树里。
 // 与 theme overlay / Infinite Canvas integration 一样，作为自动同步流程的一步执行：
-//   node scripts/apply-bot-binding.mjs --root <generated-dir> --ref origin/feat/deepseek-bot-binding
+//   node scripts/apply-bot-binding.mjs --root <generated-dir> --ref origin/feat/qq-bot-binding
 // 新增文件直接从分支读取；共享文件按锚点插入；迁移按当前最大编号顺延；脚本幂等。
 
 import { execFileSync } from 'node:child_process'
@@ -14,7 +14,7 @@ const valueOf = (name, fallback) => {
   return index >= 0 && argv[index + 1] ? argv[index + 1] : fallback
 }
 const root = path.resolve(valueOf('--root', '.'))
-const ref = valueOf('--ref', 'origin/feat/deepseek-bot-binding')
+const ref = valueOf('--ref', 'origin/feat/qq-bot-binding')
 const checkOnly = argv.includes('--check')
 
 const CHANGED = []

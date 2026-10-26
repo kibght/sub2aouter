@@ -432,11 +432,16 @@ jobs:
 
       - name: Fetch bot binding source branch
         if: env.SHOULD_PUBLISH == 'true'
-        run: git fetch --depth=1 origin "refs/heads/feat/deepseek-bot-binding:refs/remotes/origin/feat/deepseek-bot-binding"
+        run: git fetch --depth=2 origin "refs/heads/feat/qq-bot-binding:refs/remotes/origin/feat/qq-bot-binding"
 
       - name: Apply bot binding integration
         if: env.SHOULD_PUBLISH == 'true'
-        run: node scripts/apply-bot-binding.mjs --root . --ref origin/feat/deepseek-bot-binding
+        run: node scripts/apply-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding
+        working-directory: ${{ env.GENERATED_DIR }}
+
+      - name: Apply QQ balance-alert integration
+        if: env.SHOULD_PUBLISH == 'true'
+        run: node scripts/apply-qq-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding
         working-directory: ${{ env.GENERATED_DIR }}
 
       - name: Write unified release metadata
@@ -513,7 +518,8 @@ jobs:
           node scripts/apply-theme.mjs --root . --check
           node scripts/apply-sub2-plugin-compatibility.mjs --root . --check
           node scripts/apply-sub2-infinite-canvas-integration.mjs --root . --check
-          node scripts/apply-bot-binding.mjs --root . --ref origin/feat/deepseek-bot-binding --check
+          node scripts/apply-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding --check
+          node scripts/apply-qq-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding --check
           node scripts/check-encoding.mjs .
           node --test scripts/__tests__/*.test.mjs
 
