@@ -14,7 +14,15 @@ if (!baseTag) throw new Error('No earlier published release found for concrete c
 const baseRef = 'refs/apophis/release-notes-base'
 git('.', 'fetch', '--force', 'origin', 'refs/tags/' + baseTag + ':' + baseRef)
 const previousCanvas = git('.', 'rev-parse', baseRef + ':integrations/infinite-canvas')
-const previousRepository = git('.', 'show', baseRef + ':.apophis-repository-sha')
+let previousRepository = ''
+try {
+  previousRepository = git('.', 'show', baseRef + ':.apophis-repository-sha')
+} catch {
+  // Releases before repository metadata was introduced still share the source
+  // history with the current checkout. Use that history's common ancestor as
+  // the comparison point instead of refusing the first repository release.
+  previousRepository = git('.', 'merge-base', baseRef, env.CURRENT_REPOSITORY_SHA)
+}
 const previousUpstream = git('.', 'show', baseRef + ':.apophis-upstream-sha')
 const canvasRoot = path.resolve("integrations/infinite-canvas")
 let canvas = ""
