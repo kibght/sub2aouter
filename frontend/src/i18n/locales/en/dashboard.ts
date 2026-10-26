@@ -947,6 +947,8 @@ export default {
       title: 'Balance Low Notification',
       description: 'Send email alert when account balance falls below threshold',
       enabled: 'Enable Balance Low Notification',
+      qqEnabled: 'QQ bot private message alert',
+      qqBindingRequired: 'Bind a QQ bot account first',
       threshold: 'Custom Threshold',
       thresholdHint: 'Leave empty to use system default',
       thresholdPlaceholder: 'Enter amount',

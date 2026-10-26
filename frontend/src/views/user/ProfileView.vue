@@ -37,6 +37,8 @@
       <ProfileBalanceNotifyCard
         v-if="user && balanceLowNotifyEnabled"
         :enabled="user.balance_notify_enabled ?? true"
+        :qq-enabled="user.balance_notify_qq_enabled ?? false"
+        :has-qq-binding="hasQQBinding"
         :threshold="user.balance_notify_threshold"
         :extra-emails="user.balance_notify_extra_emails ?? []"
         :system-default-threshold="systemDefaultThreshold"
@@ -45,7 +47,7 @@
 
       <ProfileTotpCard />
       <ProfilePasskeyCard :enabled="passkeyEnabled" />
-      <ProfileBotBindingCard />
+      <ProfileBotBindingCard @bindings-changed="onBindingsChanged" />
     </div>
   </AppLayout>
 </template>
@@ -69,6 +71,7 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const user = computed(() => authStore.user)
+const hasQQBinding = ref(false)
 
 const contactInfo = ref('')
 const balanceLowNotifyEnabled = ref(false)
@@ -81,6 +84,10 @@ const wechatOAuthMPEnabled = ref<boolean | undefined>(undefined)
 const oidcOAuthEnabled = ref(false)
 const oidcOAuthProviderName = ref('OIDC')
 const passkeyEnabled = ref(false)
+
+function onBindingsChanged(bindings: Array<{ platform: string }>): void {
+  hasQQBinding.value = bindings.some((binding) => binding.platform.toLowerCase() === 'qq')
+}
 
 onMounted(async () => {
   const profileRefresh = authStore.refreshUser().catch((error) => {

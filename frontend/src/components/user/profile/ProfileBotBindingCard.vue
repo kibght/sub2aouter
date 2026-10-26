@@ -187,6 +187,9 @@ import { useAppStore } from '@/stores/app'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const emit = defineEmits<{
+  (event: 'bindings-changed', bindings: BotBinding[]): void
+}>()
 
 const bindings = ref<BotBinding[]>([])
 const loading = ref(false)
@@ -216,6 +219,7 @@ async function loadBindings(): Promise<void> {
   try {
     const response = await botBindingsAPI.list()
     bindings.value = Array.isArray(response?.items) ? response.items : []
+    emit('bindings-changed', bindings.value)
   } catch (error) {
     appStore.showError(extractErrorMessage(error, t('profile.botBinding.loadFailed')))
   } finally {
@@ -328,6 +332,7 @@ async function confirmUnbind(): Promise<void> {
   try {
     await botBindingsAPI.revoke(target.id)
     bindings.value = bindings.value.filter((item) => item.id !== target.id)
+    emit('bindings-changed', bindings.value)
     appStore.showSuccess(t('profile.botBinding.unbindSuccess'))
     closeUnbindDialog()
   } catch (error) {

@@ -185,8 +185,11 @@ func ProvideBotHandler(
 	usage *service.UsageService,
 	apiKeys *service.APIKeyService,
 	users *service.UserService,
+	qqBalanceNotifyRepo service.BalanceNotifyQQRepository,
 ) *BotHandler {
-	return NewBotHandler(bindings, usage, apiKeys, users)
+	h := NewBotHandler(bindings, usage, apiKeys, users)
+	h.SetBalanceNotifyQQRepository(qqBalanceNotifyRepo)
+	return h
 }
 
 // ProvideHandlers creates the Handlers struct

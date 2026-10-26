@@ -257,6 +257,7 @@ type UpdateProfileRequest struct {
 	AvatarURL              *string  `json:"avatar_url"`
 	Concurrency            *int     `json:"concurrency"`
 	BalanceNotifyEnabled   *bool    `json:"balance_notify_enabled"`
+	BalanceNotifyQQEnabled *bool    `json:"balance_notify_qq_enabled"`
 	BalanceNotifyThreshold *float64 `json:"balance_notify_threshold"`
 }
 
@@ -291,11 +292,16 @@ type ChangePasswordRequest struct {
 // UserService 用户服务
 type UserService struct {
 	userRepo             UserRepository
+	balanceNotifyQQRepo  BalanceNotifyQQRepository
 	settingRepo          SettingRepository
 	authCacheInvalidator APIKeyAuthCacheInvalidator
 	billingCache         BillingCache
 	lastActiveTouchL1    sync.Map
 	lastActiveTouchSF    singleflight.Group
+}
+
+func (s *UserService) SetBalanceNotifyQQRepository(repo BalanceNotifyQQRepository) {
+	s.balanceNotifyQQRepo = repo
 }
 
 // NewUserService 创建用户服务实例
@@ -323,11 +329,26 @@ func (s *UserService) GetProfile(ctx context.Context, userID int64) (*User, erro
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
 	}
+	if err := s.loadQQBalanceNotifyPreference(ctx, userID, user); err != nil {
+		return nil, err
+	}
 	normalizeLoadedUserTokenVersion(user)
 	if err := s.hydrateUserAvatar(ctx, user); err != nil {
 		return nil, fmt.Errorf("get user avatar: %w", err)
 	}
 	return user, nil
+}
+
+func (s *UserService) loadQQBalanceNotifyPreference(ctx context.Context, userID int64, user *User) error {
+	if s.balanceNotifyQQRepo == nil || user == nil {
+		return nil
+	}
+	enabled, err := s.balanceNotifyQQRepo.GetQQBalanceNotifyEnabled(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get QQ balance notification setting: %w", err)
+	}
+	user.BalanceNotifyQQEnabled = enabled
+	return nil
 }
 
 func (s *UserService) GetProfileIdentitySummaries(ctx context.Context, userID int64, user *User) (UserIdentitySummarySet, error) {
@@ -499,6 +520,9 @@ func (s *UserService) updateProfile(ctx context.Context, userID int64, req Updat
 	if err != nil {
 		return nil, 0, fmt.Errorf("get user: %w", err)
 	}
+	if err := s.loadQQBalanceNotifyPreference(ctx, userID, user); err != nil {
+		return nil, 0, err
+	}
 	oldConcurrency := user.Concurrency
 
 	// fields 只登记本次请求真正带上的字段。余额、状态等列不由这里回写，
@@ -541,6 +565,15 @@ func (s *UserService) updateProfile(ctx context.Context, userID int64, req Updat
 		user.BalanceNotifyEnabled = *req.BalanceNotifyEnabled
 		fields.BalanceNotifySettings = true
 	}
+	if req.BalanceNotifyQQEnabled != nil {
+		if *req.BalanceNotifyQQEnabled && !user.BalanceNotifyEnabled {
+			return nil, oldConcurrency, ErrQQBalanceNotificationRequiresGeneral
+		}
+		if s.balanceNotifyQQRepo == nil {
+			return nil, oldConcurrency, fmt.Errorf("QQ balance notification repository is unavailable")
+		}
+		user.BalanceNotifyQQEnabled = *req.BalanceNotifyQQEnabled
+	}
 	if req.BalanceNotifyThreshold != nil {
 		if *req.BalanceNotifyThreshold <= 0 {
 			user.BalanceNotifyThreshold = nil // clear to system default
@@ -552,6 +585,11 @@ func (s *UserService) updateProfile(ctx context.Context, userID int64, req Updat
 
 	if err := s.userRepo.Update(ctx, user, fields); err != nil {
 		return nil, oldConcurrency, fmt.Errorf("update user: %w", err)
+	}
+	if req.BalanceNotifyQQEnabled != nil {
+		if err := s.balanceNotifyQQRepo.SetQQBalanceNotifyEnabled(ctx, userID, *req.BalanceNotifyQQEnabled); err != nil {
+			return nil, oldConcurrency, err
+		}
 	}
 
 	return user, oldConcurrency, nil

@@ -43,6 +43,7 @@ type BalanceNotifyService struct {
 	settingRepo              SettingRepository
 	accountRepo              AccountQuotaReader
 	notificationEmailService *NotificationEmailService
+	qqNotificationRepo       BalanceNotifyQQRepository
 }
 
 // NewBalanceNotifyService creates a new BalanceNotifyService.
@@ -56,6 +57,10 @@ func NewBalanceNotifyService(emailService *EmailService, settingRepo SettingRepo
 
 func (s *BalanceNotifyService) SetNotificationEmailService(notificationEmailService *NotificationEmailService) {
 	s.notificationEmailService = notificationEmailService
+}
+
+func (s *BalanceNotifyService) SetBalanceNotifyQQRepository(repo BalanceNotifyQQRepository) {
+	s.qqNotificationRepo = repo
 }
 
 // resolveBalanceThreshold returns the effective balance threshold.
@@ -86,7 +91,7 @@ func (s *BalanceNotifyService) CheckBalanceAfterDeduction(ctx context.Context, u
 
 // canNotifyBalance checks nil guards and user-level toggle.
 func (s *BalanceNotifyService) canNotifyBalance(user *User) bool {
-	if user == nil || s.emailService == nil || s.settingRepo == nil {
+	if user == nil || s.settingRepo == nil || (s.emailService == nil && s.qqNotificationRepo == nil) {
 		return false
 	}
 	return user.BalanceNotifyEnabled
@@ -122,6 +127,20 @@ func crossedDownward(oldV, newV, threshold float64) bool {
 func (s *BalanceNotifyService) dispatchBalanceLowEmail(ctx context.Context, user *User, newBalance, threshold float64, rechargeURL string) {
 	siteName := s.getSiteName(ctx)
 	recipients := s.collectBalanceNotifyRecipients(user)
+	if s.qqNotificationRepo != nil {
+		queueCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err := s.qqNotificationRepo.EnqueueBalanceLow(queueCtx, user.ID, BalanceLowQQAlert{
+			Balance:     newBalance,
+			Threshold:   threshold,
+			SiteName:    siteName,
+			RechargeURL: rechargeURL,
+			CreatedAt:   time.Now().UTC(),
+		})
+		cancel()
+		if err != nil {
+			slog.Error("failed to queue QQ low balance notification", "user_id", user.ID, "error", err)
+		}
+	}
 	slog.Info("CheckBalanceAfterDeduction: sending notification",
 		"user_id", user.ID, "recipients", recipients, "new_balance", newBalance, "threshold", threshold)
 	go func() {
@@ -130,7 +149,9 @@ func (s *BalanceNotifyService) dispatchBalanceLowEmail(ctx context.Context, user
 				slog.Error("panic in balance notification", "recover", r)
 			}
 		}()
-		s.sendBalanceLowEmails(recipients, user.ID, user.Username, user.Email, newBalance, threshold, siteName, rechargeURL)
+		if s.emailService != nil {
+			s.sendBalanceLowEmails(recipients, user.ID, user.Username, user.Email, newBalance, threshold, siteName, rechargeURL)
+		}
 	}()
 }
 

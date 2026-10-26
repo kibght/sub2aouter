@@ -41,10 +41,15 @@ type botUserReader interface {
 
 // BotHandler 处理网站侧绑定码管理接口与聊天机器人的只读接口。
 type BotHandler struct {
-	bindings botBindingManager
-	usage    botUsageReader
-	apiKeys  botAPIKeyReader
-	users    botUserReader
+	bindings            botBindingManager
+	balanceNotifyQQRepo service.BalanceNotifyQQRepository
+	usage               botUsageReader
+	apiKeys             botAPIKeyReader
+	users               botUserReader
+}
+
+func (h *BotHandler) SetBalanceNotifyQQRepository(repo service.BalanceNotifyQQRepository) {
+	h.balanceNotifyQQRepo = repo
 }
 
 // NewBotHandler 创建机器人接口处理器。
@@ -272,6 +277,60 @@ func (h *BotHandler) Unbind(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"revoked": true})
+}
+
+// BalanceLowAlerts claims queued QQ balance alerts for the authenticated binding.
+func (h *BotHandler) BalanceLowAlerts(c *gin.Context) {
+	if h == nil || h.balanceNotifyQQRepo == nil {
+		response.InternalError(c, "QQ balance notification service is not available")
+		return
+	}
+	binding, ok := middleware2.GetBotBindingFromContext(c)
+	if !ok || binding == nil {
+		response.Unauthorized(c, "Bot binding is not authenticated")
+		return
+	}
+	if binding.Platform != "qq" {
+		response.Forbidden(c, "QQ balance alerts require a QQ binding")
+		return
+	}
+
+	now := time.Now().UTC()
+	alerts, err := h.balanceNotifyQQRepo.ClaimBalanceLow(
+		c.Request.Context(), binding.UserID, binding.ID, now, now.Add(2*time.Minute), 20,
+	)
+	if err != nil {
+		response.InternalError(c, "Failed to claim QQ balance alerts")
+		return
+	}
+	response.Success(c, gin.H{"items": alerts})
+}
+
+// AckBalanceLowAlert removes one alert after the bot confirms the private message was sent.
+func (h *BotHandler) AckBalanceLowAlert(c *gin.Context) {
+	if h == nil || h.balanceNotifyQQRepo == nil {
+		response.InternalError(c, "QQ balance notification service is not available")
+		return
+	}
+	binding, ok := middleware2.GetBotBindingFromContext(c)
+	if !ok || binding == nil {
+		response.Unauthorized(c, "Bot binding is not authenticated")
+		return
+	}
+	if binding.Platform != "qq" {
+		response.Forbidden(c, "QQ balance alerts require a QQ binding")
+		return
+	}
+	alertID, err := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || alertID <= 0 {
+		response.BadRequest(c, "Invalid alert id")
+		return
+	}
+	if err := h.balanceNotifyQQRepo.AckBalanceLow(c.Request.Context(), binding.UserID, binding.ID, alertID); err != nil {
+		response.InternalError(c, "Failed to acknowledge QQ balance alert")
+		return
+	}
+	response.Success(c, gin.H{"acknowledged": true})
 }
 
 // Profile 返回绑定账号的基础资料（邮箱脱敏）。

@@ -329,6 +329,14 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User, field
 			updateOp = updateOp.ClearBalanceNotifyThreshold()
 		}
 	}
+	if fields.BalanceNotifySettings && !userIn.BalanceNotifyEnabled {
+		exec := txAwareSQLExecutor(txCtx, r.sql, r.client)
+		if _, err := exec.ExecContext(txCtx, `
+			DELETE FROM balance_low_qq_deliveries WHERE user_id = $1
+		`, userIn.ID); err != nil {
+			return fmt.Errorf("clear pending QQ balance notifications: %w", err)
+		}
+	}
 	if fields.BalanceNotifyExtraEmails {
 		updateOp = updateOp.SetBalanceNotifyExtraEmails(marshalExtraEmails(userIn.BalanceNotifyExtraEmails))
 	}

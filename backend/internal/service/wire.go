@@ -860,7 +860,7 @@ var ProviderSet = wire.NewSet(
 	// Core services
 	ProvideAuthService,
 	NewPasskeyService,
-	NewUserService,
+	ProvideUserService,
 	NewBotBindingService,
 	ProvideAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,
@@ -1005,9 +1005,16 @@ func ProvidePaymentConfigService(entClient *dbent.Client, settingRepo SettingRep
 }
 
 // ProvideBalanceNotifyService creates BalanceNotifyService
-func ProvideBalanceNotifyService(emailService *EmailService, settingRepo SettingRepository, accountRepo AccountRepository, notificationEmailService *NotificationEmailService) *BalanceNotifyService {
+func ProvideUserService(userRepo UserRepository, settingRepo SettingRepository, authCacheInvalidator APIKeyAuthCacheInvalidator, billingCache BillingCache, qqRepo BalanceNotifyQQRepository) *UserService {
+	svc := NewUserService(userRepo, settingRepo, authCacheInvalidator, billingCache)
+	svc.SetBalanceNotifyQQRepository(qqRepo)
+	return svc
+}
+
+func ProvideBalanceNotifyService(emailService *EmailService, settingRepo SettingRepository, accountRepo AccountRepository, notificationEmailService *NotificationEmailService, qqRepo BalanceNotifyQQRepository) *BalanceNotifyService {
 	svc := NewBalanceNotifyService(emailService, settingRepo, accountRepo)
 	svc.SetNotificationEmailService(notificationEmailService)
+	svc.SetBalanceNotifyQQRepository(qqRepo)
 	return svc
 }
 

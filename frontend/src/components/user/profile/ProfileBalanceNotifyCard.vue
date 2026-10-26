@@ -19,6 +19,26 @@
       </div>
 
       <template v-if="notifyEnabled">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <label class="input-label mb-0">{{ t('profile.balanceNotify.qqEnabled') }}</label>
+            <p v-if="!hasQqBinding" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('profile.balanceNotify.qqBindingRequired') }}
+            </p>
+          </div>
+          <label class="relative inline-flex shrink-0 items-center" :class="hasQqBinding ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'">
+            <input
+              type="checkbox"
+              v-model="notifyQQEnabled"
+              :aria-label="t('profile.balanceNotify.qqEnabled')"
+              :disabled="!hasQqBinding || savingQQEnabled"
+              @change="handleQQToggle"
+              class="sr-only peer"
+            />
+            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:after:border-gray-600 peer-checked:bg-primary-600"></div>
+          </label>
+        </div>
+
         <!-- Custom threshold with save button -->
         <div>
           <label class="input-label">
@@ -179,6 +199,8 @@ interface PendingEmail {
 
 const props = defineProps<{
   enabled: boolean
+  qqEnabled: boolean
+  hasQqBinding: boolean
   threshold: number | null
   extraEmails: NotifyEmailEntry[]
   systemDefaultThreshold: number
@@ -190,11 +212,13 @@ const authStore = useAuthStore()
 const appStore = useAppStore()
 
 const notifyEnabled = ref(props.enabled)
+const notifyQQEnabled = ref(props.qqEnabled)
 const customThreshold = ref<number | null>(props.threshold)
 const emailEntries = ref<NotifyEmailEntry[]>([...props.extraEmails])
 const pendingEmails = ref<PendingEmail[]>([])
 const newEmail = ref('')
 const savingThreshold = ref(false)
+const savingQQEnabled = ref(false)
 
 // State for verifying saved unverified emails
 const verifyingEmail = ref('')
@@ -210,6 +234,8 @@ const canAddMore = computed(() => {
 })
 
 watch(() => props.enabled, (val) => { notifyEnabled.value = val })
+watch(() => props.qqEnabled, (val) => { notifyQQEnabled.value = val })
+watch(() => props.hasQqBinding, (val) => { if (!val) notifyQQEnabled.value = false })
 watch(() => props.threshold, (val) => { customThreshold.value = val })
 watch(() => props.extraEmails, (val) => { emailEntries.value = [...val] })
 
@@ -235,6 +261,23 @@ const handleToggle = async () => {
   } catch (err: unknown) {
     appStore.showError(extractApiErrorMessage(err, t('common.error')))
     notifyEnabled.value = !notifyEnabled.value
+  }
+}
+
+const handleQQToggle = async () => {
+  if (!props.hasQqBinding) {
+    notifyQQEnabled.value = false
+    return
+  }
+  savingQQEnabled.value = true
+  try {
+    const updated = await userAPI.updateProfile({ balance_notify_qq_enabled: notifyQQEnabled.value })
+    authStore.user = updated
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, t('common.error')))
+    notifyQQEnabled.value = !notifyQQEnabled.value
+  } finally {
+    savingQQEnabled.value = false
   }
 }
 

@@ -80,6 +80,7 @@ type UpdateProfileRequest struct {
 	Username               *string  `json:"username"`
 	AvatarURL              *string  `json:"avatar_url"`
 	BalanceNotifyEnabled   *bool    `json:"balance_notify_enabled"`
+	BalanceNotifyQQEnabled *bool    `json:"balance_notify_qq_enabled"`
 	BalanceNotifyThreshold *float64 `json:"balance_notify_threshold"`
 }
 
@@ -177,6 +178,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		Username:               req.Username,
 		AvatarURL:              req.AvatarURL,
 		BalanceNotifyEnabled:   req.BalanceNotifyEnabled,
+		BalanceNotifyQQEnabled: req.BalanceNotifyQQEnabled,
 		BalanceNotifyThreshold: req.BalanceNotifyThreshold,
 	}
 	updatedUser, err := h.userService.UpdateProfile(c.Request.Context(), subject.UserID, svcReq)
@@ -299,6 +301,11 @@ func (h *UserHandler) BindEmailIdentity(c *gin.Context) {
 		req.VerifyCode,
 		req.Password,
 	)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	updatedUser, err = h.userService.GetProfile(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -431,7 +438,7 @@ func (h *UserHandler) VerifyNotifyEmail(c *gin.Context) {
 	}
 
 	// Return updated user
-	updatedUser, err := h.userService.GetByID(c.Request.Context(), subject.UserID)
+	updatedUser, err := h.userService.GetProfile(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -473,7 +480,7 @@ func (h *UserHandler) RemoveNotifyEmail(c *gin.Context) {
 	}
 
 	// Return updated user
-	updatedUser, err := h.userService.GetByID(c.Request.Context(), subject.UserID)
+	updatedUser, err := h.userService.GetProfile(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -515,7 +522,7 @@ func (h *UserHandler) ToggleNotifyEmail(c *gin.Context) {
 		return
 	}
 
-	updatedUser, err := h.userService.GetByID(c.Request.Context(), subject.UserID)
+	updatedUser, err := h.userService.GetProfile(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
