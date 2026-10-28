@@ -186,7 +186,13 @@ jobs:
           set -euo pipefail
           source scripts/ci/retry.sh
           PREVIOUS_UPSTREAM_SHA=""
-          if git show origin/themed-release:.apophis-upstream-sha > /tmp/apophis-upstream-sha 2>/dev/null; then
+          PREVIOUS_RELEASE_KIND=""
+          if git show origin/themed-release:.apophis-release-kind > /tmp/apophis-release-kind 2>/dev/null; then
+            PREVIOUS_RELEASE_KIND="$(tr -d '[:space:]' < /tmp/apophis-release-kind)"
+          fi
+          if [[ "$PREVIOUS_RELEASE_KIND" == "repository" ]] && git show origin/themed-release:.apophis-repository-upstream-sha > /tmp/apophis-upstream-sha 2>/dev/null; then
+            PREVIOUS_UPSTREAM_SHA="$(tr -d '[:space:]' < /tmp/apophis-upstream-sha)"
+          elif git show origin/themed-release:.apophis-upstream-sha > /tmp/apophis-upstream-sha 2>/dev/null; then
             PREVIOUS_UPSTREAM_SHA="$(tr -d '[:space:]' < /tmp/apophis-upstream-sha)"
           fi
           echo "PREVIOUS_UPSTREAM_SHA=$PREVIOUS_UPSTREAM_SHA" >> "$GITHUB_ENV"

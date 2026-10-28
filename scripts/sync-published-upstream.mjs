@@ -20,6 +20,7 @@ function runGit(args, { input, quiet = false, allowFailure = false } = {}) {
     cwd: ROOT,
     input,
     encoding: null,
+    maxBuffer: 512 * 1024 * 1024,
     windowsHide: true,
     env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
   })
