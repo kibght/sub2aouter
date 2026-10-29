@@ -6,7 +6,7 @@
 // all unrelated upstream changes.
 
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 const argv = process.argv.slice(2)
@@ -32,6 +32,30 @@ function fail(message) {
   process.exit(1)
 }
 
+function ensureScopedAdminKeyWiring({ repair = true } = {}) {
+  const wireGenPath = path.join(root, 'backend/cmd/server/wire_gen.go')
+  if (!existsSync(wireGenPath)) {
+    fail('generated Wire injector is missing: ' + wireGenPath)
+  }
+
+  const source = readFileSync(wireGenPath, 'utf8')
+  const staleCall = '\tsettingService := service.ProvideSettingService(settingRepository, groupRepository, proxyRepository, configConfig)'
+  const fixedCall = '\tscopedAdminKeyRepository := repository.NewScopedAdminKeyRepository(db)\n' +
+    '\tsettingService := service.ProvideSettingService(scopedAdminKeyRepository, settingRepository, groupRepository, proxyRepository, configConfig)'
+
+  if (source.includes('service.ProvideSettingService(scopedAdminKeyRepository,')) {
+    return
+  }
+  if (!source.includes(staleCall)) {
+    fail('generated Wire injector has an unsupported setting service wiring')
+  }
+  if (!repair) {
+    fail('generated Wire injector still uses the stale setting service wiring')
+  }
+
+  writeFileSync(wireGenPath, source.replace(staleCall, fixedCall), 'utf8')
+}
+
 let baseRef
 try {
   baseRef = git(['rev-parse', ref + '^']).trim()
@@ -43,11 +67,13 @@ if (checkOnly) {
   if (!existsSync(path.join(root, marker))) {
     fail('QQ balance-alert integration is missing: ' + marker)
   }
+  ensureScopedAdminKeyWiring({ repair: false })
   console.log('Verified QQ bot binding overlay from ' + ref + ' (base ' + baseRef + ').')
   process.exit(0)
 }
 
 if (existsSync(path.join(root, marker))) {
+  ensureScopedAdminKeyWiring()
   console.log('Preserved existing QQ bot balance-alert integration.')
   process.exit(0)
 }
@@ -96,5 +122,7 @@ try {
 if (!existsSync(path.join(root, marker))) {
   fail('QQ balance-alert integration is still missing after applying the delta')
 }
+
+ensureScopedAdminKeyWiring()
 
 console.log('Applied QQ bot balance-alert delta from ' + ref + ' (base ' + baseRef + ').')
