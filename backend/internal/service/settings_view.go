@@ -177,8 +177,9 @@ type SystemSettings struct {
 	AffiliateRebateDurationDays  int
 	AffiliateRebatePerInviteeCap float64
 	AdminRechargeRebateEnabled   bool
-	DefaultUserRPMLimit          int
-	DefaultSubscriptions         []DefaultSubscriptionSetting
+	BotCheckInSettings
+	DefaultUserRPMLimit  int
+	DefaultSubscriptions []DefaultSubscriptionSetting
 
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
@@ -319,6 +320,15 @@ type SystemSettings struct {
 
 	// 允许终端用户在用量页查看自己的失败请求
 	AllowUserViewErrorRequests bool
+}
+
+type BotCheckInSettings struct {
+	Enabled        bool
+	FirstRewardMin float64
+	FirstRewardMax float64
+	IncrementMin   float64
+	IncrementMax   float64
+	DailyCap       float64
 }
 
 type DefaultSubscriptionSetting struct {

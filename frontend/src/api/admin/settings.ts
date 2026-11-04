@@ -432,6 +432,12 @@ export interface SystemSettings {
   affiliate_rebate_duration_days: number;
   affiliate_rebate_per_invitee_cap: number;
   affiliate_admin_recharge_enabled: boolean;
+  bot_checkin_enabled: boolean;
+  bot_checkin_first_reward_min: number;
+  bot_checkin_first_reward_max: number;
+  bot_checkin_increment_min: number;
+  bot_checkin_increment_max: number;
+  bot_checkin_daily_cap: number;
   default_concurrency: number;
   default_user_rpm_limit: number;
   default_subscriptions: DefaultSubscriptionSetting[];
@@ -785,6 +791,12 @@ export interface UpdateSettingsRequest {
   affiliate_rebate_duration_days?: number;
   affiliate_rebate_per_invitee_cap?: number;
   affiliate_admin_recharge_enabled?: boolean;
+  bot_checkin_enabled?: boolean;
+  bot_checkin_first_reward_min?: number;
+  bot_checkin_first_reward_max?: number;
+  bot_checkin_increment_min?: number;
+  bot_checkin_increment_max?: number;
+  bot_checkin_daily_cap?: number;
   default_concurrency?: number;
   default_user_rpm_limit?: number;
   default_subscriptions?: DefaultSubscriptionSetting[];

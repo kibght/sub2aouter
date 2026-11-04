@@ -408,6 +408,13 @@ export default {
         description: 'Default values for new users',
         defaultBalance: 'Default Balance',
         defaultBalanceHint: 'Initial balance for new users',
+        botCheckInTitle: 'Bot Check-in Rewards',
+        botCheckInDescription: 'When enabled, bot check-ins grant a random balance amount. First-bind rewards are configured separately.',
+        botCheckInFirstMin: 'First-day minimum',
+        botCheckInFirstMax: 'First-day maximum',
+        botCheckInIncrementMin: 'Daily increment minimum',
+        botCheckInIncrementMax: 'Daily increment maximum',
+        botCheckInDailyCap: 'Daily reward cap',
         affiliateRebateRate: 'Affiliate Rebate Rate',
         affiliateRebateRateHint:
           'Rebate percentage credited to inviter after recharge (0-100%, e.g. 10 means 10%)',

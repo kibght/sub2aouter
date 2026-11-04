@@ -3854,6 +3854,23 @@
               </div>
 
               <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <div class="mb-4 flex items-center justify-between">
+                  <div>
+                    <label class="font-medium text-gray-900 dark:text-white">{{ t("admin.settings.defaults.botCheckInTitle") }}</label>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">{{ t("admin.settings.defaults.botCheckInDescription") }}</p>
+                  </div>
+                  <Toggle v-model="form.bot_checkin_enabled" />
+                </div>
+                <div v-if="form.bot_checkin_enabled" class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div><label class="input-label">{{ t("admin.settings.defaults.botCheckInFirstMin") }}</label><input v-model.number="form.bot_checkin_first_reward_min" type="number" min="0" max="1000" step="0.01" class="input" /></div>
+                  <div><label class="input-label">{{ t("admin.settings.defaults.botCheckInFirstMax") }}</label><input v-model.number="form.bot_checkin_first_reward_max" type="number" min="0" max="1000" step="0.01" class="input" /></div>
+                  <div><label class="input-label">{{ t("admin.settings.defaults.botCheckInIncrementMin") }}</label><input v-model.number="form.bot_checkin_increment_min" type="number" min="0" max="1000" step="0.01" class="input" /></div>
+                  <div><label class="input-label">{{ t("admin.settings.defaults.botCheckInIncrementMax") }}</label><input v-model.number="form.bot_checkin_increment_max" type="number" min="0" max="1000" step="0.01" class="input" /></div>
+                  <div><label class="input-label">{{ t("admin.settings.defaults.botCheckInDailyCap") }}</label><input v-model.number="form.bot_checkin_daily_cap" type="number" min="0" max="1000" step="0.01" class="input" /></div>
+                </div>
+              </div>
+
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
                 <div class="mb-3 flex items-center justify-between">
                   <div>
                     <label class="font-medium text-gray-900 dark:text-white">
@@ -9763,6 +9780,12 @@ const form = reactive<SettingsForm>({
   affiliate_rebate_duration_days: 0,
   affiliate_rebate_per_invitee_cap: 0,
   affiliate_admin_recharge_enabled: false,
+  bot_checkin_enabled: false,
+  bot_checkin_first_reward_min: 0.05,
+  bot_checkin_first_reward_max: 0.2,
+  bot_checkin_increment_min: 0.01,
+  bot_checkin_increment_max: 0.05,
+  bot_checkin_daily_cap: 0.5,
   default_concurrency: 1,
   default_subscriptions: [],
   force_email_on_third_party_signup: false,
@@ -11470,6 +11493,12 @@ async function saveSettings() {
       affiliate_rebate_duration_days: Math.max(0, Math.min(3650, Math.floor(Number(form.affiliate_rebate_duration_days) || 0))),
       affiliate_rebate_per_invitee_cap: Math.max(0, Number(form.affiliate_rebate_per_invitee_cap) || 0),
       affiliate_admin_recharge_enabled: form.affiliate_admin_recharge_enabled,
+      bot_checkin_enabled: form.bot_checkin_enabled,
+      bot_checkin_first_reward_min: Math.max(0, Number(form.bot_checkin_first_reward_min) || 0),
+      bot_checkin_first_reward_max: Math.max(0, Number(form.bot_checkin_first_reward_max) || 0),
+      bot_checkin_increment_min: Math.max(0, Number(form.bot_checkin_increment_min) || 0),
+      bot_checkin_increment_max: Math.max(0, Number(form.bot_checkin_increment_max) || 0),
+      bot_checkin_daily_cap: Math.max(0, Number(form.bot_checkin_daily_cap) || 0),
       default_concurrency: form.default_concurrency,
       default_subscriptions: normalizedDefaultSubscriptions,
       force_email_on_third_party_signup: form.force_email_on_third_party_signup,

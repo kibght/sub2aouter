@@ -172,6 +172,12 @@ type SystemSettings struct {
 	AffiliateRebateDurationDays  int                          `json:"affiliate_rebate_duration_days"`
 	AffiliateRebatePerInviteeCap float64                      `json:"affiliate_rebate_per_invitee_cap"`
 	AdminRechargeRebateEnabled   bool                         `json:"affiliate_admin_recharge_enabled"`
+	BotCheckInEnabled            bool                         `json:"bot_checkin_enabled"`
+	BotCheckInFirstRewardMin     float64                      `json:"bot_checkin_first_reward_min"`
+	BotCheckInFirstRewardMax     float64                      `json:"bot_checkin_first_reward_max"`
+	BotCheckInIncrementMin       float64                      `json:"bot_checkin_increment_min"`
+	BotCheckInIncrementMax       float64                      `json:"bot_checkin_increment_max"`
+	BotCheckInDailyCap           float64                      `json:"bot_checkin_daily_cap"`
 	DefaultUserRPMLimit          int                          `json:"default_user_rpm_limit"`
 	DefaultSubscriptions         []DefaultSubscriptionSetting `json:"default_subscriptions"`
 

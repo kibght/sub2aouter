@@ -36,6 +36,16 @@ const (
 	AdminRechargeRebateEnabledDefault   = false // 管理员充值默认不产生返利
 )
 
+const (
+	BotCheckInEnabledDefault        = false
+	BotCheckInFirstRewardMinDefault = 0.05
+	BotCheckInFirstRewardMaxDefault = 0.20
+	BotCheckInIncrementMinDefault   = 0.01
+	BotCheckInIncrementMaxDefault   = 0.05
+	BotCheckInDailyCapDefault       = 0.50
+	BotCheckInRewardMax             = 1000.0
+)
+
 // Platform constants
 const (
 	PlatformAnthropic   = domain.PlatformAnthropic
@@ -233,15 +243,21 @@ const (
 	SettingKeyAffiliateRebateDurationDays         = "affiliate_rebate_duration_days"   // 返利有效期（天，0=永久）
 	SettingKeyAffiliateRebatePerInviteeCap        = "affiliate_rebate_per_invitee_cap" // 单人返利上限（0=无上限）
 	SettingKeyAffiliateAdminRechargeEnabled       = "affiliate_admin_recharge_enabled" // 管理员充值是否产生返利
-	SettingKeyRiskControlEnabled                  = "risk_control_enabled"             // 是否启用风控中心入口与审计链路
-	SettingKeyContentModerationConfig             = "content_moderation_config"        // 内容审计配置（JSON）
-	SettingKeyCyberSessionBlockEnabled            = "cyber_session_block_enabled"      // cyber 命中后会话级自动屏蔽总开关(默认关)
-	SettingKeyCyberPolicyUserAllowlist            = "cyber_policy_user_allowlist"      // Platform user IDs with log-only cyber handling
-	SettingKeyCyberSessionBlockTTLSeconds         = "cyber_session_block_ttl_seconds"  // 会话屏蔽 TTL 秒数(默认 3600)
-	SettingKeyLoginAgreementEnabled               = "login_agreement_enabled"          // 登录前是否要求同意条款
-	SettingKeyLoginAgreementMode                  = "login_agreement_mode"             // 条款确认展示模式：modal / checkbox
-	SettingKeyLoginAgreementUpdatedAt             = "login_agreement_updated_at"       // 条款更新日期（展示用）
-	SettingKeyLoginAgreementDocuments             = "login_agreement_documents"        // 条款文档列表（JSON，Markdown 内容）
+	SettingKeyBotCheckInEnabled                   = "bot_checkin_enabled"
+	SettingKeyBotCheckInFirstRewardMin            = "bot_checkin_first_reward_min"
+	SettingKeyBotCheckInFirstRewardMax            = "bot_checkin_first_reward_max"
+	SettingKeyBotCheckInIncrementMin              = "bot_checkin_increment_min"
+	SettingKeyBotCheckInIncrementMax              = "bot_checkin_increment_max"
+	SettingKeyBotCheckInDailyCap                  = "bot_checkin_daily_cap"
+	SettingKeyRiskControlEnabled                  = "risk_control_enabled"            // 是否启用风控中心入口与审计链路
+	SettingKeyContentModerationConfig             = "content_moderation_config"       // 内容审计配置（JSON）
+	SettingKeyCyberSessionBlockEnabled            = "cyber_session_block_enabled"     // cyber 命中后会话级自动屏蔽总开关(默认关)
+	SettingKeyCyberPolicyUserAllowlist            = "cyber_policy_user_allowlist"     // Platform user IDs with log-only cyber handling
+	SettingKeyCyberSessionBlockTTLSeconds         = "cyber_session_block_ttl_seconds" // 会话屏蔽 TTL 秒数(默认 3600)
+	SettingKeyLoginAgreementEnabled               = "login_agreement_enabled"         // 登录前是否要求同意条款
+	SettingKeyLoginAgreementMode                  = "login_agreement_mode"            // 条款确认展示模式：modal / checkbox
+	SettingKeyLoginAgreementUpdatedAt             = "login_agreement_updated_at"      // 条款更新日期（展示用）
+	SettingKeyLoginAgreementDocuments             = "login_agreement_documents"       // 条款文档列表（JSON，Markdown 内容）
 
 	// 邮件服务设置
 	SettingKeySMTPHost     = "smtp_host"      // SMTP服务器地址

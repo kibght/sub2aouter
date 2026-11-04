@@ -790,6 +790,8 @@ export default {
     balanceAddedRedeem: '余额充值（兑换）',
     balanceAddedAffiliate: '余额充值（返利转入）',
     balanceAddedAdmin: '余额充值（管理员）',
+    balanceAddedBotBindingBonus: '首次绑定机器人赠送余额',
+    balanceAddedBotCheckin: '签到赠送余额',
     balanceDeductedAdmin: '余额扣除（管理员）',
     concurrencyAddedRedeem: '并发增加（兑换）',
     concurrencyAddedAdmin: '并发增加（管理员）',
