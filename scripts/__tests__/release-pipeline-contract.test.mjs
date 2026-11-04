@@ -72,6 +72,20 @@ test('contract requires preserving non-owned upstream workflow files', async () 
   assert.ok(violations.some((violation) => violation.code === 'sync.workflow_preservation'))
 })
 
+test('contract requires fetching, applying, and verifying bot check-in rewards', async () => {
+  for (const [marker, replacement] of [
+    ['git fetch --depth=2 origin "refs/heads/feat/bot-checkin-rewards:refs/remotes/origin/feat/bot-checkin-rewards"', 'true'],
+    ['node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards\n', ''],
+    ['node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards --check', 'true'],
+  ]) {
+    const files = await loadContractFiles()
+    const workflowPath = '.github/workflows/upstream-theme-sync.yml'
+    files.set(workflowPath, files.get(workflowPath).replace(marker, replacement))
+    const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+    assert.ok(violations.some((entry) => entry.code === 'sync.bot_checkin_rewards_overlay'))
+  }
+})
+
 test('contract rejects literal question-mark placeholders in upstream release notes', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/upstream-theme-sync.yml'

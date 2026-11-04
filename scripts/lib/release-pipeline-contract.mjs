@@ -23,6 +23,7 @@ export const RELEASE_PIPELINE_FILES = Object.freeze([
   'scripts/ci/restore-workflow-snapshots.sh',
   'scripts/apply-bot-binding.mjs',
   'scripts/apply-qq-bot-binding.mjs',
+  'scripts/apply-bot-checkin-rewards.mjs',
   'scripts/lib/github-release.mjs',
   'scripts/lib/sync-health.mjs',
   'backend/internal/service/update_service.go',
@@ -151,6 +152,13 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     qqBotApply >= 0 && qqBotApply < qqBotCheck &&
     (files.get('scripts/apply-qq-bot-binding.mjs') || '').includes("origin/feat/qq-bot-binding"),
     'Sync must apply and verify the QQ balance-alert delta from the unified bot branch.')
+  const checkinFetch = sync.indexOf('git fetch --depth=2 origin "refs/heads/feat/bot-checkin-rewards:refs/remotes/origin/feat/bot-checkin-rewards"')
+  const checkinApply = sync.indexOf('node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards')
+  const checkinCheck = sync.indexOf('node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards --check')
+  check('sync.bot_checkin_rewards_overlay', syncPath,
+    checkinFetch >= 0 && checkinFetch < checkinApply && checkinApply > qqBotApply && checkinApply < checkinCheck && checkinCheck > qqBotCheck &&
+    (files.get('scripts/apply-bot-checkin-rewards.mjs') || '').includes("origin/feat/bot-checkin-rewards"),
+    'Sync must fetch, apply, and verify the bot check-in rewards overlay after the other bot integrations.')
   check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-canvas-sha') && sync.includes('scripts/write-release-notes.mjs') && sync.includes('scripts/ci/preserve-upstream-metadata.sh'), 'Sync must persist upstream, repository, Canvas, and release notes metadata.')
   check('sync.repository_recovery', syncPath, sync.includes('repository_release:') && sync.includes('PREVIOUS_CANVAS_SHA') && sync.includes('Repository source drift is intentionally not published') && sync.includes('UPSTREAM_ALREADY_SYNCHRONIZED'), 'Scheduled syncs may publish Canvas drift, while repository-only changes require explicit repository_release=true.')
   check('sync.canvas_freshness', syncPath, sync.includes('name: Verify Infinite Canvas dependency is current') && sync.includes('LATEST_CANVAS_SHA') && sync.includes('node scripts/resolve-github-release.mjs') && sync.includes('--repository basketikun/infinite-canvas'), 'Theme publication must stop when main is behind the latest published Infinite Canvas release.')
