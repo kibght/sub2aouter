@@ -113,6 +113,19 @@ test('bot check-in overlay permits known wiring conflicts after QQ integration',
   }
 })
 
+test('bot check-in overlay check mode tolerates composed wiring while requiring feature markers', async () => {
+  const script = (await loadContractFiles()).get('scripts/apply-bot-checkin-rewards.mjs')
+  assert.match(script, /if \(!reverseApplies\) verifyOverlayMarkers\(migrationPath, migrationText\)/)
+  for (const marker of [
+    'type BotCheckInService',
+    'botCheckInService :=',
+    'BotCheckInRedeemType',
+    'bot_checkin_enabled',
+  ]) {
+    assert.match(script, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  }
+})
+
 test('contract rejects literal question-mark placeholders in upstream release notes', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/upstream-theme-sync.yml'

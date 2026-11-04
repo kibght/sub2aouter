@@ -135,6 +135,27 @@ function ensureTargetMigration(relativePath, migrationText, write) {
   writeFileSync(absolutePath, migrationText, 'utf8')
 }
 
+function verifyOverlayMarkers(migrationPath, migrationText) {
+  const requiredMarkers = new Map([
+    ['backend/internal/service/bot_checkin.go', ['type BotCheckInService', 'func (s *BotCheckInService) CheckIn(']],
+    ['backend/internal/repository/bot_checkin_repo.go', ['type botCheckInRepository', 'func (r *botCheckInRepository) CheckIn(']],
+    ['backend/internal/handler/bot_handler.go', ['SetCheckInService', 'func (h *BotHandler) CheckIn(']],
+    ['backend/internal/server/routes/bot.go', ['CheckIn']],
+    ['backend/cmd/server/wire_gen.go', ['botCheckInService :=']],
+    ['backend/internal/handler/dto/mappers.go', ['BotCheckInRedeemType']],
+    ['frontend/src/views/admin/SettingsView.vue', ['bot_checkin_enabled']],
+  ])
+  for (const [relativePath, markers] of requiredMarkers) {
+    const absolutePath = path.join(root, relativePath)
+    if (!existsSync(absolutePath)) fail('bot check-in overlay is missing: ' + relativePath)
+    const text = readFileSync(absolutePath, 'utf8')
+    for (const marker of markers) {
+      if (!text.includes(marker)) fail('bot check-in overlay marker is missing in ' + relativePath + ': ' + marker)
+    }
+  }
+  ensureTargetMigration(migrationPath, migrationText, false)
+}
+
 function main() {
   if (path.resolve(process.argv[1] || '') !== scriptPath) return
 
@@ -154,8 +175,8 @@ function main() {
   const reverseApplies = isApplicable(['apply', '--reverse', '--check', '--whitespace=nowarn'], patch)
 
   if (checkOnly) {
-    if (!reverseApplies) fail('bot rewards patch is missing or has drifted in the generated tree')
-    ensureTargetMigration(migrationPath, migrationText, false)
+    if (!reverseApplies) verifyOverlayMarkers(migrationPath, migrationText)
+    else ensureTargetMigration(migrationPath, migrationText, false)
     console.log('Verified bot check-in rewards overlay from ' + ref + ' (base ' + baseRef + ', migration ' + migrationPath + ').')
     return
   }
