@@ -113,12 +113,13 @@ type botCheckInResponse struct {
 }
 
 type botProfileResponse struct {
-	ID          int64     `json:"id"`
-	Email       string    `json:"email"`
-	Username    string    `json:"username"`
-	Concurrency int       `json:"concurrency"`
-	Status      string    `json:"status"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID                   int64     `json:"id"`
+	Email                string    `json:"email"`
+	Username             string    `json:"username"`
+	Concurrency          int       `json:"concurrency"`
+	Status               string    `json:"status"`
+	BalanceNotifyEnabled bool      `json:"balance_notify_enabled"`
+	CreatedAt            time.Time `json:"created_at"`
 }
 
 type botAPIKeyItem struct {
@@ -345,12 +346,13 @@ func (h *BotHandler) Profile(c *gin.Context) {
 		return
 	}
 	response.Success(c, botProfileResponse{
-		ID:          user.ID,
-		Email:       maskBotEmail(user.Email),
-		Username:    user.Username,
-		Concurrency: user.Concurrency,
-		Status:      user.Status,
-		CreatedAt:   user.CreatedAt.UTC(),
+		ID:                   user.ID,
+		Email:                maskBotEmail(user.Email),
+		Username:             user.Username,
+		Concurrency:          user.Concurrency,
+		Status:               user.Status,
+		BalanceNotifyEnabled: user.BalanceNotifyEnabled,
+		CreatedAt:            user.CreatedAt.UTC(),
 	})
 }
 

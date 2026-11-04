@@ -311,7 +311,7 @@ func TestBotHandlerCheckInReturnsRewardAndDuplicateAmount(t *testing.T) {
 
 func TestBotHandlerProfileMasksEmailAndHidesBalance(t *testing.T) {
 	h := NewBotHandler(&stubBotBindings{}, &stubBotUsage{}, &stubBotAPIKeys{}, &stubBotUsers{
-		user: &service.User{ID: 7, Email: "bob@example.com", Username: "bob", Balance: 12.5, FrozenBalance: 1.25, Status: service.StatusActive},
+		user: &service.User{ID: 7, Email: "bob@example.com", Username: "bob", Balance: 12.5, FrozenBalance: 1.25, BalanceNotifyEnabled: true, Status: service.StatusActive},
 	})
 	router := newBotTestRouter(botTestRouterOptions{handler: h, userID: 7, withAuth: true})
 
@@ -321,9 +321,11 @@ func TestBotHandlerProfileMasksEmailAndHidesBalance(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	data := decodeBotData(t, rec)
 	require.Equal(t, "b***@example.com", data["email"])
+	require.Equal(t, true, data["balance_notify_enabled"])
 	require.NotContains(t, rec.Body.String(), "bob@example.com")
-	// Bot 接口面向外部聊天插件，不应暴露账户余额。
-	require.NotContains(t, rec.Body.String(), "balance")
+	// Bot 接口面向外部聊天插件，不应暴露账户余额；仅返回余额预警开关。
+	require.Contains(t, rec.Body.String(), "balance_notify_enabled")
+	require.NotContains(t, rec.Body.String(), "\"balance\"")
 	require.NotContains(t, rec.Body.String(), "frozen_balance")
 	require.NotContains(t, rec.Body.String(), "12.5")
 }
