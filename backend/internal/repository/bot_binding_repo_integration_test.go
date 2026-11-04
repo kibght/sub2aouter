@@ -20,6 +20,7 @@ func TestBotBindingRepositoryRedeemIsSingleUseAndRebindRevokes(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM bot_bindings WHERE user_id = $1`, user.ID)
 		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM bot_binding_codes WHERE user_id = $1`, user.ID)
+		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM redeem_codes WHERE used_by = $1 AND type = 'bot_binding_bonus'`, user.ID)
 	})
 
 	now := time.Now().UTC()
@@ -130,6 +131,7 @@ func TestBotBindingRepositoryRejectsExpiredCodesAndInactiveUsers(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM bot_bindings WHERE user_id = $1 OR user_id = $2`, user.ID, blocked.ID)
 		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM bot_binding_codes WHERE user_id = $1 OR user_id = $2`, user.ID, blocked.ID)
+		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM redeem_codes WHERE used_by IN ($1, $2) AND type = 'bot_binding_bonus'`, user.ID, blocked.ID)
 	})
 
 	now := time.Now().UTC()
@@ -180,6 +182,7 @@ func TestBotBindingRepositoryKeepsOtherUsersBindingsIntact(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM bot_bindings WHERE user_id = $1 OR user_id = $2`, owner.ID, attacker.ID)
 		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM bot_binding_codes WHERE user_id = $1 OR user_id = $2`, owner.ID, attacker.ID)
+		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM redeem_codes WHERE used_by IN ($1, $2) AND type = 'bot_binding_bonus'`, owner.ID, attacker.ID)
 	})
 
 	now := time.Now().UTC()
