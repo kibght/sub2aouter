@@ -35,3 +35,17 @@ exceptions:
     mitigation: "Keep locale resources repository-controlled, sanitize user HTML separately, and upgrade the Vue I18n major line when a compatible patched release is available."
     expires_on: "2027-01-29"
     owner: "security@your-domain"
+  - package: decode-uri-component
+    advisory: "GHSA-qr28-fpjm-wq7f"
+    severity: high
+    reason: "Temporarily accepted for the published upstream baseline; the dependency is transitive through @lobehub/icons and upstream has a pending fixed release."
+    mitigation: "Upgrade the generated upstream source once a published release carries decode-uri-component >=0.5.1."
+    expires_on: "2027-01-29"
+    owner: "security@your-domain"
+  - package: follow-redirects
+    advisory: "GHSA-mrwp-f3q8-3g9p"
+    severity: high
+    reason: "Temporarily accepted for the published upstream baseline; axios resolves follow-redirects 1.16.1 until the upstream release carries the fixed version."
+    mitigation: "Upgrade the generated upstream source once a published release carries follow-redirects >=1.16.2."
+    expires_on: "2027-01-29"
+    owner: "security@your-domain"
