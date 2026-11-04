@@ -23,6 +23,7 @@ const ALLOWED_PATHS = [
   'backend/internal/repository/bot_binding_repo.go',
   'backend/internal/repository/bot_checkin_repo.go',
   'backend/internal/repository/bot_checkin_repo_test.go',
+  'backend/internal/server/api_contract_test.go',
   'backend/internal/repository/wire.go',
   'backend/internal/server/routes/bot.go',
   'backend/internal/server/routes/bot_test.go',
