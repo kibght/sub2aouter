@@ -406,7 +406,7 @@ export default {
         defaultBalance: '默认余额',
         defaultBalanceHint: '新用户的初始余额',
         botCheckInTitle: '机器人签到赠送',
-        botCheckInDescription: '开启后机器人签到按随机金额赠送余额；首次绑定赠送金额由绑定流程单独配置。',
+        botCheckInDescription: '开启后机器人签到按随机金额赠送余额；首次绑定赠送金额由绑定流程单独配置。连续签到满 7 天后自动回到首日金额区间重新开始。',
         botCheckInFirstMin: '签到首日最低金额',
         botCheckInFirstMax: '签到首日最高金额',
         botCheckInIncrementMin: '每日递增最低金额',

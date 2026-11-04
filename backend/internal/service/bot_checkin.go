@@ -14,6 +14,10 @@ import (
 
 const botCheckInAmountScale int64 = 100_000_000
 
+// BotCheckInStreakCycleDays is the number of consecutive check-in days before
+// the reward cycle starts again from the first-day range.
+const BotCheckInStreakCycleDays = 7
+
 const (
 	BotCheckInRedeemType      = "bot_checkin"
 	BotBindingBonusRedeemType = "bot_binding_bonus"

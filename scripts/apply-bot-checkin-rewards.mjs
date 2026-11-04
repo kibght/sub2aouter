@@ -22,6 +22,7 @@ const ALLOWED_PATHS = [
   'backend/internal/handler/wire.go',
   'backend/internal/repository/bot_binding_repo.go',
   'backend/internal/repository/bot_checkin_repo.go',
+  'backend/internal/repository/bot_checkin_repo_test.go',
   'backend/internal/repository/wire.go',
   'backend/internal/server/routes/bot.go',
   'backend/internal/server/routes/bot_test.go',
