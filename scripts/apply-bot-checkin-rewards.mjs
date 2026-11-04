@@ -38,6 +38,8 @@ const ALLOWED_PATHS = [
   'frontend/src/api/admin/settings.ts',
   'frontend/src/api/admin/users.ts',
   'frontend/src/components/admin/user/UserBalanceHistoryModal.vue',
+  'frontend/src/views/user/RedeemView.vue',
+  'frontend/src/views/user/__tests__/RedeemView.spec.ts',
   'frontend/src/i18n/locales/en/admin/overview.ts',
   'frontend/src/i18n/locales/en/admin/settings.ts',
   'frontend/src/i18n/locales/en/dashboard.ts',
