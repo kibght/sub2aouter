@@ -54,11 +54,22 @@ const MIGRATION_SOURCE = 'backend/migrations/250_bot_checkins.sql'
 const PATCH_PATHS = ALLOWED_PATHS.filter((file) => file !== MIGRATION_SOURCE)
 const COMPOSED_PATHS = new Set([
   'backend/cmd/server/wire_gen.go',
+  'backend/internal/handler/admin/setting_handler.go',
+  'backend/internal/handler/admin/setting_handler_update.go',
   'backend/internal/handler/bot_handler.go',
   'backend/internal/handler/wire.go',
   'backend/internal/repository/wire.go',
   'backend/internal/server/routes/bot.go',
   'backend/internal/server/routes/bot_test.go',
+  'backend/internal/service/setting_update.go',
+])
+// These files already contain the check-in settings in the generated tree.
+// Keep newer selector fixes from that tree when the source overlay is based
+// on an older bot-rewards commit and Git reports a textual conflict.
+const PRESERVE_TARGET_PATHS = new Set([
+  'backend/internal/handler/admin/setting_handler.go',
+  'backend/internal/handler/admin/setting_handler_update.go',
+  'backend/internal/service/setting_update.go',
 ])
 const argv = process.argv.slice(2)
 const valueOf = (name, fallback) => {
@@ -126,6 +137,14 @@ function readTarget(relativePath) {
 
 function writeTarget(relativePath, text) {
   writeFileSync(path.join(root, relativePath), text, 'utf8')
+}
+
+function targetHeadFile(relativePath) {
+  try {
+    return git(['show', 'HEAD:' + relativePath])
+  } catch (error) {
+    fail('cannot restore generated target ' + relativePath + ': ' + (error.stderr?.toString() || error.message))
+  }
 }
 
 function insertOnce(text, marker, addition, label) {
@@ -353,6 +372,10 @@ function composeKnownConflicts(conflicts, source) {
   const qqRef = 'origin/feat/qq-bot-binding'
   for (const file of conflicts) {
     if (!COMPOSED_PATHS.has(file)) continue
+    if (PRESERVE_TARGET_PATHS.has(file)) {
+      writeTarget(file, targetHeadFile(file))
+      continue
+    }
     try {
       writeTarget(file, sourceFile(qqRef, file))
     } catch {
@@ -490,11 +513,14 @@ function main() {
         .filter(Boolean)
       const expected = new Set([
         'backend/cmd/server/wire_gen.go',
+        'backend/internal/handler/admin/setting_handler.go',
+        'backend/internal/handler/admin/setting_handler_update.go',
         'backend/internal/handler/bot_handler.go',
         'backend/internal/handler/wire.go',
         'backend/internal/repository/wire.go',
         'backend/internal/server/routes/bot.go',
         'backend/internal/server/routes/bot_test.go',
+        'backend/internal/service/setting_update.go',
       ])
       if (conflicts.length === 0 || conflicts.some((file) => !expected.has(file))) {
         fail('cannot apply bot rewards patch' + (conflicts.length ? ' (conflicts: ' + conflicts.join(', ') + ')' : '') + ': ' + (error.stderr?.toString() || error.message))
