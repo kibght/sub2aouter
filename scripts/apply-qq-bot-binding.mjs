@@ -101,6 +101,8 @@ try {
     .filter(Boolean)
   const expected = new Set([
     'backend/cmd/server/wire_gen.go',
+    'backend/internal/handler/wire.go',
+    'backend/internal/repository/wire.go',
     'backend/internal/server/router.go',
   ])
   if (conflicts.length === 0 || conflicts.some((file) => !expected.has(file))) {
