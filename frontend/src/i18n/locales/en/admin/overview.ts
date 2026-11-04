@@ -734,6 +734,8 @@ export default {
       typeBalance: 'Balance (Redeem)',
       typeAffiliateBalance: 'Balance (Affiliate Transfer)',
       typeAdminBalance: 'Balance (Admin)',
+      typeBotBindingBonus: 'Balance (First Bot Binding Bonus)',
+      typeBotCheckin: 'Balance (Check-in Bonus)',
       typeConcurrency: 'Concurrency (Redeem)',
       typeAdminConcurrency: 'Concurrency (Admin)',
       typeSubscription: 'Subscription',

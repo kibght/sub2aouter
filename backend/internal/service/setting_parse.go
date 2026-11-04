@@ -18,6 +18,25 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 )
 
+func parseBotCheckInSettings(raw map[string]string) BotCheckInSettings {
+	defaults := BotCheckInSettings{Enabled: BotCheckInEnabledDefault, FirstRewardMin: BotCheckInFirstRewardMinDefault, FirstRewardMax: BotCheckInFirstRewardMaxDefault, IncrementMin: BotCheckInIncrementMinDefault, IncrementMax: BotCheckInIncrementMaxDefault, DailyCap: BotCheckInDailyCapDefault}
+	valid := true
+	parseAmount := func(key string, fallback float64) float64 {
+		value, err := strconv.ParseFloat(strings.TrimSpace(raw[key]), 64)
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+			valid = false
+			return fallback
+		}
+		return value
+	}
+	settings := BotCheckInSettings{Enabled: raw[SettingKeyBotCheckInEnabled] == "true", FirstRewardMin: parseAmount(SettingKeyBotCheckInFirstRewardMin, defaults.FirstRewardMin), FirstRewardMax: parseAmount(SettingKeyBotCheckInFirstRewardMax, defaults.FirstRewardMax), IncrementMin: parseAmount(SettingKeyBotCheckInIncrementMin, defaults.IncrementMin), IncrementMax: parseAmount(SettingKeyBotCheckInIncrementMax, defaults.IncrementMax), DailyCap: parseAmount(SettingKeyBotCheckInDailyCap, defaults.DailyCap)}
+	if !valid || validateBotCheckInSettings(settings) != nil {
+		defaults.Enabled = false
+		return defaults
+	}
+	return settings
+}
+
 // InitializeDefaultSettings 初始化默认设置
 func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 	// 检查是否已有设置
@@ -129,6 +148,12 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyAffiliateRebateFreezeHours:                strconv.Itoa(AffiliateRebateFreezeHoursDefault),
 		SettingKeyAffiliateRebateDurationDays:               strconv.Itoa(AffiliateRebateDurationDaysDefault),
 		SettingKeyAffiliateRebatePerInviteeCap:              strconv.FormatFloat(AffiliateRebatePerInviteeCapDefault, 'f', 2, 64),
+		SettingKeyBotCheckInEnabled:                         strconv.FormatBool(BotCheckInEnabledDefault),
+		SettingKeyBotCheckInFirstRewardMin:                  strconv.FormatFloat(BotCheckInFirstRewardMinDefault, 'f', 8, 64),
+		SettingKeyBotCheckInFirstRewardMax:                  strconv.FormatFloat(BotCheckInFirstRewardMaxDefault, 'f', 8, 64),
+		SettingKeyBotCheckInIncrementMin:                    strconv.FormatFloat(BotCheckInIncrementMinDefault, 'f', 8, 64),
+		SettingKeyBotCheckInIncrementMax:                    strconv.FormatFloat(BotCheckInIncrementMaxDefault, 'f', 8, 64),
+		SettingKeyBotCheckInDailyCap:                        strconv.FormatFloat(BotCheckInDailyCapDefault, 'f', 8, 64),
 		SettingKeyDefaultUserRPMLimit:                       "0",
 		SettingKeyDefaultSubscriptions:                      "[]",
 		SettingKeyAuthSourceDefaultEmailBalance:             "0",
@@ -423,6 +448,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		result.AffiliateRebatePerInviteeCap = perInviteeCap
 	}
 	result.AdminRechargeRebateEnabled = settings[SettingKeyAffiliateAdminRechargeEnabled] == "true"
+	result.BotCheckInSettings = parseBotCheckInSettings(settings)
 	result.DefaultSubscriptions = parseDefaultSubscriptions(settings[SettingKeyDefaultSubscriptions])
 
 	// 敏感信息直接返回，方便测试连接时使用

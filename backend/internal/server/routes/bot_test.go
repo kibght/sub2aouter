@@ -33,6 +33,7 @@ func TestRegisterBotRoutesPublishesPluginContract(t *testing.T) {
 		http.MethodPost + " /api/v1/bot-bindings/redeem",
 		http.MethodGet + " /api/v1/bot/profile",
 		http.MethodPost + " /api/v1/bot/unbind",
+		http.MethodPost + " /api/v1/bot/check-in",
 		http.MethodGet + " /api/v1/bot/api-keys",
 		http.MethodGet + " /api/v1/bot/usage/stats",
 		http.MethodGet + " /api/v1/bot/usage/dashboard/stats",

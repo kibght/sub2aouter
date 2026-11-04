@@ -143,6 +143,7 @@ vi.mock("@/composables/useClipboard", () => ({
 
 vi.mock("@/utils/apiError", () => ({
   extractApiErrorMessage: () => "error",
+  extractI18nErrorMessage: () => "error",
 }));
 
 vi.mock("vue-i18n", async () => {
@@ -379,6 +380,12 @@ const baseSettingsResponse = {
   passkey_rp_id: "sub3.nebula-spaces.com",
   passkey_rp_origins: ["https://sub3.nebula-spaces.com"],
   default_balance: 0,
+  bot_checkin_enabled: false,
+  bot_checkin_first_reward_min: 0.05,
+  bot_checkin_first_reward_max: 0.2,
+  bot_checkin_increment_min: 0.01,
+  bot_checkin_increment_max: 0.05,
+  bot_checkin_daily_cap: 0.5,
   default_concurrency: 1,
   default_subscriptions: [],
   site_name: "Sub2API",
@@ -607,6 +614,37 @@ async function openUsersTab(wrapper: ReturnType<typeof mountView>) {
   await usersTabButton?.trigger("click");
   await flushPromises();
 }
+
+describe("admin SettingsView bot check-in rewards", () => {
+  it("loads and submits configurable bot check-in reward settings", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      bot_checkin_enabled: true,
+      bot_checkin_first_reward_min: 0.1,
+      bot_checkin_first_reward_max: 0.3,
+      bot_checkin_increment_min: 0.02,
+      bot_checkin_increment_max: 0.04,
+      bot_checkin_daily_cap: 0.6,
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bot_checkin_enabled: true,
+        bot_checkin_first_reward_min: 0.1,
+        bot_checkin_first_reward_max: 0.3,
+        bot_checkin_increment_min: 0.02,
+        bot_checkin_increment_max: 0.04,
+        bot_checkin_daily_cap: 0.6,
+      }),
+    );
+  });
+});
 
 describe("admin SettingsView email domain quota copy", () => {
   it("documents the email domain quota and empty-whitelist behavior in both locales", () => {
