@@ -387,12 +387,12 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	}
 	updates[SettingKeyAffiliateRebatePerInviteeCap] = strconv.FormatFloat(settings.AffiliateRebatePerInviteeCap, 'f', 8, 64)
 	updates[SettingKeyAffiliateAdminRechargeEnabled] = strconv.FormatBool(settings.AdminRechargeRebateEnabled)
-	updates[SettingKeyBotCheckInEnabled] = strconv.FormatBool(settings.BotCheckInSettings.Enabled)
-	updates[SettingKeyBotCheckInFirstRewardMin] = strconv.FormatFloat(settings.BotCheckInSettings.FirstRewardMin, 'f', 8, 64)
-	updates[SettingKeyBotCheckInFirstRewardMax] = strconv.FormatFloat(settings.BotCheckInSettings.FirstRewardMax, 'f', 8, 64)
-	updates[SettingKeyBotCheckInIncrementMin] = strconv.FormatFloat(settings.BotCheckInSettings.IncrementMin, 'f', 8, 64)
-	updates[SettingKeyBotCheckInIncrementMax] = strconv.FormatFloat(settings.BotCheckInSettings.IncrementMax, 'f', 8, 64)
-	updates[SettingKeyBotCheckInDailyCap] = strconv.FormatFloat(settings.BotCheckInSettings.DailyCap, 'f', 8, 64)
+	updates[SettingKeyBotCheckInEnabled] = strconv.FormatBool(settings.Enabled)
+	updates[SettingKeyBotCheckInFirstRewardMin] = strconv.FormatFloat(settings.FirstRewardMin, 'f', 8, 64)
+	updates[SettingKeyBotCheckInFirstRewardMax] = strconv.FormatFloat(settings.FirstRewardMax, 'f', 8, 64)
+	updates[SettingKeyBotCheckInIncrementMin] = strconv.FormatFloat(settings.IncrementMin, 'f', 8, 64)
+	updates[SettingKeyBotCheckInIncrementMax] = strconv.FormatFloat(settings.IncrementMax, 'f', 8, 64)
+	updates[SettingKeyBotCheckInDailyCap] = strconv.FormatFloat(settings.DailyCap, 'f', 8, 64)
 	updates[SettingKeyDefaultUserRPMLimit] = strconv.Itoa(settings.DefaultUserRPMLimit)
 	defaultSubsJSON, err := json.Marshal(settings.DefaultSubscriptions)
 	if err != nil {
