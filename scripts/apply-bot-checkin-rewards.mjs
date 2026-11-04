@@ -169,7 +169,27 @@ function main() {
         .split(/\r?\n/)
         .map((file) => file.trim())
         .filter(Boolean)
-      fail('cannot apply bot rewards patch' + (conflicts.length ? ' (conflicts: ' + conflicts.join(', ') + ')' : '') + ': ' + (error.stderr?.toString() || error.message))
+      const expected = new Set([
+        'backend/cmd/server/wire_gen.go',
+        'backend/internal/handler/bot_handler.go',
+        'backend/internal/handler/wire.go',
+        'backend/internal/repository/wire.go',
+        'backend/internal/server/routes/bot.go',
+        'backend/internal/server/routes/bot_test.go',
+      ])
+      if (conflicts.length === 0 || conflicts.some((file) => !expected.has(file))) {
+        fail('cannot apply bot rewards patch' + (conflicts.length ? ' (conflicts: ' + conflicts.join(', ') + ')' : '') + ': ' + (error.stderr?.toString() || error.message))
+      }
+
+      // These generated and bot wiring files already contain the preceding
+      // binding overlays. The rewards branch carries their complete merged
+      // versions, so use those files for the known conflicts only.
+      try {
+        git(['checkout', '--theirs', '--', ...conflicts])
+        git(['add', '--', ...conflicts])
+      } catch (resolveError) {
+        fail('cannot resolve bot rewards generated-file conflicts: ' + (resolveError.stderr?.toString() || resolveError.message))
+      }
     }
   }
 

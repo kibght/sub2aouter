@@ -99,6 +99,20 @@ test('QQ bot overlay permits all known generated wiring conflicts after bot bind
   }
 })
 
+test('bot check-in overlay permits known wiring conflicts after QQ integration', async () => {
+  const script = (await loadContractFiles()).get('scripts/apply-bot-checkin-rewards.mjs')
+  for (const path of [
+    'backend/cmd/server/wire_gen.go',
+    'backend/internal/handler/bot_handler.go',
+    'backend/internal/handler/wire.go',
+    'backend/internal/repository/wire.go',
+    'backend/internal/server/routes/bot.go',
+    'backend/internal/server/routes/bot_test.go',
+  ]) {
+    assert.match(script, new RegExp(path.replaceAll('/', '\\/')))
+  }
+})
+
 test('contract rejects literal question-mark placeholders in upstream release notes', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/upstream-theme-sync.yml'
