@@ -82,20 +82,9 @@ func (r *botCheckInRepository) CheckIn(ctx context.Context, params service.BotCh
 		return nil, fmt.Errorf("load previous bot check-in: %w", err)
 	}
 
-	streakDay := 1
-	rewardUnits := service.BotCheckInUnits(params.FirstReward)
-	incrementUnits := int64(0)
-	if err == nil {
-		streakDay = previousStreak + 1
-		incrementUnits = service.BotCheckInUnits(params.Increment)
-		rewardUnits = service.BotCheckInUnits(previousReward) + incrementUnits
-	}
-	capUnits := service.BotCheckInUnits(params.DailyCap)
-	if rewardUnits > capUnits {
-		rewardUnits = capUnits
-	}
-	reward := float64(rewardUnits) / 100_000_000
-	increment := float64(incrementUnits) / 100_000_000
+	streakDay, reward, increment := calculateBotCheckInReward(
+		previousReward, previousStreak, params.FirstReward, params.Increment, params.DailyCap, err == nil,
+	)
 
 	updated := tx.QueryRowContext(ctx, `
 		UPDATE users
@@ -143,4 +132,29 @@ func formatBotCheckInAmount(amount float64) string {
 	formatted := strconv.FormatFloat(amount, 'f', 8, 64)
 	formatted = strings.TrimRight(formatted, "0")
 	return strings.TrimRight(formatted, ".")
+}
+
+func calculateBotCheckInReward(
+	previousReward float64,
+	previousStreak int,
+	firstReward float64,
+	increment float64,
+	dailyCap float64,
+	hasPrevious bool,
+) (streakDay int, reward float64, appliedIncrement float64) {
+	streakDay = 1
+	rewardUnits := service.BotCheckInUnits(firstReward)
+	incrementUnits := int64(0)
+	if hasPrevious && previousStreak > 0 && previousStreak < service.BotCheckInStreakCycleDays {
+		streakDay = previousStreak + 1
+		incrementUnits = service.BotCheckInUnits(increment)
+		rewardUnits = service.BotCheckInUnits(previousReward) + incrementUnits
+	}
+	capUnits := service.BotCheckInUnits(dailyCap)
+	if rewardUnits > capUnits {
+		rewardUnits = capUnits
+	}
+	return streakDay,
+		float64(rewardUnits) / 100_000_000,
+		float64(incrementUnits) / 100_000_000
 }

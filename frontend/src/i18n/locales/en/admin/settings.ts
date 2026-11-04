@@ -409,7 +409,7 @@ export default {
         defaultBalance: 'Default Balance',
         defaultBalanceHint: 'Initial balance for new users',
         botCheckInTitle: 'Bot Check-in Rewards',
-        botCheckInDescription: 'When enabled, bot check-ins grant a random balance amount. First-bind rewards are configured separately.',
+        botCheckInDescription: 'When enabled, bot check-ins grant a random balance amount. First-bind rewards are configured separately. After 7 consecutive check-in days, the cycle resets to the first-day range.',
         botCheckInFirstMin: 'First-day minimum',
         botCheckInFirstMax: 'First-day maximum',
         botCheckInIncrementMin: 'Daily increment minimum',
