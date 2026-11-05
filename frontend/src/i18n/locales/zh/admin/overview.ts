@@ -735,6 +735,8 @@ export default {
       typeBalance: '余额（兑换码）',
       typeAffiliateBalance: '余额（返利转入）',
       typeAdminBalance: '余额（管理员调整）',
+      typeBotBindingBonus: '余额（首次绑定赠送）',
+      typeBotCheckin: '余额（签到赠送）',
       typeConcurrency: '并发（兑换码）',
       typeAdminConcurrency: '并发（管理员调整）',
       typeSubscription: '订阅',

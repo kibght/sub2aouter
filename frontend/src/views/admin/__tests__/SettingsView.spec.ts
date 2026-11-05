@@ -143,6 +143,7 @@ vi.mock("@/composables/useClipboard", () => ({
 
 vi.mock("@/utils/apiError", () => ({
   extractApiErrorMessage: () => "error",
+  extractI18nErrorMessage: () => "error",
 }));
 
 vi.mock("vue-i18n", async () => {
@@ -247,6 +248,9 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.defaults.defaultPlatformQuotas": "默认平台限额（注册时分配）",
     "admin.settings.defaults.defaultPlatformQuotasHint": "新用户注册时自动写入平台限额记录；已有用户不受影响。留空 = 该平台该窗口不限制。",
     "admin.settings.defaults.platformQuotaNotice": "月限额为 30 天滚动窗口，非自然月",
+    "admin.settings.defaults.botCheckInRewardRule": "每天都是随机0.01-0.2",
+    "admin.settings.defaults.botCheckInSeventhDayBonus": "累计七天第七天在随机金额上面乘以2倍到账",
+    "admin.settings.defaults.botCheckInUsageRequirement": "每天使用量必须达到1m token使用量，签到才有效",
     "admin.settings.authSourceDefaults.platformQuotasOverride": "平台限额覆盖",
     "admin.settings.authSourceDefaults.platformQuotasOverrideHint": "留空的字段继承「系统默认平台限额」；填 0 表示禁止该窗口使用。",
   };
@@ -379,6 +383,13 @@ const baseSettingsResponse = {
   passkey_rp_id: "sub3.nebula-spaces.com",
   passkey_rp_origins: ["https://sub3.nebula-spaces.com"],
   default_balance: 0,
+  bot_binding_bonus_amount: 0.5,
+  bot_checkin_enabled: false,
+  bot_checkin_first_reward_min: 0.05,
+  bot_checkin_first_reward_max: 0.2,
+  bot_checkin_increment_min: 0.01,
+  bot_checkin_increment_max: 0.05,
+  bot_checkin_daily_cap: 0.5,
   default_concurrency: 1,
   default_subscriptions: [],
   site_name: "Sub2API",
@@ -607,6 +618,42 @@ async function openUsersTab(wrapper: ReturnType<typeof mountView>) {
   await usersTabButton?.trigger("click");
   await flushPromises();
 }
+
+describe("admin SettingsView bot check-in rewards", () => {
+  it("shows the fixed daily reward rules and keeps the binding bonus configurable", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      bot_binding_bonus_amount: 1.25,
+      bot_checkin_enabled: true,
+      bot_checkin_first_reward_min: 0.1,
+      bot_checkin_first_reward_max: 0.3,
+      bot_checkin_increment_min: 0.02,
+      bot_checkin_increment_max: 0.04,
+      bot_checkin_daily_cap: 0.6,
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    expect(wrapper.text()).toContain("每天都是随机0.01-0.2");
+    expect(wrapper.text()).toContain("累计七天第七天在随机金额上面乘以2倍到账");
+    expect(wrapper.text()).toContain("每天使用量必须达到1m token使用量，签到才有效");
+    expect(wrapper.text()).not.toContain("admin.settings.defaults.botCheckInFirstMin");
+    expect(wrapper.text()).not.toContain("admin.settings.defaults.botCheckInIncrementMin");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bot_binding_bonus_amount: 1.25,
+        bot_checkin_enabled: true,
+        bot_checkin_daily_cap: 0.6,
+      }),
+    );
+  });
+});
 
 describe("admin SettingsView email domain quota copy", () => {
   it("documents the email domain quota and empty-whitelist behavior in both locales", () => {

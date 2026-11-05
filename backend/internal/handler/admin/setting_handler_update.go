@@ -177,6 +177,13 @@ type UpdateSettingsRequest struct {
 	AffiliateRebateDurationDays               *int                              `json:"affiliate_rebate_duration_days"`
 	AffiliateRebatePerInviteeCap              *float64                          `json:"affiliate_rebate_per_invitee_cap"`
 	AdminRechargeRebateEnabled                *bool                             `json:"affiliate_admin_recharge_enabled"`
+	BotBindingBonusAmount                     *float64                          `json:"bot_binding_bonus_amount"`
+	BotCheckInEnabled                         *bool                             `json:"bot_checkin_enabled"`
+	BotCheckInFirstRewardMin                  *float64                          `json:"bot_checkin_first_reward_min"`
+	BotCheckInFirstRewardMax                  *float64                          `json:"bot_checkin_first_reward_max"`
+	BotCheckInIncrementMin                    *float64                          `json:"bot_checkin_increment_min"`
+	BotCheckInIncrementMax                    *float64                          `json:"bot_checkin_increment_max"`
+	BotCheckInDailyCap                        *float64                          `json:"bot_checkin_daily_cap"`
 	DefaultUserRPMLimit                       int                               `json:"default_user_rpm_limit"`
 	DefaultSubscriptions                      []dto.DefaultSubscriptionSetting  `json:"default_subscriptions"`
 	AuthSourceDefaultEmailBalance             *float64                          `json:"auth_source_default_email_balance"`
@@ -609,6 +616,37 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	adminRechargeRebateEnabled := previousSettings.AdminRechargeRebateEnabled
 	if req.AdminRechargeRebateEnabled != nil {
 		adminRechargeRebateEnabled = *req.AdminRechargeRebateEnabled
+	}
+	botBinding := previousSettings.BotBindingSettings
+	if req.BotBindingBonusAmount != nil {
+		botBinding.BonusAmount = *req.BotBindingBonusAmount
+	}
+	if err := service.ValidateBotBindingSettingsForHandler(botBinding); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	botCheckIn := previousSettings.BotCheckInSettings
+	if req.BotCheckInEnabled != nil {
+		botCheckIn.Enabled = *req.BotCheckInEnabled
+	}
+	if req.BotCheckInFirstRewardMin != nil {
+		botCheckIn.FirstRewardMin = *req.BotCheckInFirstRewardMin
+	}
+	if req.BotCheckInFirstRewardMax != nil {
+		botCheckIn.FirstRewardMax = *req.BotCheckInFirstRewardMax
+	}
+	if req.BotCheckInIncrementMin != nil {
+		botCheckIn.IncrementMin = *req.BotCheckInIncrementMin
+	}
+	if req.BotCheckInIncrementMax != nil {
+		botCheckIn.IncrementMax = *req.BotCheckInIncrementMax
+	}
+	if req.BotCheckInDailyCap != nil {
+		botCheckIn.DailyCap = *req.BotCheckInDailyCap
+	}
+	if err := service.ValidateBotCheckInSettingsForHandler(botCheckIn); err != nil {
+		response.BadRequest(c, err.Error())
+		return
 	}
 	// 通用表格配置：兼容旧客户端未传字段时保留当前值。
 	if req.TableDefaultPageSize <= 0 {
@@ -1662,6 +1700,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateDurationDays:            affiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:           affiliateRebatePerInviteeCap,
 		AdminRechargeRebateEnabled:             adminRechargeRebateEnabled,
+		BotBindingSettings:                     botBinding,
+		BotCheckInSettings:                     botCheckIn,
 		DefaultUserRPMLimit:                    req.DefaultUserRPMLimit,
 		DefaultSubscriptions:                   defaultSubscriptions,
 		EnableModelFallback:                    req.EnableModelFallback,
@@ -2326,6 +2366,13 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateDurationDays:                            updatedSettings.AffiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:                           updatedSettings.AffiliateRebatePerInviteeCap,
 		AdminRechargeRebateEnabled:                             updatedSettings.AdminRechargeRebateEnabled,
+		BotBindingBonusAmount:                                  updatedSettings.BotBindingSettings.BonusAmount,
+		BotCheckInEnabled:                                      updatedSettings.BotCheckInSettings.Enabled,
+		BotCheckInFirstRewardMin:                               updatedSettings.BotCheckInSettings.FirstRewardMin,
+		BotCheckInFirstRewardMax:                               updatedSettings.BotCheckInSettings.FirstRewardMax,
+		BotCheckInIncrementMin:                                 updatedSettings.BotCheckInSettings.IncrementMin,
+		BotCheckInIncrementMax:                                 updatedSettings.BotCheckInSettings.IncrementMax,
+		BotCheckInDailyCap:                                     updatedSettings.BotCheckInSettings.DailyCap,
 		DefaultUserRPMLimit:                                    updatedSettings.DefaultUserRPMLimit,
 		DefaultSubscriptions:                                   updatedDefaultSubscriptions,
 		EnableModelFallback:                                    updatedSettings.EnableModelFallback,

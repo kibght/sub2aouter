@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
@@ -27,6 +28,10 @@ type botBindingManager interface {
 	RevokeCurrentBinding(ctx context.Context, binding *service.BotBinding) error
 }
 
+type botCheckInReader interface {
+	CheckIn(ctx context.Context, userID int64) (*service.BotCheckInResult, time.Time, error)
+}
+
 type botUsageReader interface {
 	GetStatsWithFilters(ctx context.Context, filters usagestats.UsageLogFilters) (*usagestats.UsageStats, error)
 }
@@ -42,9 +47,14 @@ type botUserReader interface {
 // BotHandler 处理网站侧绑定码管理接口与聊天机器人的只读接口。
 type BotHandler struct {
 	bindings botBindingManager
+	checkIn  botCheckInReader
 	usage    botUsageReader
 	apiKeys  botAPIKeyReader
 	users    botUserReader
+}
+
+func (h *BotHandler) SetCheckInService(checkIn botCheckInReader) {
+	h.checkIn = checkIn
 }
 
 // NewBotHandler 创建机器人接口处理器。
@@ -81,13 +91,63 @@ type botBindingClaimUser struct {
 }
 
 type botBindingClaimResponse struct {
-	TokenType   string              `json:"token_type"`
-	BotToken    string              `json:"bot_token"`
-	TokenPrefix string              `json:"token_prefix"`
-	Platform    string              `json:"platform"`
-	ExternalID  string              `json:"external_id"`
-	BoundAt     time.Time           `json:"bound_at"`
-	User        botBindingClaimUser `json:"user"`
+	TokenType        string              `json:"token_type"`
+	BotToken         string              `json:"bot_token"`
+	TokenPrefix      string              `json:"token_prefix"`
+	Platform         string              `json:"platform"`
+	ExternalID       string              `json:"external_id"`
+	BoundAt          time.Time           `json:"bound_at"`
+	BindBonusGranted bool                `json:"bind_bonus_granted"`
+	BindBonusAmount  float64             `json:"bind_bonus_amount"`
+	User             botBindingClaimUser `json:"user"`
+}
+
+type botCheckInResponse struct {
+	Status           string    `json:"status"`
+	Eligible         bool      `json:"eligible"`
+	TodayTokens      int64     `json:"today_tokens"`
+	RequiredTokens   int64     `json:"required_tokens"`
+	CheckedIn        bool      `json:"checked_in"`
+	AlreadyCheckedIn bool      `json:"already_checked_in"`
+	Reward           float64   `json:"reward"`
+	Balance          float64   `json:"balance"`
+	StreakDay        int       `json:"streak_day"`
+	CheckInDate      string    `json:"check_in_date"`
+	NextCheckInAt    time.Time `json:"next_check_in_at"`
+	MessageKey       string    `json:"message_key"`
+}
+
+func botCheckInStatusForReason(reason string) string {
+	switch strings.TrimSpace(reason) {
+	case "BOT_CHECKIN_USAGE_REQUIRED", "BOT_CHECKIN_INSUFFICIENT_USAGE":
+		return "insufficient_usage"
+	case "BOT_CHECKIN_DISABLED":
+		return "disabled"
+	case "BOT_CHECKIN_ALREADY_CHECKED_IN":
+		return "already_checked_in"
+	case "BOT_BINDING_ACCOUNT_INACTIVE":
+		return "account_inactive"
+	case "BOT_BINDING_INVALID":
+		return "binding_invalid"
+	case "BOT_BINDING_UNAVAILABLE":
+		return "service_unavailable"
+	case "BOT_CHECKIN_UNAVAILABLE":
+		return "service_unavailable"
+	case "BOT_AUTH_REQUIRED":
+		return "unauthorized"
+	default:
+		return "error"
+	}
+}
+
+func writeBotCheckInError(c *gin.Context, err error) {
+	statusCode, status := infraerrors.ToHTTP(err)
+	metadata := status.Metadata
+	if metadata == nil {
+		metadata = make(map[string]string, 1)
+	}
+	metadata["status"] = botCheckInStatusForReason(status.Reason)
+	response.ErrorWithDetails(c, statusCode, status.Message, status.Reason, metadata)
 }
 
 type botProfileResponse struct {
@@ -245,13 +305,63 @@ func (h *BotHandler) Redeem(c *gin.Context) {
 	}
 
 	response.Success(c, botBindingClaimResponse{
-		TokenType:   "bot",
-		BotToken:    claim.Token,
-		TokenPrefix: claim.TokenPrefix,
-		Platform:    claim.Platform,
-		ExternalID:  claim.ExternalID,
-		BoundAt:     claim.BoundAt.UTC(),
-		User:        claimUser,
+		TokenType:        "bot",
+		BotToken:         claim.Token,
+		TokenPrefix:      claim.TokenPrefix,
+		Platform:         claim.Platform,
+		ExternalID:       claim.ExternalID,
+		BoundAt:          claim.BoundAt.UTC(),
+		BindBonusGranted: claim.BindBonusGranted,
+		BindBonusAmount:  claim.BindBonusAmount,
+		User:             claimUser,
+	})
+}
+
+// CheckIn 领取机器人每日签到余额。
+// POST /api/v1/bot/check-in
+func (h *BotHandler) CheckIn(c *gin.Context) {
+	if h == nil || h.checkIn == nil {
+		writeBotCheckInError(c, infraerrors.InternalServer("BOT_CHECKIN_UNAVAILABLE", "Bot check-in service is not available"))
+		return
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		writeBotCheckInError(c, infraerrors.Unauthorized("BOT_AUTH_REQUIRED", "User not authenticated"))
+		return
+	}
+	result, nextCheckInAt, err := h.checkIn.CheckIn(c.Request.Context(), subject.UserID)
+	if err != nil {
+		writeBotCheckInError(c, err)
+		return
+	}
+	checkInDate := result.RewardDate.Format("2006-01-02")
+	status := strings.TrimSpace(result.Status)
+	if status == "" {
+		if result.CheckedIn {
+			status = "checked_in"
+		} else {
+			status = "already_checked_in"
+		}
+	}
+	messageKey := "check_in_" + status
+	switch status {
+	case "checked_in", "success":
+		messageKey = "check_in_success"
+	case "already_checked_in":
+		messageKey = "already_checked_in"
+	case "insufficient_usage":
+		messageKey = "check_in_insufficient_usage"
+	case "disabled":
+		messageKey = "check_in_disabled"
+	case "account_inactive":
+		messageKey = "check_in_inactive"
+	}
+	response.Success(c, botCheckInResponse{
+		Status:   status,
+		Eligible: result.Eligible, TodayTokens: result.TodayTokens, RequiredTokens: result.RequiredTokens,
+		CheckedIn: result.CheckedIn, AlreadyCheckedIn: status == "already_checked_in",
+		Reward: result.Reward, Balance: result.Balance, StreakDay: result.StreakDay,
+		CheckInDate: checkInDate, NextCheckInAt: nextCheckInAt, MessageKey: messageKey,
 	})
 }
 

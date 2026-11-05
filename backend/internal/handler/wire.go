@@ -182,11 +182,14 @@ func ProvideAdminSettingHandler(settingService *service.SettingService, emailSer
 // ProvideBotHandler 创建机器人接口处理器。
 func ProvideBotHandler(
 	bindings *service.BotBindingService,
+	checkIn *service.BotCheckInService,
 	usage *service.UsageService,
 	apiKeys *service.APIKeyService,
 	users *service.UserService,
 ) *BotHandler {
-	return NewBotHandler(bindings, usage, apiKeys, users)
+	h := NewBotHandler(bindings, usage, apiKeys, users)
+	h.SetCheckInService(checkIn)
+	return h
 }
 
 // ProvideHandlers creates the Handlers struct

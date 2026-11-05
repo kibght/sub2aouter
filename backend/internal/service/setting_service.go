@@ -380,6 +380,30 @@ func (s *SettingService) GetAllSettings(ctx context.Context) (*SystemSettings, e
 	return s.parseSettings(settings), nil
 }
 
+func (s *SettingService) GetBotCheckInSettings(ctx context.Context) BotCheckInSettings {
+	defaults := BotCheckInSettings{Enabled: BotCheckInEnabledDefault, FirstRewardMin: BotCheckInFirstRewardMinDefault, FirstRewardMax: BotCheckInFirstRewardMaxDefault, IncrementMin: BotCheckInIncrementMinDefault, IncrementMax: BotCheckInIncrementMaxDefault, DailyCap: BotCheckInDailyCapDefault}
+	if s == nil || s.settingRepo == nil {
+		return defaults
+	}
+	raw, err := s.settingRepo.GetAll(ctx)
+	if err != nil {
+		return defaults
+	}
+	return parseBotCheckInSettings(raw)
+}
+
+func (s *SettingService) GetBotBindingSettings(ctx context.Context) BotBindingSettings {
+	defaults := BotBindingSettings{BonusAmount: BotBindingBonusAmountDefault}
+	if s == nil || s.settingRepo == nil {
+		return defaults
+	}
+	raw, err := s.settingRepo.GetAll(ctx)
+	if err != nil {
+		return defaults
+	}
+	return parseBotBindingSettings(raw)
+}
+
 // SetOnUpdateCallback sets a callback function to be called when settings are updated
 // This is used for cache invalidation (e.g., HTML cache in frontend server)
 func (s *SettingService) SetOnUpdateCallback(callback func()) {

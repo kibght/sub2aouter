@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -58,6 +59,16 @@ type stubBotUsage struct {
 	stats   *usagestats.UsageStats
 	err     error
 	filters usagestats.UsageLogFilters
+}
+
+type stubBotCheckIn struct {
+	result *service.BotCheckInResult
+	next   time.Time
+	err    error
+}
+
+func (s *stubBotCheckIn) CheckIn(_ context.Context, _ int64) (*service.BotCheckInResult, time.Time, error) {
+	return s.result, s.next, s.err
 }
 
 func (s *stubBotUsage) GetStatsWithFilters(_ context.Context, filters usagestats.UsageLogFilters) (*usagestats.UsageStats, error) {
@@ -131,6 +142,7 @@ func newBotTestRouter(opts botTestRouterOptions) *gin.Engine {
 	bot := router.Group("/bot", attachAuth)
 	bot.GET("/profile", opts.handler.Profile)
 	bot.POST("/unbind", opts.handler.Unbind)
+	bot.POST("/check-in", opts.handler.CheckIn)
 	bot.GET("/api-keys", opts.handler.APIKeys)
 	bot.GET("/usage/stats", opts.handler.UsageStats)
 
@@ -272,6 +284,88 @@ func TestBotHandlerUnbindRequiresBoundToken(t *testing.T) {
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/bot/unbind", nil))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Equal(t, binding, stub.current)
+}
+
+func TestBotHandlerCheckInReturnsRewardAndDuplicateAmount(t *testing.T) {
+	rewardDate := time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)
+	checkIn := &stubBotCheckIn{
+		result: &service.BotCheckInResult{
+			CheckedIn: true, Reward: 0.18, Balance: 1.43, StreakDay: 3, RewardDate: rewardDate,
+		},
+		next: rewardDate.AddDate(0, 0, 1),
+	}
+	h := NewBotHandler(&stubBotBindings{}, &stubBotUsage{}, &stubBotAPIKeys{}, &stubBotUsers{})
+	h.SetCheckInService(checkIn)
+	router := newBotTestRouter(botTestRouterOptions{handler: h, userID: 7, withAuth: true})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/bot/check-in", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	data := decodeBotData(t, rec)
+	require.Equal(t, true, data["checked_in"])
+	require.Equal(t, "checked_in", data["status"])
+	require.Equal(t, 0.18, data["reward"])
+	require.Equal(t, 1.43, data["balance"])
+	require.Equal(t, float64(3), data["streak_day"])
+	require.Equal(t, "check_in_success", data["message_key"])
+}
+
+func TestBotHandlerCheckInReturnsMachineReadableErrorStatus(t *testing.T) {
+	h := NewBotHandler(&stubBotBindings{}, &stubBotUsage{}, &stubBotAPIKeys{}, &stubBotUsers{})
+	h.SetCheckInService(&stubBotCheckIn{err: infraerrors.Forbidden("BOT_CHECKIN_USAGE_REQUIRED", "今日 token 使用量不足")})
+	router := newBotTestRouter(botTestRouterOptions{handler: h, userID: 7, withAuth: true})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/bot/check-in", nil))
+
+	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	require.Equal(t, "BOT_CHECKIN_USAGE_REQUIRED", payload["reason"])
+	metadata, ok := payload["metadata"].(map[string]any)
+	require.True(t, ok, rec.Body.String())
+	require.Equal(t, "insufficient_usage", metadata["status"])
+}
+
+func TestBotHandlerCheckInReturnsBusinessStatuses(t *testing.T) {
+	tests := []struct {
+		name          string
+		status        string
+		eligible      bool
+		already       bool
+		messageKey    string
+		todayTokens   int64
+		requiredToken int64
+	}{
+		{name: "disabled", status: "disabled", messageKey: "check_in_disabled", requiredToken: 1_000_000},
+		{name: "insufficient usage", status: "insufficient_usage", messageKey: "check_in_insufficient_usage", todayTokens: 900_000, requiredToken: 1_000_000},
+		{name: "inactive", status: "account_inactive", messageKey: "check_in_inactive", requiredToken: 1_000_000},
+		{name: "already checked in", status: "already_checked_in", already: true, messageKey: "already_checked_in", requiredToken: 1_000_000},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewBotHandler(&stubBotBindings{}, &stubBotUsage{}, &stubBotAPIKeys{}, &stubBotUsers{})
+			h.SetCheckInService(&stubBotCheckIn{result: &service.BotCheckInResult{
+				Status: tt.status, Eligible: tt.eligible, CheckedIn: false,
+				TodayTokens: tt.todayTokens, RequiredTokens: tt.requiredToken,
+				RewardDate: time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC),
+			}})
+			router := newBotTestRouter(botTestRouterOptions{handler: h, userID: 7, withAuth: true})
+
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/bot/check-in", nil))
+
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			data := decodeBotData(t, rec)
+			require.Equal(t, tt.status, data["status"])
+			require.Equal(t, tt.already, data["already_checked_in"])
+			require.Equal(t, tt.messageKey, data["message_key"])
+			require.Equal(t, float64(tt.todayTokens), data["today_tokens"])
+			require.Equal(t, float64(tt.requiredToken), data["required_tokens"])
+		})
+	}
 }
 
 func TestBotHandlerProfileMasksEmailAndHidesBalance(t *testing.T) {

@@ -73,6 +73,7 @@ func (r *botBindingRepository) RedeemCode(ctx context.Context, params service.Bo
 		SELECT status, email, COALESCE(password_hash, '')
 		FROM users
 		WHERE id = $1
+		FOR UPDATE
 	`, userID).Scan(&status, &email, &passwordHash); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, service.ErrBotBindingCodeInvalid
@@ -111,6 +112,13 @@ func (r *botBindingRepository) RedeemCode(ctx context.Context, params service.Bo
 		Platform:   params.Platform,
 		ExternalID: params.ExternalID,
 	}
+	var existingBindings int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM bot_bindings WHERE user_id = $1
+	`, userID).Scan(&existingBindings); err != nil {
+		return nil, fmt.Errorf("count existing bot bindings: %w", err)
+	}
+	grantBindBonus := existingBindings == 0
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO bot_bindings
 			(user_id, platform, external_id, token_hash, token_prefix, user_token_version, bound_at, created_at, updated_at)
@@ -123,6 +131,34 @@ func (r *botBindingRepository) RedeemCode(ctx context.Context, params service.Bo
 			return nil, service.ErrBotBindingCodeInvalid
 		}
 		return nil, fmt.Errorf("create bot binding: %w", err)
+	}
+	if grantBindBonus {
+		bonusAmount := service.BotBindingBonusAmount
+		if params.BonusAmount != nil {
+			bonusAmount = *params.BonusAmount
+		}
+		bonusCode, err := service.GenerateRedeemCode()
+		if err != nil {
+			return nil, fmt.Errorf("generate first bot binding bonus record: %w", err)
+		}
+		var oldBalance, newBalance float64
+		if err := tx.QueryRowContext(ctx, `
+			UPDATE users
+			SET balance = balance + $2, updated_at = $3
+			WHERE id = $1 AND deleted_at IS NULL
+			RETURNING balance - $2, balance
+		`, userID, bonusAmount, now).Scan(&oldBalance, &newBalance); err != nil {
+			return nil, fmt.Errorf("grant first bot binding bonus: %w", err)
+		}
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO redeem_codes (code, type, value, status, used_by, used_at, notes, created_at)
+			VALUES ($1, 'bot_binding_bonus', $2, 'used', $3, $4, $5, $4)
+		`, bonusCode, bonusAmount, userID, now, fmt.Sprintf("首次绑定机器人赠送余额 $%.2f", bonusAmount))
+		if err != nil {
+			return nil, fmt.Errorf("record first bot binding bonus: %w", err)
+		}
+		binding.BindBonusGranted = true
+		binding.BindBonusAmount = bonusAmount
 	}
 
 	if err := tx.Commit(); err != nil {
