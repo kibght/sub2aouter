@@ -80,3 +80,9 @@ test('rejects source commits that contain files outside the bot rewards allowlis
     /outside the bot rewards allowlist/,
   )
 })
+
+test('composes the errors import required by machine-readable check-in errors', async () => {
+  const script = await readFile(scriptPath, 'utf8')
+  assert.match(script, /target\.includes\('infraerrors\.ToHTTP'\)/)
+  assert.match(script, /infraerrors "github\.com\/Wei-Shaw\/sub2api\/internal\/pkg\/errors"/)
+})

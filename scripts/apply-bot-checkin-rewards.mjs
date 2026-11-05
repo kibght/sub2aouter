@@ -199,6 +199,13 @@ function composeBotHandler(source) {
   const checkInMethod = extractBlock(source, '// CheckIn 领取机器人每日签到余额。', '// Unbind')
   target = insertOnce(target, '// Unbind', checkInMethod + '\n', relativePath)
 
+  if (target.includes('infraerrors.ToHTTP') && !target.includes('internal/pkg/errors')) {
+    target = target.replace(
+      '\t"context"\n',
+      '\t"context"\n\tinfraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"\n',
+    )
+  }
+
   if (!target.includes('BindBonusGranted: claim.BindBonusGranted')) {
     const old = '\t\tBoundAt:     claim.BoundAt.UTC(),\n\t\tUser:        claimUser,\n'
     const replacement = '\t\tBoundAt:        claim.BoundAt.UTC(),\n\t\tBindBonusGranted: claim.BindBonusGranted,\n\t\tBindBonusAmount: claim.BindBonusAmount,\n\t\tUser:             claimUser,\n'
