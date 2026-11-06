@@ -361,7 +361,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   const binaryPath = '.github/workflows/theme-binary-release.yml'
   const binary = files.get(binaryPath) || ''
   check('security.generated_source', syncPath,
-    hasOrderedMarkers(sync, ['bash scripts/ci/check-security.sh frontend', 'name: Reconcile upstream backend security dependencies', 'go mod edit -require=github.com/klauspost/compress@v1.20.2', 'go mod edit -require=golang.org/x/image@v0.45.0', 'bash scripts/ci/check-security.sh backend', 'name: Push immutable themed image']) &&
+    hasOrderedMarkers(sync, ['bash scripts/ci/check-security.sh frontend', 'name: Reconcile upstream backend security dependencies', 'go mod edit -require=github.com/andybalholm/brotli@v1.2.7', 'go mod edit -require=github.com/klauspost/compress@v1.20.2', 'go mod edit -require=golang.org/x/crypto@v0.58.1-0.20261009181718-2f1f834330b2', 'go mod edit -require=golang.org/x/image@v0.45.0', 'bash scripts/ci/check-security.sh backend', 'name: Push immutable themed image']) &&
     sync.includes('cp tools/check_pnpm_audit_exceptions.py') &&
     sync.includes('cp .github/audit-exceptions.yml') &&
     sync.includes('cmp "$GITHUB_WORKSPACE/.github/workflows/security-scan.yml"') &&

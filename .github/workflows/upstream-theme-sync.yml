@@ -583,7 +583,9 @@ jobs:
         working-directory: ${{ env.GENERATED_DIR }}/backend
         run: |
           set -euo pipefail
+          go mod edit -require=github.com/andybalholm/brotli@v1.2.7
           go mod edit -require=github.com/klauspost/compress@v1.20.2
+          go mod edit -require=golang.org/x/crypto@v0.58.1-0.20261009181718-2f1f834330b2
           go mod edit -require=golang.org/x/image@v0.45.0
           go mod tidy
 
