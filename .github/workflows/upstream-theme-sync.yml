@@ -577,6 +577,16 @@ jobs:
           go-version-file: ${{ env.GENERATED_DIR }}/backend/go.mod
           cache: false
 
+      - name: Reconcile upstream backend security dependencies
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        working-directory: ${{ env.GENERATED_DIR }}/backend
+        run: |
+          set -euo pipefail
+          go mod edit -require=github.com/klauspost/compress@v1.20.2
+          go mod edit -require=golang.org/x/image@v0.45.0
+          go mod tidy
+
       - name: Scan generated backend dependencies
         if: env.SHOULD_PUBLISH == 'true'
         run: bash scripts/ci/check-security.sh backend
