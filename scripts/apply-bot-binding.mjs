@@ -22,6 +22,9 @@ const problems = []
 
 const sh = (args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
 const fromRef = (p) => sh(['show', ref + ':' + p])
+const botBindingIntegrationTest = 'backend/internal/repository/bot_binding_repo_integration_test.go'
+const sanitizeBotBindingIntegrationTest = (text) => text.replace(/\n\tt\.Cleanup\(func\(\) \{\n(?:\t\t[^\n]*\n)+\t\}\)\n/g, '\n')
+const hasBotBindingCleanup = (text) => /DELETE FROM (?:bot_bindings|bot_binding_codes|redeem_codes)/.test(text)
 const read = (p) => readFileSync(path.join(root, p), 'utf8')
 const writeFile = (p, text) => {
   const abs = path.join(root, p)
@@ -121,10 +124,14 @@ const NEW_FILES = [
 for (const p of NEW_FILES) {
   if (checkOnly) {
     ensureFile(p)
+    if (p === botBindingIntegrationTest && hasBotBindingCleanup(read(p))) {
+      fail('bot binding integration test must not delete binding or balance history data: ' + p)
+    }
     continue
   }
   try {
-    writeFile(p, fromRef(p))
+    const source = fromRef(p)
+    writeFile(p, p === botBindingIntegrationTest ? sanitizeBotBindingIntegrationTest(source) : source)
   } catch (error) {
     fail('cannot read ' + p + ' from ' + ref + ': ' + error.message)
   }

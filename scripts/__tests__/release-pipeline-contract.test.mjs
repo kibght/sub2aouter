@@ -126,6 +126,14 @@ test('bot check-in overlay check mode tolerates composed wiring while requiring 
   }
 })
 
+test('bot overlays protect binding and balance history data', async () => {
+  const files = await loadContractFiles()
+  const binding = files.get('scripts/apply-bot-binding.mjs') || ''
+  assert.match(binding, /sanitizeBotBindingIntegrationTest/)
+  assert.match(binding, /must not delete binding or balance history data/)
+  assert.match(binding, /DELETE FROM \(\?:bot_bindings\|bot_binding_codes\|redeem_codes\)/)
+})
+
 test('contract rejects literal question-mark placeholders in upstream release notes', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/upstream-theme-sync.yml'

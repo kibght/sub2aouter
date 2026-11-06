@@ -53,7 +53,11 @@ const ALLOWED_PATHS = [
 ]
 
 const MIGRATION_SOURCE = 'backend/migrations/250_bot_checkins.sql'
-const PATCH_PATHS = ALLOWED_PATHS.filter((file) => file !== MIGRATION_SOURCE)
+const OPTIONAL_OVERLAY_PATHS = [
+  'backend/internal/handler/admin/setting_handler_partial_payload_test.go',
+  'backend/internal/server/router.go',
+]
+const PATCH_PATHS = [...ALLOWED_PATHS, ...OPTIONAL_OVERLAY_PATHS].filter((file) => file !== MIGRATION_SOURCE)
 const COMPOSED_PATHS = new Set([
   'backend/cmd/server/wire_gen.go',
   'backend/internal/handler/admin/setting_handler.go',
@@ -83,6 +87,10 @@ const root = path.resolve(valueOf('--root', '.'))
 const ref = valueOf('--ref', 'origin/feat/bot-checkin-rewards')
 const checkOnly = argv.includes('--check')
 const scriptPath = fileURLToPath(import.meta.url)
+const OPTIONAL_PROTECTED_PATHS = [
+  'backend/internal/repository/bot_binding_repo_integration_test.go',
+  ...OPTIONAL_OVERLAY_PATHS,
+]
 
 const git = (args, options = {}) => execFileSync('git', args, {
   cwd: root,
@@ -104,9 +112,19 @@ function isApplicable(args, patch) {
   }
 }
 
-function sourceChanges() {
-  const changed = git(['diff', '--name-only', '-z', ref + '^', ref, '--']).split('\0').filter(Boolean)
-  const unexpected = changed.filter((file) => !ALLOWED_PATHS.includes(file))
+function findOverlayBaseRef() {
+  const commits = git(['rev-list', '--first-parent', ref]).split(/\r?\n/).filter(Boolean)
+  for (const commit of commits) {
+    const parent = git(['rev-parse', commit + '^']).trim()
+    const changed = git(['diff', '--name-only', '-z', parent, commit, '--']).split('\0').filter(Boolean)
+    if (ALLOWED_PATHS.every((file) => changed.includes(file))) return parent
+  }
+  fail('source branch does not contain one complete bot rewards overlay commit: ' + ref)
+}
+
+function sourceChanges(baseRef) {
+  const changed = git(['diff', '--name-only', '-z', baseRef, ref, '--']).split('\0').filter(Boolean)
+  const unexpected = changed.filter((file) => !ALLOWED_PATHS.includes(file) && !OPTIONAL_PROTECTED_PATHS.includes(file))
   if (unexpected.length > 0) {
     fail('source branch contains files outside the bot rewards allowlist: ' + unexpected.join(', '))
   }
@@ -491,12 +509,12 @@ function main() {
 
   let baseRef
   try {
-    baseRef = git(['rev-parse', ref + '^']).trim()
+    baseRef = findOverlayBaseRef()
   } catch (error) {
     fail('source branch must include its original themed main parent: ' + ref + ' (' + (error.stderr?.toString() || error.message) + ')')
   }
 
-  sourceChanges()
+  sourceChanges(baseRef)
   const patch = git(['diff', '--binary', baseRef, ref, '--', ...PATCH_PATHS], { encoding: 'buffer' })
   if (patch.length === 0) fail('source branch has no non-migration bot rewards patch')
 
@@ -529,6 +547,8 @@ function main() {
         'backend/internal/repository/wire.go',
         'backend/internal/server/routes/bot.go',
         'backend/internal/server/routes/bot_test.go',
+        'backend/internal/server/router.go',
+        'backend/internal/handler/admin/setting_handler_partial_payload_test.go',
         'backend/internal/service/setting_update.go',
       ])
       if (conflicts.length === 0 || conflicts.some((file) => !expected.has(file))) {
