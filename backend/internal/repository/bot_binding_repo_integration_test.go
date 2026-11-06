@@ -94,6 +94,7 @@ func TestBotBindingRepositoryRedeemIsSingleUseAndRebindRevokes(t *testing.T) {
 
 	// 其他用户不能解绑别人的绑定。
 	other := mustCreateUser(t, client, &service.User{Email: "bot-binding-other-" + time.Now().Format(time.RFC3339Nano) + "@example.com"})
+	otherUserID = other.ID
 	thirdCode := service.HashBotBindingSecret("RSTUVWXY")
 	require.NoError(t, repo.CreateCode(ctx, &service.BotBindingCodeRecord{
 		UserID:    user.ID,
