@@ -9781,7 +9781,7 @@ const form = reactive<SettingsForm>({
   affiliate_rebate_per_invitee_cap: 0,
   affiliate_admin_recharge_enabled: false,
   bot_checkin_enabled: false,
-  bot_checkin_first_reward_min: 0.05,
+  bot_checkin_first_reward_min: 0.01,
   bot_checkin_first_reward_max: 0.2,
   bot_checkin_increment_min: 0.01,
   bot_checkin_increment_max: 0.05,

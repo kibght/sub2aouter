@@ -78,6 +78,22 @@ func TestUpdateSettingsGrokDefaultBaseURLModeIsWritable(t *testing.T) {
 	require.Equal(t, service.GrokDefaultBaseURLModeEUWest1, repo.values[service.SettingKeyGrokDefaultBaseURLMode])
 }
 
+func TestUpdateSettingsBotCheckInRewardRangeIsWritable(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
+		service.SettingKeyBotCheckInFirstRewardMin: "0.01",
+		service.SettingKeyBotCheckInFirstRewardMax: "0.20",
+	})
+
+	rec := doUpdateSettings(t, h, map[string]any{
+		"bot_checkin_first_reward_min": 0.11,
+		"bot_checkin_first_reward_max": 0.27,
+	}, nil)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "0.11000000", repo.values[service.SettingKeyBotCheckInFirstRewardMin])
+	require.Equal(t, "0.27000000", repo.values[service.SettingKeyBotCheckInFirstRewardMax])
+}
+
 func TestUpdateSettingsRejectsTwoCaptchaProviders(t *testing.T) {
 	h, _ := newStepUpSwitchTestHandler(t, map[string]string{
 		service.SettingKeyTurnstileEnabled:   "true",

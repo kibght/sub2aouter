@@ -14,13 +14,22 @@ import (
 
 const botCheckInAmountScale int64 = 100_000_000
 
+const (
+	BotCheckInRequiredTokens int64 = 1_000_000
+)
+
 // BotCheckInStreakCycleDays is the number of consecutive check-in days before
 // the reward cycle starts again from the first-day range.
 const BotCheckInStreakCycleDays = 7
 
 const (
-	BotCheckInRedeemType      = "bot_checkin"
-	BotBindingBonusRedeemType = "bot_binding_bonus"
+	BotCheckInRedeemType              = "bot_checkin"
+	BotBindingBonusRedeemType         = "bot_binding_bonus"
+	BotCheckInStatusDisabled          = "disabled"
+	BotCheckInStatusInsufficientUsage = "insufficient_usage"
+	BotCheckInStatusAlreadyCheckedIn  = "already_checked_in"
+	BotCheckInStatusSuccess           = "success"
+	BotCheckInStatusInactive          = "account_inactive"
 )
 
 var ErrBotCheckInDisabled = infraerrors.Forbidden("BOT_CHECKIN_DISABLED", "Bot check-in is disabled")
@@ -35,12 +44,16 @@ type BotCheckInParams struct {
 }
 
 type BotCheckInResult struct {
-	CheckedIn  bool
-	Reward     float64
-	Balance    float64
-	StreakDay  int
-	RewardDate time.Time
-	CreatedAt  time.Time
+	Status         string
+	Eligible       bool
+	TodayTokens    int64
+	RequiredTokens int64
+	CheckedIn      bool
+	Reward         float64
+	Balance        float64
+	StreakDay      int
+	RewardDate     time.Time
+	CreatedAt      time.Time
 }
 
 type BotCheckInRepository interface {
@@ -94,29 +107,28 @@ func (s *BotCheckInService) CheckIn(ctx context.Context, userID int64) (*BotChec
 	if s == nil || s.repo == nil || s.settings == nil || userID <= 0 {
 		return nil, time.Time{}, ErrBotBindingRepository
 	}
+	now := timezone.Now()
+	dayStart := timezone.StartOfDay(now)
+	nextCheckInAt := dayStart.AddDate(0, 0, 1)
+	baseResult := &BotCheckInResult{
+		Status: BotCheckInStatusDisabled, RequiredTokens: BotCheckInRequiredTokens,
+		RewardDate: dayStart,
+	}
 	settings := s.settings.GetBotCheckInSettings(ctx)
 	if !settings.Enabled {
-		return nil, time.Time{}, ErrBotCheckInDisabled
+		return baseResult, nextCheckInAt, nil
 	}
 	if err := validateBotCheckInSettings(settings); err != nil {
 		return nil, time.Time{}, err
 	}
 
-	now := timezone.Now()
-	dayStart := timezone.StartOfDay(now)
-	nextCheckInAt := dayStart.AddDate(0, 0, 1)
 	firstReward, err := randomBotCheckInAmount(settings.FirstRewardMin, settings.FirstRewardMax)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("generate first check-in reward: %w", err)
 	}
-	increment, err := randomBotCheckInAmount(settings.IncrementMin, settings.IncrementMax)
-	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("generate check-in increment: %w", err)
-	}
-
 	result, err := s.repo.CheckIn(ctx, BotCheckInParams{
 		UserID: userID, RewardDate: dayStart.Format("2006-01-02"),
-		FirstReward: firstReward, Increment: increment, DailyCap: settings.DailyCap,
+		FirstReward: firstReward, DailyCap: settings.DailyCap,
 		Now: now.UTC(),
 	})
 	if err != nil {
@@ -138,7 +150,7 @@ func validateBotCheckInSettings(settings BotCheckInSettings) error {
 			return fmt.Errorf("invalid bot check-in settings")
 		}
 	}
-	if settings.FirstRewardMin > settings.FirstRewardMax || settings.IncrementMin > settings.IncrementMax || settings.DailyCap < settings.FirstRewardMax {
+	if settings.FirstRewardMin > settings.FirstRewardMax || settings.IncrementMin > settings.IncrementMax {
 		return fmt.Errorf("invalid bot check-in settings")
 	}
 	return nil
@@ -149,8 +161,9 @@ func ValidateBotCheckInSettingsForHandler(settings BotCheckInSettings) error {
 }
 
 func randomBotCheckInAmount(minimum, maximum float64) (float64, error) {
-	minUnits := int64(math.Round(minimum * float64(botCheckInAmountScale)))
-	maxUnits := int64(math.Round(maximum * float64(botCheckInAmountScale)))
+	const currencyScale int64 = 100
+	minUnits := int64(math.Round(minimum * float64(currencyScale)))
+	maxUnits := int64(math.Round(maximum * float64(currencyScale)))
 	span := maxUnits - minUnits + 1
 	if span <= 0 {
 		return 0, fmt.Errorf("invalid random reward range")
@@ -159,7 +172,7 @@ func randomBotCheckInAmount(minimum, maximum float64) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return float64(minUnits+value.Int64()) / float64(botCheckInAmountScale), nil
+	return float64(minUnits+value.Int64()) / float64(currencyScale), nil
 }
 
 func BotCheckInUnits(value float64) int64 {

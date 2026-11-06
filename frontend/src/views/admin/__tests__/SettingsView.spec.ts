@@ -381,7 +381,7 @@ const baseSettingsResponse = {
   passkey_rp_origins: ["https://sub3.nebula-spaces.com"],
   default_balance: 0,
   bot_checkin_enabled: false,
-  bot_checkin_first_reward_min: 0.05,
+  bot_checkin_first_reward_min: 0.01,
   bot_checkin_first_reward_max: 0.2,
   bot_checkin_increment_min: 0.01,
   bot_checkin_increment_max: 0.05,
