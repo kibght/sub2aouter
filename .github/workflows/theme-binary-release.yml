@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: ''
+      force_republish:
+        description: Rebuild and replace an existing release even when its source identity matches
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       release_ref:
@@ -121,6 +126,7 @@ jobs:
       - name: Read release version and skip duplicates
         env:
           GH_TOKEN: ${{ github.token }}
+          FORCE_REPUBLISH: ${{ inputs.force_republish || false }}
         shell: bash
         run: |
           set -euo pipefail
@@ -181,13 +187,13 @@ jobs:
                 MISSING_ASSETS+=("$asset")
               fi
             done
-            if [[ "$RELEASE_DRAFT" == "false" && "$RELEASE_PRERELEASE" == "false" && "$RELEASE_TARGET" == "themed-release" && "$EXISTING_RELEASE_SOURCE_MATCH" == "true" && "${#MISSING_ASSETS[@]}" -eq 0 ]]; then
+            if [[ "$FORCE_REPUBLISH" != "true" && "$RELEASE_DRAFT" == "false" && "$RELEASE_PRERELEASE" == "false" && "$RELEASE_TARGET" == "themed-release" && "$EXISTING_RELEASE_SOURCE_MATCH" == "true" && "${#MISSING_ASSETS[@]}" -eq 0 ]]; then
               echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
               echo "RELEASE_EXISTS=true" >> "$GITHUB_ENV"
               echo "Release $RELEASE_TAG already exists with all required assets; nothing to publish."
               exit 0
             fi
-            echo "Existing release ${RELEASE_TAG} needs repair (draft=${RELEASE_DRAFT}, prerelease=${RELEASE_PRERELEASE}, target=${RELEASE_TARGET}, source_match=${EXISTING_RELEASE_SOURCE_MATCH}, missing=${MISSING_ASSETS[*]:-none})."
+            echo "Existing release ${RELEASE_TAG} needs repair or explicit republish (force=${FORCE_REPUBLISH}, draft=${RELEASE_DRAFT}, prerelease=${RELEASE_PRERELEASE}, target=${RELEASE_TARGET}, source_match=${EXISTING_RELEASE_SOURCE_MATCH}, missing=${MISSING_ASSETS[*]:-none})."
           elif grep -Eiq '404|not found' "$RELEASE_ERROR_FILE"; then
             echo "Release $RELEASE_TAG does not exist; creating it."
           else

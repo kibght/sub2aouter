@@ -733,6 +733,7 @@ jobs:
       release_ref: ${{ needs.sync-build-publish.outputs.release_ref }}
       expected_upstream_release_tag: ${{ needs.sync-build-publish.outputs.upstream_release_tag }}
       expected_upstream_sha: ${{ needs.sync-build-publish.outputs.upstream_sha }}
+      force_republish: ${{ inputs.release_version != '' }}
     secrets: inherit
 
   promote-latest:

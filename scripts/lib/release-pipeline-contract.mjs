@@ -253,6 +253,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     sync.includes('binary-release:') &&
     sync.includes('uses: ./.github/workflows/theme-binary-release.yml') &&
     sync.includes('release_ref: ${{ needs.sync-build-publish.outputs.release_ref }}') &&
+    sync.includes('force_republish: ${{ inputs.release_version != \'\' }}') &&
     !sync.includes('gh workflow run theme-binary-release.yml'),
   'Source publication must await the local reusable binary workflow at the generated immutable commit.')
   check('sync.latest_promotion', syncPath,
@@ -380,6 +381,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     'Tag releases must await security scans of the same selected source.')
   check('binary.reusable_entry', binaryPath,
     hasPattern(binary, /\n  workflow_call:\n[\s\S]*release_ref:/) &&
+    binary.includes('force_republish:') &&
     hasPattern(binary, /\n  workflow_dispatch:\n[\s\S]*release_ref:/) &&
     !binary.includes('workflow_run:'),
   'Binary release must expose reusable and manual inputs without recursive workflow_run triggers.')
@@ -408,6 +410,11 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     binary.includes('EXISTING_UPSTREAM_TAG') &&
     binary.includes('\"$EXISTING_RELEASE_SOURCE_MATCH\" == \"true\"'),
     'Binary publication must rebuild a complete existing tag when its upstream source metadata is stale.')
+  check('binary.force_republish', binaryPath,
+    binary.includes('FORCE_REPUBLISH') &&
+    binary.includes('inputs.force_republish || false') &&
+    binary.includes('"$FORCE_REPUBLISH" != "true"'),
+    'Binary publication must support explicit republishing of an existing release version.')
   check('binary.tag_alignment', binaryPath,
     binary.includes('git tag -f "$RELEASE_TAG"') &&
     binary.includes('git push --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"'),
