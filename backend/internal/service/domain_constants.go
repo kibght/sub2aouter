@@ -40,7 +40,7 @@ const (
 	BotBindingBonusAmountDefault    = 0.5
 	BotBindingBonusAmountMax        = 1000.0
 	BotCheckInEnabledDefault        = false
-	BotCheckInFirstRewardMinDefault = 0.05
+	BotCheckInFirstRewardMinDefault = 0.01
 	BotCheckInFirstRewardMaxDefault = 0.20
 	BotCheckInIncrementMinDefault   = 0.01
 	BotCheckInIncrementMaxDefault   = 0.05

@@ -15,9 +15,7 @@ import (
 const botCheckInAmountScale int64 = 100_000_000
 
 const (
-	BotCheckInRandomRewardMin       = 0.01
-	BotCheckInRandomRewardMax       = 0.20
-	BotCheckInRequiredTokens  int64 = 1_000_000
+	BotCheckInRequiredTokens int64 = 1_000_000
 )
 
 // BotCheckInStreakCycleDays is the number of consecutive check-in days before
@@ -124,7 +122,7 @@ func (s *BotCheckInService) CheckIn(ctx context.Context, userID int64) (*BotChec
 		return nil, time.Time{}, err
 	}
 
-	firstReward, err := randomBotCheckInAmount(BotCheckInRandomRewardMin, BotCheckInRandomRewardMax)
+	firstReward, err := randomBotCheckInAmount(settings.FirstRewardMin, settings.FirstRewardMax)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("generate first check-in reward: %w", err)
 	}

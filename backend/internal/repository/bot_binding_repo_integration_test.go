@@ -17,12 +17,6 @@ func TestBotBindingRepositoryRedeemIsSingleUseAndRebindRevokes(t *testing.T) {
 	user := mustCreateUser(t, client, &service.User{Email: "bot-binding-" + time.Now().Format(time.RFC3339Nano) + "@example.com"})
 
 	repo := NewBotBindingRepository(integrationDB)
-	otherUserID := int64(0)
-	t.Cleanup(func() {
-		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM redeem_codes WHERE type = 'bot_binding_bonus' AND (used_by = $1 OR used_by = $2)`, user.ID, otherUserID)
-		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM bot_bindings WHERE user_id = $1`, user.ID)
-		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM bot_binding_codes WHERE user_id = $1`, user.ID)
-	})
 
 	now := time.Now().UTC()
 	firstCode := service.HashBotBindingSecret("ABCDEFGH")
@@ -100,7 +94,6 @@ func TestBotBindingRepositoryRedeemIsSingleUseAndRebindRevokes(t *testing.T) {
 
 	// 其他用户不能解绑别人的绑定。
 	other := mustCreateUser(t, client, &service.User{Email: "bot-binding-other-" + time.Now().Format(time.RFC3339Nano) + "@example.com"})
-	otherUserID = other.ID
 	thirdCode := service.HashBotBindingSecret("RSTUVWXY")
 	require.NoError(t, repo.CreateCode(ctx, &service.BotBindingCodeRecord{
 		UserID:    user.ID,
@@ -130,11 +123,6 @@ func TestBotBindingRepositoryRejectsExpiredCodesAndInactiveUsers(t *testing.T) {
 	})
 
 	repo := NewBotBindingRepository(integrationDB)
-	t.Cleanup(func() {
-		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM redeem_codes WHERE type = 'bot_binding_bonus' AND (used_by = $1 OR used_by = $2)`, user.ID, blocked.ID)
-		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM bot_bindings WHERE user_id = $1 OR user_id = $2`, user.ID, blocked.ID)
-		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM bot_binding_codes WHERE user_id = $1 OR user_id = $2`, user.ID, blocked.ID)
-	})
 
 	now := time.Now().UTC()
 	expiredCode := service.HashBotBindingSecret("EXPIRED1")
@@ -181,11 +169,6 @@ func TestBotBindingRepositoryKeepsOtherUsersBindingsIntact(t *testing.T) {
 	attacker := mustCreateUser(t, client, &service.User{Email: "bot-binding-attacker-" + time.Now().Format(time.RFC3339Nano) + "@example.com"})
 
 	repo := NewBotBindingRepository(integrationDB)
-	t.Cleanup(func() {
-		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM redeem_codes WHERE type = 'bot_binding_bonus' AND (used_by = $1 OR used_by = $2)`, owner.ID, attacker.ID)
-		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM bot_bindings WHERE user_id = $1 OR user_id = $2`, owner.ID, attacker.ID)
-		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM bot_binding_codes WHERE user_id = $1 OR user_id = $2`, owner.ID, attacker.ID)
-	})
 
 	now := time.Now().UTC()
 	ownerTokenHash := service.HashBotBindingSecret("bt_owner-token")

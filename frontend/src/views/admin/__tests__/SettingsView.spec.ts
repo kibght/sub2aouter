@@ -251,6 +251,8 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.defaults.botCheckInRewardRule": "每天都是随机0.01-0.2",
     "admin.settings.defaults.botCheckInSeventhDayBonus": "累计七天第七天在随机金额上面乘以2倍到账",
     "admin.settings.defaults.botCheckInUsageRequirement": "每天使用量必须达到1m token使用量，签到才有效",
+    "admin.settings.defaults.botCheckInFirstMin": "签到首日最低金额",
+    "admin.settings.defaults.botCheckInFirstMax": "签到首日最高金额",
     "admin.settings.authSourceDefaults.platformQuotasOverride": "平台限额覆盖",
     "admin.settings.authSourceDefaults.platformQuotasOverrideHint": "留空的字段继承「系统默认平台限额」；填 0 表示禁止该窗口使用。",
   };
@@ -385,7 +387,7 @@ const baseSettingsResponse = {
   default_balance: 0,
   bot_binding_bonus_amount: 0.5,
   bot_checkin_enabled: false,
-  bot_checkin_first_reward_min: 0.05,
+  bot_checkin_first_reward_min: 0.01,
   bot_checkin_first_reward_max: 0.2,
   bot_checkin_increment_min: 0.01,
   bot_checkin_increment_max: 0.05,
@@ -620,7 +622,7 @@ async function openUsersTab(wrapper: ReturnType<typeof mountView>) {
 }
 
 describe("admin SettingsView bot check-in rewards", () => {
-  it("shows the fixed daily reward rules and keeps the binding bonus configurable", async () => {
+  it("shows configurable daily reward bounds and keeps the binding bonus configurable", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       bot_binding_bonus_amount: 1.25,
@@ -636,10 +638,10 @@ describe("admin SettingsView bot check-in rewards", () => {
     await flushPromises();
     await openUsersTab(wrapper);
 
-    expect(wrapper.text()).toContain("每天都是随机0.01-0.2");
+    expect(wrapper.text()).toContain("签到首日最低金额");
+    expect(wrapper.text()).toContain("签到首日最高金额");
     expect(wrapper.text()).toContain("累计七天第七天在随机金额上面乘以2倍到账");
     expect(wrapper.text()).toContain("每天使用量必须达到1m token使用量，签到才有效");
-    expect(wrapper.text()).not.toContain("admin.settings.defaults.botCheckInFirstMin");
     expect(wrapper.text()).not.toContain("admin.settings.defaults.botCheckInIncrementMin");
 
     await wrapper.find("form").trigger("submit.prevent");
@@ -649,6 +651,8 @@ describe("admin SettingsView bot check-in rewards", () => {
       expect.objectContaining({
         bot_binding_bonus_amount: 1.25,
         bot_checkin_enabled: true,
+        bot_checkin_first_reward_min: 0.1,
+        bot_checkin_first_reward_max: 0.3,
         bot_checkin_daily_cap: 0.6,
       }),
     );

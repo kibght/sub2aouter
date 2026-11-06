@@ -3867,10 +3867,11 @@
                 </div>
                 <div v-if="form.bot_checkin_enabled" class="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div class="space-y-2 text-sm text-gray-600 dark:text-gray-300 md:col-span-2">
-                    <p>{{ t("admin.settings.defaults.botCheckInRewardRule") }}</p>
                     <p>{{ t("admin.settings.defaults.botCheckInSeventhDayBonus") }}</p>
                     <p>{{ t("admin.settings.defaults.botCheckInUsageRequirement") }}</p>
                   </div>
+                  <div><label class="input-label">{{ t("admin.settings.defaults.botCheckInFirstMin") }}</label><input v-model.number="form.bot_checkin_first_reward_min" type="number" min="0" max="1000" step="0.01" class="input" /></div>
+                  <div><label class="input-label">{{ t("admin.settings.defaults.botCheckInFirstMax") }}</label><input v-model.number="form.bot_checkin_first_reward_max" type="number" min="0" max="1000" step="0.01" class="input" /></div>
                   <div><label class="input-label">{{ t("admin.settings.defaults.botCheckInDailyCap") }}</label><input v-model.number="form.bot_checkin_daily_cap" type="number" min="0" max="1000" step="0.01" class="input" /></div>
                 </div>
               </div>
@@ -9787,7 +9788,7 @@ const form = reactive<SettingsForm>({
   affiliate_admin_recharge_enabled: false,
   bot_binding_bonus_amount: 0.5,
   bot_checkin_enabled: false,
-  bot_checkin_first_reward_min: 0.05,
+  bot_checkin_first_reward_min: 0.01,
   bot_checkin_first_reward_max: 0.2,
   bot_checkin_increment_min: 0.01,
   bot_checkin_increment_max: 0.05,
