@@ -444,7 +444,7 @@ jobs:
 
       - name: Fetch bot check-in rewards source branch
         if: env.SHOULD_PUBLISH == 'true'
-        run: git fetch --depth=2 origin "refs/heads/feat/bot-checkin-rewards:refs/remotes/origin/feat/bot-checkin-rewards"
+        run: git fetch origin "refs/heads/feat/bot-checkin-rewards:refs/remotes/origin/feat/bot-checkin-rewards"
 
       - name: Apply bot binding integration
         if: env.SHOULD_PUBLISH == 'true'

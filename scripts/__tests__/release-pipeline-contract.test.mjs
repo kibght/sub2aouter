@@ -74,7 +74,7 @@ test('contract requires preserving non-owned upstream workflow files', async () 
 
 test('contract requires fetching, applying, and verifying bot check-in rewards', async () => {
   for (const [marker, replacement] of [
-    ['git fetch --depth=2 origin "refs/heads/feat/bot-checkin-rewards:refs/remotes/origin/feat/bot-checkin-rewards"', 'true'],
+    ['git fetch origin "refs/heads/feat/bot-checkin-rewards:refs/remotes/origin/feat/bot-checkin-rewards"', 'true'],
     ['node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards\n', ''],
     ['node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards --check', 'true'],
   ]) {

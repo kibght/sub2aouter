@@ -152,7 +152,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     qqBotApply >= 0 && qqBotApply < qqBotCheck &&
     (files.get('scripts/apply-qq-bot-binding.mjs') || '').includes("origin/feat/qq-bot-binding"),
     'Sync must apply and verify the QQ balance-alert delta from the unified bot branch.')
-  const checkinFetch = sync.indexOf('git fetch --depth=2 origin "refs/heads/feat/bot-checkin-rewards:refs/remotes/origin/feat/bot-checkin-rewards"')
+  const checkinFetch = sync.indexOf('git fetch origin "refs/heads/feat/bot-checkin-rewards:refs/remotes/origin/feat/bot-checkin-rewards"')
   const checkinApply = sync.indexOf('node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards')
   const checkinCheck = sync.indexOf('node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards --check')
   check('sync.bot_checkin_rewards_overlay', syncPath,
