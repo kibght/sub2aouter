@@ -168,14 +168,6 @@ async function mergeSourceFile(baseSha, upstreamSha, file) {
 }
 
 async function preserveThemeOwnedSource() {
-  const releaseWorkflow = path.join(ROOT, '.github/workflows/release.yml')
-  if (existsSync(releaseWorkflow)) {
-    const releaseText = await readFile(releaseWorkflow, 'utf8')
-    if (releaseText.includes("node-version: '20'")) {
-      await writeFile(releaseWorkflow, releaseText.replace("node-version: '20'", "node-version: '24'"), 'utf8')
-    }
-  }
-
   const gitignorePath = path.join(ROOT, '.gitignore')
   if (!existsSync(gitignorePath)) return
   const gitignore = await readFile(gitignorePath, 'utf8')

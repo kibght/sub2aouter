@@ -174,6 +174,16 @@ function targetHeadFile(relativePath) {
   }
 }
 
+function targetConflictFile(relativePath) {
+  try {
+    // Stage 2 is the generated tree before the check-in patch. It includes
+    // earlier plugin and QQ overlays that are absent from HEAD.
+    return git(['show', ':2:' + relativePath])
+  } catch {
+    return targetHeadFile(relativePath)
+  }
+}
+
 function insertOnce(text, marker, addition, label) {
   if (text.includes(addition.trim())) return text
   const index = text.indexOf(marker)
@@ -409,6 +419,10 @@ function ensureScopedAdminKeyWiring() {
 function composeKnownConflicts(conflicts, source) {
   const unexpected = conflicts.filter((file) => !COMPOSED_PATHS.has(file))
   if (unexpected.length > 0) fail('cannot resolve bot rewards generated-file conflicts: ' + unexpected.join(', '))
+  const preservedTargets = new Map()
+  for (const file of conflicts) {
+    if (PRESERVE_TARGET_PATHS.has(file)) preservedTargets.set(file, targetConflictFile(file))
+  }
   // git apply --3way leaves unmerged index entries. Reset those entries before
   // materializing a known-good QQ source file and composing the check-in delta.
   git(['reset', '--', ...conflicts])
@@ -416,7 +430,7 @@ function composeKnownConflicts(conflicts, source) {
   for (const file of conflicts) {
     if (!COMPOSED_PATHS.has(file)) continue
     if (PRESERVE_TARGET_PATHS.has(file)) {
-      writeTarget(file, targetHeadFile(file))
+      writeTarget(file, preservedTargets.get(file) || targetHeadFile(file))
       continue
     }
     try {
