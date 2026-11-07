@@ -102,6 +102,7 @@ test('QQ bot overlay permits all known generated wiring conflicts after bot bind
   assert.match(qqScript, /git\(\['checkout', '--ours'/)
   assert.match(qqScript, /applyQQChanges/)
   assert.match(qqScript, /EnqueueBalanceLow/)
+  assert.match(qqScript, /ProvideBalanceNotifyService\(nil, nil, nil, nil, nil\)/)
 })
 
 test('bot check-in overlay permits known wiring conflicts after QQ integration', async () => {

@@ -66,6 +66,17 @@ function applyQQWireGen() {
   writeFileSync(filePath, source, 'utf8')
 }
 
+function ensureQQWireGenTest({ repair = true } = {}) {
+  const filePath = path.join(root, 'backend/cmd/server/wire_gen_test.go')
+  if (!existsSync(filePath)) return
+  let source = readFileSync(filePath, 'utf8')
+  const legacyCall = 'service.ProvideBalanceNotifyService(nil, nil, nil, nil)'
+  if (!source.includes(legacyCall)) return
+  if (!repair) fail('generated Wire test still uses the legacy balance notification provider call')
+  source = source.replaceAll(legacyCall, 'service.ProvideBalanceNotifyService(nil, nil, nil, nil, nil)')
+  writeFileSync(filePath, source, 'utf8')
+}
+
 function applyQQHandlerWire() {
   const filePath = path.join(root, 'backend/internal/handler/wire.go')
   let source = readFileSync(filePath, 'utf8')
@@ -246,12 +257,14 @@ if (checkOnly) {
   if (!existsSync(path.join(root, marker))) {
     fail('QQ balance-alert integration is missing: ' + marker)
   }
+  ensureQQWireGenTest({ repair: false })
   ensureScopedAdminKeyWiring({ repair: false })
   console.log('Verified QQ bot binding overlay from ' + ref + ' (base ' + baseRef + ').')
   process.exit(0)
 }
 
 if (existsSync(path.join(root, marker))) {
+  ensureQQWireGenTest()
   ensureScopedAdminKeyWiring()
   console.log('Preserved existing QQ bot balance-alert integration.')
   process.exit(0)
@@ -308,6 +321,7 @@ if (!existsSync(path.join(root, marker))) {
   fail('QQ balance-alert integration is still missing after applying the delta')
 }
 
+ensureQQWireGenTest()
 ensureScopedAdminKeyWiring()
 
 console.log('Applied QQ bot balance-alert delta from ' + ref + ' (base ' + baseRef + ').')
