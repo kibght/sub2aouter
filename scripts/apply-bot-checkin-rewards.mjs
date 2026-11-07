@@ -65,9 +65,11 @@ const COMPOSED_PATHS = new Set([
   'backend/internal/handler/bot_handler.go',
   'backend/internal/handler/wire.go',
   'backend/internal/repository/wire.go',
+  'backend/internal/server/router.go',
   'backend/internal/server/routes/bot.go',
   'backend/internal/server/routes/bot_test.go',
   'backend/internal/service/setting_update.go',
+  'backend/internal/service/wire.go',
 ])
 // These files already contain the check-in settings in the generated tree.
 // Keep newer selector fixes from that tree when the source overlay is based
@@ -75,7 +77,12 @@ const COMPOSED_PATHS = new Set([
 const PRESERVE_TARGET_PATHS = new Set([
   'backend/internal/handler/admin/setting_handler.go',
   'backend/internal/handler/admin/setting_handler_update.go',
+  'backend/internal/handler/wire.go',
+  'backend/internal/repository/wire.go',
+  'backend/internal/server/router.go',
   'backend/internal/service/setting_update.go',
+  'backend/internal/service/wire.go',
+  'backend/cmd/server/wire_gen.go',
 ])
 const argv = process.argv.slice(2)
 const valueOf = (name, fallback) => {
@@ -283,6 +290,15 @@ function composeRepositoryWire() {
   writeTarget(relativePath, target)
 }
 
+function composeServiceWire() {
+  const relativePath = 'backend/internal/service/wire.go'
+  let target = readTarget(relativePath)
+  if (!target.includes('NewBotCheckInService')) {
+    target = target.replace('\tNewBotBindingService,\n', '\tNewBotBindingService,\n\tNewBotCheckInService,\n')
+  }
+  writeTarget(relativePath, target)
+}
+
 function composeRoutes() {
   const relativePath = 'backend/internal/server/routes/bot.go'
   let target = readTarget(relativePath)
@@ -413,7 +429,9 @@ function composeKnownConflicts(conflicts, source) {
   if (conflicts.includes('backend/internal/handler/bot_handler.go')) composeQQBotHandler(sourceFile(ref, 'backend/internal/handler/bot_handler.go'))
   if (conflicts.includes('backend/internal/handler/wire.go')) composeHandlerWire()
   if (conflicts.includes('backend/internal/repository/wire.go')) composeRepositoryWire()
+  if (conflicts.includes('backend/internal/server/router.go')) composeRouterCall()
   if (conflicts.includes('backend/internal/server/routes/bot.go') || conflicts.includes('backend/internal/server/routes/bot_test.go')) composeRoutes()
+  if (conflicts.includes('backend/internal/service/wire.go')) composeServiceWire()
   if (conflicts.includes('backend/cmd/server/wire_gen.go')) composeWireGen()
   git(['add', '--', ...conflicts])
 }
@@ -430,6 +448,7 @@ function composeSharedFeatures() {
   }
   if (existsSync(path.join(root, 'backend/internal/handler/wire.go'))) composeHandlerWire()
   if (existsSync(path.join(root, 'backend/internal/repository/wire.go'))) composeRepositoryWire()
+  if (existsSync(path.join(root, 'backend/internal/service/wire.go'))) composeServiceWire()
   if (existsSync(path.join(root, 'backend/internal/server/routes/bot.go'))) composeRoutes()
   if (existsSync(path.join(root, 'backend/cmd/server/wire_gen.go'))) composeWireGen()
   composeRouterCall()
@@ -550,6 +569,7 @@ function main() {
         'backend/internal/server/router.go',
         'backend/internal/handler/admin/setting_handler_partial_payload_test.go',
         'backend/internal/service/setting_update.go',
+        'backend/internal/service/wire.go',
       ])
       if (conflicts.length === 0 || conflicts.some((file) => !expected.has(file))) {
         fail('cannot apply bot rewards patch' + (conflicts.length ? ' (conflicts: ' + conflicts.join(', ') + ')' : '') + ': ' + (error.stderr?.toString() || error.message))

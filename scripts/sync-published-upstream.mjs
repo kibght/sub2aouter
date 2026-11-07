@@ -22,6 +22,11 @@ const THEME_OWNED_SOURCE_PATHS = new Set([
   '.gitignore',
   'README.md',
 ])
+// Repository workflows are maintained by this project. Upstream workflow
+// changes cannot be pushed by the GitHub App token and would overwrite the
+// synchronization pipeline, so keep the whole directory out of the release
+// delta.
+const UPSTREAM_EXCLUDED_SOURCE_PATHS = ['.github/workflows/**']
 const MERGED_SOURCE_PATHS = [
   'backend/cmd/server/wire_gen.go',
   'backend/internal/repository/wire.go',
@@ -291,6 +296,7 @@ async function main() {
     'diff', '--binary', '--no-ext-diff', baseSha, upstreamSha, '--', '.',
     ':(exclude)backend/cmd/server/VERSION',
     ...[...THEME_OWNED_SOURCE_PATHS].map((file) => `:(exclude)${file}`),
+    ...UPSTREAM_EXCLUDED_SOURCE_PATHS.map((file) => `:(exclude)${file}`),
     ...MERGED_SOURCE_PATHS.map((file) => `:(exclude)${file}`),
   ], { quiet: true }).stdout
   if (patch.length > 0) {
