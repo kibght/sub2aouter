@@ -135,6 +135,9 @@ deploy/docker-compose.override.yml
 .gocache/
 vite.config.js
 docs/*
+!docs/agent-resource-safety.md
+!docs/moego-json-batching.md
+!docs/mcp.md
 !docs/images/
 !docs/images/theme-overview.png
 !docs/admin-api-keys.md
