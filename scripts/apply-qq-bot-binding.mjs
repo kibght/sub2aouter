@@ -27,6 +27,185 @@ const git = (args, options = {}) => execFileSync('git', args, {
   ...options,
 })
 
+function replaceRequired(source, find, replacement, label) {
+  if (source.includes(replacement)) return source
+  if (!source.includes(find)) {
+    throw new Error(`unsupported ${label} wiring`)
+  }
+  return source.replace(find, replacement)
+}
+
+function applyQQWireGen() {
+  const file = 'backend/cmd/server/wire_gen.go'
+  const filePath = path.join(root, file)
+  let source = readFileSync(filePath, 'utf8')
+  if (!source.includes('balanceNotifyQQRepository := repository.NewBalanceNotifyQQRepository(db)')) {
+    source = source.replace(
+      /(^\tuserService := service\.(?:NewUserService|ProvideUserService)\([^\n]+\)\r?\n)/m,
+      '\tbalanceNotifyQQRepository := repository.NewBalanceNotifyQQRepository(db)\n$1',
+    )
+  }
+  source = replaceRequired(
+    source,
+    '\tuserService := service.NewUserService(userRepository, settingRepository, apiKeyAuthCacheInvalidator, billingCache)',
+    '\tuserService := service.ProvideUserService(userRepository, settingRepository, apiKeyAuthCacheInvalidator, billingCache, balanceNotifyQQRepository)',
+    'user service',
+  )
+  source = replaceRequired(
+    source,
+    'service.ProvideBalanceNotifyService(emailService, settingRepository, accountRepository, notificationEmailService)',
+    'service.ProvideBalanceNotifyService(emailService, settingRepository, accountRepository, notificationEmailService, balanceNotifyQQRepository)',
+    'balance notification service',
+  )
+  source = replaceRequired(
+    source,
+    'handler.ProvideBotHandler(botBindingService, usageService, apiKeyService, userService)',
+    'handler.ProvideBotHandler(botBindingService, usageService, apiKeyService, userService, balanceNotifyQQRepository)',
+    'bot handler',
+  )
+  writeFileSync(filePath, source, 'utf8')
+}
+
+function applyQQHandlerWire() {
+  const filePath = path.join(root, 'backend/internal/handler/wire.go')
+  let source = readFileSync(filePath, 'utf8')
+  source = replaceRequired(
+    source,
+    '\tusers *service.UserService,\n) *BotHandler {\n\th := NewBotHandler(bindings, usage, apiKeys, users)\n\treturn h\n}',
+    '\tusers *service.UserService,\n\tqqBalanceNotifyRepo service.BalanceNotifyQQRepository,\n) *BotHandler {\n\th := NewBotHandler(bindings, usage, apiKeys, users)\n\th.SetBalanceNotifyQQRepository(qqBalanceNotifyRepo)\n\treturn h\n}',
+    'bot handler',
+  )
+  writeFileSync(filePath, source, 'utf8')
+}
+
+function applyQQRepositoryWire() {
+  const filePath = path.join(root, 'backend/internal/repository/wire.go')
+  let source = readFileSync(filePath, 'utf8')
+  source = replaceRequired(
+    source,
+    '\tNewBotBindingRepository,\n',
+    '\tNewBotBindingRepository,\n\tNewBalanceNotifyQQRepository,\n',
+    'repository',
+  )
+  writeFileSync(filePath, source, 'utf8')
+}
+
+function applyQQRouter() {
+  const filePath = path.join(root, 'backend/internal/server/router.go')
+  let source = readFileSync(filePath, 'utf8')
+  source = replaceRequired(
+    source,
+    'routes.RegisterBotRoutes(v1, h, botAuth, panelRateLimiter)',
+    'routes.RegisterBotRoutes(v1, h, adminAuth, botAuth, panelRateLimiter)',
+    'bot route',
+  )
+  writeFileSync(filePath, source, 'utf8')
+}
+
+function applyQQBalanceNotify() {
+  const file = 'backend/internal/service/balance_notify_service.go'
+  const filePath = path.join(root, file)
+  let source = readFileSync(filePath, 'utf8')
+  if (!source.includes('qqNotificationRepo       BalanceNotifyQQRepository')) {
+    const usageField = /(^\tusageNotifications\s+\*usageNotificationWorker\r?\n)/m
+    if (usageField.test(source)) {
+      source = source.replace(usageField, '$1\tqqNotificationRepo       BalanceNotifyQQRepository\n')
+    } else {
+      source = source.replace(
+        /(^\tnotificationEmailService \*NotificationEmailService\r?\n)/m,
+        '$1\tqqNotificationRepo       BalanceNotifyQQRepository\n',
+      )
+    }
+  }
+  if (!source.includes('SetBalanceNotifyQQRepository')) {
+    const setter = 'func (s *BalanceNotifyService) SetNotificationEmailService(notificationEmailService *NotificationEmailService) {\n\ts.notificationEmailService = notificationEmailService\n}\n'
+    source = replaceRequired(
+      source,
+      setter,
+      `${setter}\nfunc (s *BalanceNotifyService) SetBalanceNotifyQQRepository(repo BalanceNotifyQQRepository) {\n\ts.qqNotificationRepo = repo\n}\n`,
+      'balance notification repository setter',
+    )
+  }
+  source = replaceRequired(
+    source,
+    'if user == nil || s.emailService == nil || s.settingRepo == nil {',
+    'if user == nil || s.settingRepo == nil || (s.emailService == nil && s.qqNotificationRepo == nil) {',
+    'balance notification guard',
+  )
+  if (!source.includes('s.qqNotificationRepo.EnqueueBalanceLow')) {
+    const anchor = '\trecipients := s.collectBalanceNotifyRecipients(user)\n'
+    const addition = '\tif s.qqNotificationRepo != nil {\n' +
+      '\t\tqueueCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)\n' +
+      '\t\terr := s.qqNotificationRepo.EnqueueBalanceLow(queueCtx, user.ID, BalanceLowQQAlert{\n' +
+      '\t\t\tBalance:     newBalance,\n' +
+      '\t\t\tThreshold:   threshold,\n' +
+      '\t\t\tSiteName:    siteName,\n' +
+      '\t\t\tRechargeURL: rechargeURL,\n' +
+      '\t\t\tCreatedAt:   time.Now().UTC(),\n' +
+      '\t\t})\n' +
+      '\t\tcancel()\n' +
+      '\t\tif err != nil {\n' +
+      '\t\t\tslog.Error("failed to queue QQ low balance notification", "user_id", user.ID, "error", err)\n' +
+      '\t\t}\n' +
+      '\t}\n'
+    source = replaceRequired(source, anchor, anchor + addition, 'balance notification queue')
+  }
+  const directSend = '\ts.sendBalanceLowEmails(ctx, recipients, user.ID, user.Username, user.Email, newBalance, threshold, siteName, rechargeURL)\n'
+  if (!source.includes('\t\t' + directSend.trimStart())) {
+    source = replaceRequired(
+      source,
+      directSend,
+      '\tif s.emailService != nil {\n\t' + directSend + '\t}\n',
+      'balance notification email guard',
+    )
+  }
+  writeFileSync(filePath, source, 'utf8')
+}
+
+function applyQQServiceWire() {
+  const filePath = path.join(root, 'backend/internal/service/wire.go')
+  let source = readFileSync(filePath, 'utf8')
+  source = replaceRequired(source, '\tNewUserService,\n', '\tProvideUserService,\n', 'user service provider')
+  if (!source.includes('func ProvideUserService(')) {
+    const anchor = '// ProvideBalanceNotifyService creates BalanceNotifyService\n'
+    const addition = '// ProvideUserService wires the QQ balance notification repository into UserService.\n' +
+      'func ProvideUserService(userRepo UserRepository, settingRepo SettingRepository, authCacheInvalidator APIKeyAuthCacheInvalidator, billingCache BillingCache, qqRepo BalanceNotifyQQRepository) *UserService {\n' +
+      '\tsvc := NewUserService(userRepo, settingRepo, authCacheInvalidator, billingCache)\n' +
+      '\tsvc.SetBalanceNotifyQQRepository(qqRepo)\n' +
+      '\treturn svc\n}\n\n'
+    source = replaceRequired(source, anchor, addition + anchor, 'user service provider function')
+  }
+  const oldBalance = 'func ProvideBalanceNotifyService(emailService *EmailService, settingRepo SettingRepository, accountRepo AccountRepository, notificationEmailService *NotificationEmailService) *BalanceNotifyService {\n\tsvc := NewBalanceNotifyService(emailService, settingRepo, accountRepo)\n\tsvc.SetNotificationEmailService(notificationEmailService)\n\treturn svc\n}'
+  const newBalance = 'func ProvideBalanceNotifyService(emailService *EmailService, settingRepo SettingRepository, accountRepo AccountRepository, notificationEmailService *NotificationEmailService, qqRepo BalanceNotifyQQRepository) *BalanceNotifyService {\n\tsvc := NewBalanceNotifyService(emailService, settingRepo, accountRepo)\n\tsvc.SetNotificationEmailService(notificationEmailService)\n\tsvc.SetBalanceNotifyQQRepository(qqRepo)\n\treturn svc\n}'
+  source = replaceRequired(source, oldBalance, newBalance, 'balance notification provider')
+  writeFileSync(filePath, source, 'utf8')
+}
+
+function applyQQChanges(file) {
+  switch (file) {
+    case 'backend/cmd/server/wire_gen.go':
+      applyQQWireGen()
+      break
+    case 'backend/internal/handler/wire.go':
+      applyQQHandlerWire()
+      break
+    case 'backend/internal/repository/wire.go':
+      applyQQRepositoryWire()
+      break
+    case 'backend/internal/server/router.go':
+      applyQQRouter()
+      break
+    case 'backend/internal/service/balance_notify_service.go':
+      applyQQBalanceNotify()
+      break
+    case 'backend/internal/service/wire.go':
+      applyQQServiceWire()
+      break
+    default:
+      throw new Error(`unsupported QQ overlay conflict: ${file}`)
+  }
+}
+
 function fail(message) {
   console.error('apply-qq-bot-binding: ' + message)
   process.exit(1)
@@ -104,20 +283,24 @@ try {
     'backend/internal/handler/wire.go',
     'backend/internal/repository/wire.go',
     'backend/internal/server/router.go',
+    'backend/internal/service/balance_notify_service.go',
+    'backend/internal/service/wire.go',
   ])
   if (conflicts.length === 0 || conflicts.some((file) => !expected.has(file))) {
     fail('cannot apply QQ bot delta: ' + (error.stderr?.toString() || error.message))
   }
 
-  // The generated wire/router files already contain the legacy binding
-  // overlay. Their unified-branch versions include the same base plus the
-  // QQ-specific wiring, so use those complete files only for these known
-  // generated-file conflicts and keep all other upstream files untouched.
+  // Restore the generated upstream/legacy-overlay side, then apply only the
+  // QQ-specific additions. Taking the feature branch file wholesale would
+  // discard unrelated MCP wiring added by a newer upstream release.
   try {
-    git(['checkout', '--theirs', '--', ...conflicts])
-    git(['add', '--', ...conflicts])
+    git(['checkout', '--ours', '--', ...conflicts])
+    for (const file of conflicts) {
+      applyQQChanges(file)
+      git(['add', '--', file])
+    }
   } catch (resolveError) {
-    fail('cannot resolve QQ bot generated-file conflicts: ' + (resolveError.stderr?.toString() || resolveError.message))
+    fail('cannot resolve QQ bot overlay conflicts: ' + (resolveError.stderr?.toString() || resolveError.message))
   }
 }
 

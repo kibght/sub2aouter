@@ -94,9 +94,14 @@ test('QQ bot overlay permits all known generated wiring conflicts after bot bind
     'backend/internal/handler/wire.go',
     'backend/internal/repository/wire.go',
     'backend/internal/server/router.go',
+    'backend/internal/service/balance_notify_service.go',
+    'backend/internal/service/wire.go',
   ]) {
     assert.match(qqScript, new RegExp(path.replaceAll('/', '\\/')))
   }
+  assert.match(qqScript, /git\(\['checkout', '--ours'/)
+  assert.match(qqScript, /applyQQChanges/)
+  assert.match(qqScript, /EnqueueBalanceLow/)
 })
 
 test('bot check-in overlay permits known wiring conflicts after QQ integration', async () => {
