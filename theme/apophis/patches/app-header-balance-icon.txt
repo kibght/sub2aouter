@@ -1,0 +1,1 @@
+            class="app-header-balance-icon h-4 w-4 text-primary-600 dark:text-primary-400"

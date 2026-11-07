@@ -1,0 +1,1 @@
+    <div class="app-header-inner flex h-16 items-center justify-between gap-2 px-2 sm:px-4 md:px-6">
