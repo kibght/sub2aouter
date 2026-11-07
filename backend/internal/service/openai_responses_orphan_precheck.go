@@ -3,8 +3,6 @@ package service
 import (
 	"bytes"
 	"encoding/json"
-
-	"github.com/tidwall/gjson"
 )
 
 // openAIResponsesInputMayNeedOrphanCleanup only proves that cleanup is a no-op.
@@ -12,17 +10,25 @@ import (
 // named standalone outputs, call/id fallback and item-reference rules. All byte
 // spans below borrow the immutable request only for this synchronous call.
 func openAIResponsesInputMayNeedOrphanCleanup(body []byte) bool {
-	// Use Get directly: Parse(...).Get(...) differs from GetBytes on malformed
-	// prefixes, where the old gate can still find an input and invoke the decoder.
-	input := gjson.Get(openAIWSPayloadStringView(body), "input")
-	if !input.IsArray() {
+	// Keep the old GJSON gate (first object and first input key, including a
+	// garbage prefix) without parsing unrelated string values. GJSON allocates
+	// while scanning large escaped strings even when the selected value is a
+	// small array, which defeats this precheck's zero-copy contract.
+	inputStart, inputEnd, inputIsArray, inputFound, escapedKey := findOpenAIResponsesInput(body)
+	if !inputFound || !inputIsArray {
 		return false
 	}
 	if !json.Valid(body) {
 		// Preserve the existing decoder's malformed/trailing-JSON error path.
 		return true
 	}
-	if body[skipOpenAIWSJSONSpace(body, 0)] != '{' || input.Index <= 0 || input.Index > len(body)-len(input.Raw) {
+	if escapedKey {
+		// The full decoder is authoritative for escaped keys. Once an input
+		// array is present, conservatively take the cleanup path instead of
+		// materializing a decoded key just for this fast precheck.
+		return true
+	}
+	if inputStart <= 0 || inputEnd > len(body) {
 		return true
 	}
 
@@ -57,7 +63,7 @@ func openAIResponsesInputMayNeedOrphanCleanup(body []byte) bool {
 		return false
 	}
 
-	rawInput := body[input.Index : input.Index+len(input.Raw)]
+	rawInput := body[inputStart:inputEnd]
 	for i := 1; ; {
 		i = skipOpenAIWSJSONSpace(rawInput, i)
 		if rawInput[i] == ']' {
@@ -100,6 +106,125 @@ func openAIResponsesInputMayNeedOrphanCleanup(body []byte) bool {
 			i++
 		}
 	}
+}
+
+// findOpenAIResponsesInput finds the first top-level input value using only
+// byte ranges. It mirrors the old GJSON lookup's first-object/first-key
+// behavior, including malformed prefixes and duplicate keys.
+func findOpenAIResponsesInput(body []byte) (start, end int, isArray, found, escapedKey bool) {
+	objectStart := bytes.IndexByte(body, '{')
+	arrayStart := bytes.IndexByte(body, '[')
+	if objectStart < 0 || (arrayStart >= 0 && arrayStart < objectStart) {
+		return 0, 0, false, false, false
+	}
+	i := objectStart + 1
+	for {
+		i = skipOpenAIWSJSONSpace(body, i)
+		if i >= len(body) || body[i] == '}' {
+			return 0, 0, false, false, escapedKey
+		}
+		if body[i] != '"' {
+			return 0, 0, false, false, escapedKey
+		}
+		keyStart := i
+		keyEnd := scanOpenAIWSJSONString(body, i)
+		if keyEnd <= keyStart || keyEnd > len(body) || body[keyEnd-1] != '"' {
+			return 0, 0, false, false, escapedKey
+		}
+		key := body[keyStart:keyEnd]
+		keyIsInput := jsonKeyEqualsInput(key)
+		if keyIsInput && bytes.IndexByte(key, '\\') >= 0 {
+			escapedKey = true
+		}
+		i = skipOpenAIWSJSONSpace(body, keyEnd)
+		if i >= len(body) || body[i] != ':' {
+			return 0, 0, false, false, escapedKey
+		}
+		valueStart := skipOpenAIWSJSONSpace(body, i+1)
+		if valueStart >= len(body) {
+			return 0, 0, false, false, escapedKey
+		}
+		valueEnd := skipOpenAIWSJSONValue(body, valueStart)
+		if valueEnd <= valueStart || valueEnd > len(body) {
+			return 0, 0, false, false, escapedKey
+		}
+		if keyIsInput {
+			return valueStart, valueEnd, body[valueStart] == '[', true, escapedKey
+		}
+		i = skipOpenAIWSJSONSpace(body, valueEnd)
+		if i >= len(body) || body[i] != ',' {
+			if i < len(body) && body[i] == '}' {
+				return 0, 0, false, false, escapedKey
+			}
+			return 0, 0, false, false, escapedKey
+		}
+		i++
+	}
+}
+
+func jsonKeyEqualsInput(key []byte) bool {
+	if len(key) < 2 || key[0] != '"' || key[len(key)-1] != '"' {
+		return false
+	}
+	const target = "input"
+	targetIndex := 0
+	for i := 1; i < len(key)-1; i++ {
+		value := key[i]
+		if value == '\\' {
+			i++
+			if i >= len(key)-1 {
+				return false
+			}
+			switch key[i] {
+			case '"', '\\', '/':
+				value = key[i]
+			case 'b':
+				value = '\b'
+			case 'f':
+				value = '\f'
+			case 'n':
+				value = '\n'
+			case 'r':
+				value = '\r'
+			case 't':
+				value = '\t'
+			case 'u':
+				if i+4 >= len(key)-1 {
+					return false
+				}
+				value = decodeASCIIJSONEscape(key[i+1 : i+5])
+				i += 4
+			default:
+				return false
+			}
+		}
+		if targetIndex >= len(target) || value != target[targetIndex] {
+			return false
+		}
+		targetIndex++
+	}
+	return targetIndex == len(target)
+}
+
+func decodeASCIIJSONEscape(hex []byte) byte {
+	if len(hex) != 4 {
+		return 0
+	}
+	var value byte
+	for _, digit := range hex {
+		value <<= 4
+		switch {
+		case digit >= '0' && digit <= '9':
+			value |= digit - '0'
+		case digit >= 'a' && digit <= 'f':
+			value |= digit - 'a' + 10
+		case digit >= 'A' && digit <= 'F':
+			value |= digit - 'A' + 10
+		default:
+			return 0
+		}
+	}
+	return value
 }
 
 // visitOpenAIResponsesOrphanPrecheckFields visits an already-validated object
