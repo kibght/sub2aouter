@@ -7,14 +7,29 @@ import (
 	"testing"
 	"time"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
 
+func mustCreateBotBindingUser(t *testing.T, client *dbent.Client, input *service.User) *service.User {
+	t.Helper()
+	user := mustCreateUser(t, client, input)
+	t.Cleanup(func() {
+		ctx := context.Background()
+		// Redeem records retain their rows when a user is deleted, so remove them first.
+		_, err := integrationDB.ExecContext(ctx, "DELETE FROM redeem_codes WHERE used_by = $1", user.ID)
+		require.NoError(t, err, "clean up bot binding reward records")
+		_, err = integrationDB.ExecContext(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+		require.NoError(t, err, "clean up bot binding user")
+	})
+	return user
+}
+
 func TestBotBindingRepositoryRedeemIsSingleUseAndRebindRevokes(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)
-	user := mustCreateUser(t, client, &service.User{Email: "bot-binding-" + time.Now().Format(time.RFC3339Nano) + "@example.com"})
+	user := mustCreateBotBindingUser(t, client, &service.User{Email: "bot-binding-" + time.Now().Format(time.RFC3339Nano) + "@example.com"})
 
 	repo := NewBotBindingRepository(integrationDB)
 
@@ -93,7 +108,7 @@ func TestBotBindingRepositoryRedeemIsSingleUseAndRebindRevokes(t *testing.T) {
 	require.ErrorIs(t, repo.RevokeByID(ctx, user.ID, secondBinding.ID, now.Add(4*time.Second)), service.ErrBotBindingNotFound)
 
 	// 其他用户不能解绑别人的绑定。
-	other := mustCreateUser(t, client, &service.User{Email: "bot-binding-other-" + time.Now().Format(time.RFC3339Nano) + "@example.com"})
+	other := mustCreateBotBindingUser(t, client, &service.User{Email: "bot-binding-other-" + time.Now().Format(time.RFC3339Nano) + "@example.com"})
 	thirdCode := service.HashBotBindingSecret("RSTUVWXY")
 	require.NoError(t, repo.CreateCode(ctx, &service.BotBindingCodeRecord{
 		UserID:    user.ID,
@@ -116,8 +131,8 @@ func TestBotBindingRepositoryRedeemIsSingleUseAndRebindRevokes(t *testing.T) {
 func TestBotBindingRepositoryRejectsExpiredCodesAndInactiveUsers(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)
-	user := mustCreateUser(t, client, &service.User{Email: "bot-binding-expired-" + time.Now().Format(time.RFC3339Nano) + "@example.com"})
-	blocked := mustCreateUser(t, client, &service.User{
+	user := mustCreateBotBindingUser(t, client, &service.User{Email: "bot-binding-expired-" + time.Now().Format(time.RFC3339Nano) + "@example.com"})
+	blocked := mustCreateBotBindingUser(t, client, &service.User{
 		Email:  "bot-binding-blocked-" + time.Now().Format(time.RFC3339Nano) + "@example.com",
 		Status: "suspended",
 	})
@@ -165,8 +180,8 @@ func TestBotBindingRepositoryRejectsExpiredCodesAndInactiveUsers(t *testing.T) {
 func TestBotBindingRepositoryKeepsOtherUsersBindingsIntact(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)
-	owner := mustCreateUser(t, client, &service.User{Email: "bot-binding-owner-" + time.Now().Format(time.RFC3339Nano) + "@example.com"})
-	attacker := mustCreateUser(t, client, &service.User{Email: "bot-binding-attacker-" + time.Now().Format(time.RFC3339Nano) + "@example.com"})
+	owner := mustCreateBotBindingUser(t, client, &service.User{Email: "bot-binding-owner-" + time.Now().Format(time.RFC3339Nano) + "@example.com"})
+	attacker := mustCreateBotBindingUser(t, client, &service.User{Email: "bot-binding-attacker-" + time.Now().Format(time.RFC3339Nano) + "@example.com"})
 
 	repo := NewBotBindingRepository(integrationDB)
 
