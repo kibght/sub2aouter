@@ -7,6 +7,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { normalizeBotBindingIntegrationTest } from './lib/bot-binding-test-cleanup.mjs'
 
 const argv = process.argv.slice(2)
 const valueOf = (name, fallback) => {
@@ -23,8 +24,6 @@ const problems = []
 const sh = (args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
 const fromRef = (p) => sh(['show', ref + ':' + p])
 const botBindingIntegrationTest = 'backend/internal/repository/bot_binding_repo_integration_test.go'
-const sanitizeBotBindingIntegrationTest = (text) => text.replace(/\n\tt\.Cleanup\(func\(\) \{\n(?:\t\t[^\n]*\n)+\t\}\)\n/g, '\n')
-const hasBotBindingCleanup = (text) => /DELETE FROM (?:bot_bindings|bot_binding_codes|redeem_codes)/.test(text)
 const read = (p) => readFileSync(path.join(root, p), 'utf8')
 const writeFile = (p, text) => {
   const abs = path.join(root, p)
@@ -124,14 +123,20 @@ const NEW_FILES = [
 for (const p of NEW_FILES) {
   if (checkOnly) {
     ensureFile(p)
-    if (p === botBindingIntegrationTest && hasBotBindingCleanup(read(p))) {
-      fail('bot binding integration test must not delete binding or balance history data: ' + p)
+    if (p === botBindingIntegrationTest && existsSync(path.join(root, p))) {
+      try {
+        if (normalizeBotBindingIntegrationTest(read(p)) !== read(p).replace(/\r\n/g, '\n')) {
+          fail('bot binding integration test must clean up its own fixture users and rewards: ' + p)
+        }
+      } catch (error) {
+        fail(error.message + ': ' + p)
+      }
     }
     continue
   }
   try {
     const source = fromRef(p)
-    writeFile(p, p === botBindingIntegrationTest ? sanitizeBotBindingIntegrationTest(source) : source)
+    writeFile(p, p === botBindingIntegrationTest ? normalizeBotBindingIntegrationTest(source) : source)
   } catch (error) {
     fail('cannot read ' + p + ' from ' + ref + ': ' + error.message)
   }

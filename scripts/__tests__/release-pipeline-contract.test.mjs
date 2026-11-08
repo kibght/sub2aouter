@@ -132,12 +132,11 @@ test('bot check-in overlay check mode tolerates composed wiring while requiring 
   }
 })
 
-test('bot overlays protect binding and balance history data', async () => {
+test('bot overlays preserve isolated integration fixture cleanup', async () => {
   const files = await loadContractFiles()
   const binding = files.get('scripts/apply-bot-binding.mjs') || ''
-  assert.match(binding, /sanitizeBotBindingIntegrationTest/)
-  assert.match(binding, /must not delete binding or balance history data/)
-  assert.match(binding, /DELETE FROM \(\?:bot_bindings\|bot_binding_codes\|redeem_codes\)/)
+  assert.match(binding, /normalizeBotBindingIntegrationTest/)
+  assert.match(binding, /must clean up its own fixture users and rewards/)
 })
 
 test('contract rejects literal question-mark placeholders in upstream release notes', async () => {
