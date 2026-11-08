@@ -31,6 +31,7 @@ func RegisterBotRoutes(
 	bot.Use(panelRateLimiter.Global())
 	{
 		bot.GET("/profile", h.Bot.Profile)
+		bot.GET("/personal-info", panelRateLimiter.Heavy(), h.Bot.PersonalInfo)
 		bot.POST("/unbind", h.Bot.Unbind)
 		bot.GET("/balance-alerts", h.Bot.BalanceLowAlerts)
 		bot.POST("/balance-alerts/:id/ack", h.Bot.AckBalanceLowAlert)

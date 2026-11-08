@@ -186,9 +186,11 @@ func ProvideBotHandler(
 	apiKeys *service.APIKeyService,
 	users *service.UserService,
 	qqBalanceNotifyRepo service.BalanceNotifyQQRepository,
+	concurrencyCache service.ConcurrencyCache,
 ) *BotHandler {
 	h := NewBotHandler(bindings, usage, apiKeys, users)
 	h.SetBalanceNotifyQQRepository(qqBalanceNotifyRepo)
+	h.SetConcurrencyReader(concurrencyCache)
 	return h
 }
 

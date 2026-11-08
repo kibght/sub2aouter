@@ -146,6 +146,7 @@ docs/*
 !docs/PLUGIN_DEVELOPMENT.md
 !docs/channel-monitor-v2-safe-defaults.md
 !docs/codex-credits.md
+!docs/bot-personal-info.md
 !docs/legal/
 !docs/legal/*.md
 !docs/infinite-canvas.md

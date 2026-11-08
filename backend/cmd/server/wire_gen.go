@@ -328,7 +328,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	batchImageHandler := handler.ProvideBatchImageHandler(batchImagePublicService, batchImageDownloadService, batchImageCleanupService, openAIGatewayHandler)
 	botBindingRepository := repository.NewBotBindingRepository(db)
 	botBindingService := service.NewBotBindingService(botBindingRepository)
-	botHandler := handler.ProvideBotHandler(botBindingService, usageService, apiKeyService, userService, balanceNotifyQQRepository)
+	botHandler := handler.ProvideBotHandler(botBindingService, usageService, apiKeyService, userService, balanceNotifyQQRepository, concurrencyCache)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
 	openAIQuotaAutoResetService := service.ProvideOpenAIQuotaAutoResetService(accountRepository, openAIQuotaService, rateLimitService, idempotencyCoordinator, auditLogService, settingService, leaderLockCache)
 	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, totpHandler, passkeyHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, modelPlazaHandler, asyncImageHandler, batchImageHandler, botHandler, idempotencyCoordinator, idempotencyCleanupService, openAIQuotaAutoResetService)

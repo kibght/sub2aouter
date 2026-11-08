@@ -46,6 +46,7 @@ type BotHandler struct {
 	usage               botUsageReader
 	apiKeys             botAPIKeyReader
 	users               botUserReader
+	concurrency         botConcurrencyReader
 }
 
 func (h *BotHandler) SetBalanceNotifyQQRepository(repo service.BalanceNotifyQQRepository) {
