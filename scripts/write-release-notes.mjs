@@ -63,6 +63,13 @@ if (existsSync(path.join(generated, "backend/internal/repository/balance_notify_
 - Alert payloads include the alert ID, current balance, threshold, site name, and recharge link, with binding ownership enforced by the server.
 - Bot endpoints require administrator authentication in addition to the binding token, and the QQ alert switch is accepted only for users with a valid binding.`)
 }
+if (existsSync(path.join(generated, "backend/internal/handler/bot_personal_info.go"))) {
+  integrations.push(`### Bot Personal Information
+
+- Added GET /api/v1/bot/personal-info for the bound user's nickname, balance, concurrency quota, active concurrency, and request count over the last 60 seconds.
+- The endpoint requires both administrator authentication and the user's Bot binding token, and applies the existing aggregate-query rate limit.
+- Failed activity metrics return null independently; valid zero counts remain visible. Existing profile and check-in commands retain their contracts.`)
+}
 const body = composeReleaseNotes({ upstream, canvas, repository, integrations, canvasTag: env.CANVAS_RELEASE_TAG || "" })
 writeFileSync(path.join(generated, ".apophis-release-title"), `Sub2Aouter ${env.RELEASE_VERSION}\n`, "utf8")
 writeFileSync(path.join(generated, ".apophis-release-notes.md"), body, "utf8")

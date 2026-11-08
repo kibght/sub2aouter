@@ -542,6 +542,10 @@ jobs:
         if: env.SHOULD_PUBLISH == 'true'
         run: git fetch origin "refs/heads/feat/bot-checkin-rewards:refs/remotes/origin/feat/bot-checkin-rewards"
 
+      - name: Fetch bot personal-info source branch
+        if: env.SHOULD_PUBLISH == 'true'
+        run: git fetch --depth=1 origin "refs/heads/QQbot:refs/remotes/origin/QQbot"
+
       - name: Apply bot binding integration
         if: env.SHOULD_PUBLISH == 'true'
         run: node scripts/apply-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding
@@ -555,6 +559,11 @@ jobs:
       - name: Apply bot check-in rewards integration
         if: env.SHOULD_PUBLISH == 'true'
         run: node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards
+        working-directory: ${{ env.GENERATED_DIR }}
+
+      - name: Apply bot personal-info integration
+        if: env.SHOULD_PUBLISH == 'true'
+        run: node scripts/apply-bot-personal-info.mjs --root . --ref origin/QQbot
         working-directory: ${{ env.GENERATED_DIR }}
 
       - name: Write unified release metadata
@@ -634,6 +643,7 @@ jobs:
           node scripts/apply-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding --check
           node scripts/apply-qq-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding --check
           node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards --check
+          node scripts/apply-bot-personal-info.mjs --root . --ref origin/QQbot --check
           node scripts/check-encoding.mjs .
           node --test scripts/__tests__/*.test.mjs
 

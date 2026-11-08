@@ -86,6 +86,20 @@ test('contract requires fetching, applying, and verifying bot check-in rewards',
   }
 })
 
+test('contract requires fetching, applying, and verifying bot personal-info', async () => {
+  for (const [marker, replacement] of [
+    ['git fetch --depth=1 origin "refs/heads/QQbot:refs/remotes/origin/QQbot"', 'true'],
+    ['node scripts/apply-bot-personal-info.mjs --root . --ref origin/QQbot\n', ''],
+    ['node scripts/apply-bot-personal-info.mjs --root . --ref origin/QQbot --check', 'true'],
+  ]) {
+    const files = await loadContractFiles()
+    const workflowPath = '.github/workflows/upstream-theme-sync.yml'
+    files.set(workflowPath, files.get(workflowPath).replace(marker, replacement))
+    const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+    assert.ok(violations.some((entry) => entry.code === 'sync.bot_personal_info_overlay'))
+  }
+})
+
 test('QQ bot overlay permits all known generated wiring conflicts after bot binding', async () => {
   const files = await loadContractFiles()
   const qqScript = files.get('scripts/apply-qq-bot-binding.mjs')
