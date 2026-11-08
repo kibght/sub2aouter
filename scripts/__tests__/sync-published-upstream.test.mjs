@@ -262,7 +262,7 @@ test('sync validates the final rebased backend before pushing', async (t) => {
   const hooks = path.join(data.root, 'hooks')
   await mkdir(hooks)
   const shellQuote = (value) => `'${value.replaceAll("'", "'\\''")}'`
-  await writeFile(path.join(hooks, 'post-commit'), `#!/bin/sh\ngit --git-dir=${shellQuote(data.origin.replaceAll('\\', '/'))} update-ref refs/heads/main ${concurrentSha}\n`)
+  await writeFile(path.join(hooks, 'post-commit'), `#!/bin/sh\ngit --git-dir=${shellQuote(data.origin.replaceAll('\\', '/'))} update-ref refs/heads/main ${concurrentSha}\n`, { mode: 0o755 })
   git(data.repository, ['config', 'core.hooksPath', hooks])
   const result = sync(data)
   assert.notEqual(result.status, 0, result.stdout)
