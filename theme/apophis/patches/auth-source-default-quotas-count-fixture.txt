@@ -1,0 +1,1 @@
+expect(Object.keys(result).sort()).toEqual(Object.keys(allNullQuotas).sort())

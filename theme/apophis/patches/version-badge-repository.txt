@@ -1,0 +1,2 @@
+const GITHUB_REPO = 'kibght/sub2aouter'
+const DOCKER_IMAGE = 'ghcr.io/kibght/sub2aouter'

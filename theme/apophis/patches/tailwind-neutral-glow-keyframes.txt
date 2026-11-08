@@ -1,0 +1,4 @@
+        glow: {
+          '0%': { boxShadow: '0 0 20px hsl(var(--foreground) / 0.12)' },
+          '100%': { boxShadow: '0 0 30px hsl(var(--foreground) / 0.18)' }
+        }

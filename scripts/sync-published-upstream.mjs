@@ -1,0 +1,306 @@
+#!/usr/bin/env node
+
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { spawnSync } from 'node:child_process'
+import process from 'node:process'
+import { resolveWireConflict } from './lib/upstream-wire-merge.mjs'
+
+const ROOT = path.resolve(process.argv[2] || '.')
+const UPSTREAM_REPOSITORY = process.env.UPSTREAM_REPOSITORY || 'https://github.com/Wei-Shaw/sub2api.git'
+const PUSH_REMOTE = process.env.SYNC_PUSH_REMOTE || 'origin'
+const TARGET_BRANCH = process.env.SYNC_TARGET_BRANCH || 'main'
+const SYNC_WORK_BRANCH = process.env.SYNC_WORK_BRANCH || 'automation/upstream-release-sync'
+const UPSTREAM_TAG = process.env.UPSTREAM_RELEASE_TAG || ''
+const EXPECTED_UPSTREAM_SHA = process.env.UPSTREAM_SHA || ''
+const INITIAL_UPSTREAM_TAG = process.env.INITIAL_UPSTREAM_RELEASE_TAG || ''
+const SHA_PATTERN = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/
+const RELEASE_TAG_PATTERN = /^v[0-9]+\.[0-9]+\.[0-9]+$/
+const THEME_OWNED_SOURCE_PATHS = new Set([
+  '.github/workflows/release.yml',
+  '.gitignore',
+  'README.md',
+])
+// Repository workflows are maintained by this project. Upstream workflow
+// changes cannot be pushed by the GitHub App token and would overwrite the
+// synchronization pipeline, so keep the whole directory out of the release
+// delta.
+const UPSTREAM_EXCLUDED_SOURCE_PATHS = ['.github/workflows/**']
+const MERGED_SOURCE_PATHS = [
+  'backend/cmd/server/wire_gen.go',
+  'backend/internal/repository/wire.go',
+  'backend/internal/service/wire.go',
+]
+
+function runGit(args, { input, quiet = false, allowFailure = false } = {}) {
+  const result = spawnSync('git', args, {
+    cwd: ROOT,
+    input,
+    encoding: null,
+    maxBuffer: 512 * 1024 * 1024,
+    windowsHide: true,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+  })
+
+  if (result.error) throw result.error
+  if (!quiet && result.stdout?.length) process.stdout.write(result.stdout)
+  if (result.status !== 0 && !allowFailure) {
+    if (result.stderr?.length) process.stderr.write(result.stderr)
+    throw new Error(`git ${args.join(' ')} failed with exit code ${result.status}`)
+  }
+  return result
+}
+
+function gitText(args) {
+  return runGit(args, { quiet: true }).stdout.toString('utf8').trim()
+}
+
+function gitBlob(ref, file) {
+  return runGit(['show', `${ref}:${file}`], { quiet: true }).stdout.toString('utf8')
+}
+
+function optionalGitBlob(ref, file) {
+  const listing = gitText(['ls-tree', ref, '--', file])
+  return listing ? gitBlob(ref, file) : null
+}
+
+function sameSource(left, right) {
+  if (left === null || right === null) return left === right
+  return left.replace(/\r\n/g, '\n') === right.replace(/\r\n/g, '\n')
+}
+
+async function mergeSourceFile(baseSha, upstreamSha, file) {
+  const currentPath = path.join(ROOT, file)
+  const baseText = optionalGitBlob(baseSha, file)
+  const theirsText = optionalGitBlob(upstreamSha, file)
+  let oursText
+  try {
+    oursText = await readFile(currentPath, 'utf8')
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+    oursText = null
+  }
+  if (sameSource(baseText, theirsText) || sameSource(oursText, theirsText)) return
+  if (sameSource(oursText, baseText)) {
+    if (theirsText === null) {
+      await rm(currentPath)
+    } else {
+      await mkdir(path.dirname(currentPath), { recursive: true })
+      await writeFile(currentPath, theirsText, 'utf8')
+    }
+    return
+  }
+  if (baseText === null || theirsText === null || oursText === null) {
+    throw new Error(`Conflicting Wire file addition or deletion requires manual resolution: ${file}.`)
+  }
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'sub2api-upstream-merge-'))
+  const basePath = path.join(temporaryRoot, 'base')
+  const theirsPath = path.join(temporaryRoot, 'theirs')
+  try {
+    await writeFile(basePath, baseText, 'utf8')
+    await writeFile(theirsPath, theirsText, 'utf8')
+    const result = runGit([
+      'merge-file', '-p', '--diff3', currentPath, basePath, theirsPath,
+    ], { quiet: true, allowFailure: true })
+    // merge-file returns the number of conflicts (up to 127), not just 1.
+    if (result.status === null || result.status < 0 || result.status > 127) {
+      if (result.stderr?.length) process.stderr.write(result.stderr)
+      throw new Error(`Could not merge repository-owned source file ${file}.`)
+    }
+    let merged = result.stdout.toString('utf8')
+    if (result.status !== 0) merged = resolveWireConflict(file, merged)
+    if (merged.includes('<<<<<<< ') || merged.includes('>>>>>>> ')) {
+      throw new Error(`Unresolved merge conflict remains in ${file}.`)
+    }
+    await writeFile(currentPath, merged, 'utf8')
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true })
+  }
+}
+
+async function verifySourceCompilation() {
+  // Non-Go fixtures can exercise the release delta without a toolchain. A real
+  // backend must compile before its sync markers or remote branch are updated.
+  if (!existsSync(path.join(ROOT, 'backend/go.mod'))) return
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'sub2api-upstream-build-'))
+  try {
+    const result = spawnSync('go', [
+      'build', '-mod=readonly', '-o', path.join(temporaryRoot, 'server'), './cmd/server',
+    ], {
+      cwd: path.join(ROOT, 'backend'),
+      stdio: 'inherit',
+      windowsHide: true,
+      env: { ...process.env, CGO_ENABLED: '0' },
+    })
+    if (result.error) throw result.error
+    if (result.status !== 0) throw new Error('Synchronized backend does not compile; refusing to push source changes.')
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true })
+  }
+}
+
+async function preserveThemeOwnedSource() {
+  const gitignorePath = path.join(ROOT, '.gitignore')
+  if (!existsSync(gitignorePath)) return
+  const gitignore = await readFile(gitignorePath, 'utf8')
+  const marker = 'docs/*'
+  const additions = [
+    '!docs/agent-resource-safety.md',
+    '!docs/moego-json-batching.md',
+    '!docs/mcp.md',
+  ]
+  const missing = additions.filter((line) => !gitignore.split(/\r?\n/).includes(line))
+  if (missing.length > 0) {
+    const position = gitignore.indexOf(marker)
+    if (position < 0) throw new Error('The themed .gitignore is missing its docs marker.')
+    const end = position + marker.length
+    await writeFile(gitignorePath, `${gitignore.slice(0, end)}\n${missing.join('\n')}${gitignore.slice(end)}`, 'utf8')
+  }
+}
+
+async function retryGit(args, attempts = 5) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return runGit(args)
+    } catch (error) {
+      if (attempt === attempts) throw error
+      const delay = Math.min(5000 * (2 ** (attempt - 1)), 120000)
+      process.stderr.write(`git ${args.join(' ')} failed; retrying in ${delay / 1000}s (${attempt}/${attempts}).\n`)
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+  }
+}
+
+async function readOptional(file) {
+  try {
+    return (await readFile(path.join(ROOT, file), 'utf8')).trim()
+  } catch (error) {
+    if (error.code === 'ENOENT') return ''
+    throw error
+  }
+}
+
+function isAncestor(ancestor, descendant) {
+  const result = runGit(['merge-base', '--is-ancestor', ancestor, descendant], {
+    quiet: true,
+    allowFailure: true,
+  })
+  if (result.status > 1) {
+    if (result.stderr?.length) process.stderr.write(result.stderr)
+    throw new Error(`Could not verify upstream ancestry: ${ancestor} -> ${descendant}`)
+  }
+  return result.status === 0
+}
+
+async function main() {
+  if (!RELEASE_TAG_PATTERN.test(UPSTREAM_TAG)) {
+    throw new Error(`Invalid upstream release tag: ${UPSTREAM_TAG || '(missing)'}`)
+  }
+  if (!SHA_PATTERN.test(EXPECTED_UPSTREAM_SHA)) {
+    throw new Error(`Invalid upstream release SHA: ${EXPECTED_UPSTREAM_SHA || '(missing)'}`)
+  }
+
+  await retryGit(['fetch', PUSH_REMOTE, `+refs/heads/${TARGET_BRANCH}:refs/remotes/${PUSH_REMOTE}/${TARGET_BRANCH}`])
+  runGit(['checkout', '-B', SYNC_WORK_BRANCH, `refs/remotes/${PUSH_REMOTE}/${TARGET_BRANCH}`])
+
+  const existingUpstream = runGit(['remote', 'get-url', 'upstream'], { quiet: true, allowFailure: true })
+  if (existingUpstream.status === 0) {
+    runGit(['remote', 'set-url', 'upstream', UPSTREAM_REPOSITORY])
+  } else {
+    runGit(['remote', 'add', 'upstream', UPSTREAM_REPOSITORY])
+  }
+
+  const markerSha = await readOptional('.apophis-repository-upstream-sha')
+  const markerTag = await readOptional('.apophis-repository-upstream-tag')
+  if (Boolean(markerSha) !== Boolean(markerTag)) {
+    throw new Error('The repository upstream sync markers are incomplete.')
+  }
+
+  let baseTag = markerTag || INITIAL_UPSTREAM_TAG
+  let expectedBaseSha = markerSha
+  if (!baseTag) {
+    throw new Error('The first upstream sync requires INITIAL_UPSTREAM_RELEASE_TAG.')
+  }
+  if (!RELEASE_TAG_PATTERN.test(baseTag) || (expectedBaseSha && !SHA_PATTERN.test(expectedBaseSha))) {
+    throw new Error('The repository upstream sync markers or initial release tag are invalid.')
+  }
+
+  const tags = new Set([baseTag, UPSTREAM_TAG])
+  for (const tag of tags) {
+    await retryGit([
+      'fetch', '--depth=1000', '--force', 'upstream',
+      `refs/tags/${tag}:refs/tags/${tag}`,
+    ])
+  }
+
+  const baseSha = gitText(['rev-parse', `refs/tags/${baseTag}^{commit}`])
+  const upstreamSha = gitText(['rev-parse', `refs/tags/${UPSTREAM_TAG}^{commit}`])
+  if (expectedBaseSha && baseSha !== expectedBaseSha) {
+    throw new Error(`Previous upstream tag ${baseTag} no longer resolves to the recorded SHA.`)
+  }
+  if (upstreamSha !== EXPECTED_UPSTREAM_SHA) {
+    throw new Error(`Upstream tag ${UPSTREAM_TAG} resolved to ${upstreamSha}, expected ${EXPECTED_UPSTREAM_SHA}.`)
+  }
+
+  if (baseSha === upstreamSha) {
+    process.stdout.write(`main already matches published Sub2API ${UPSTREAM_TAG}; no source changes to apply.\n`)
+    return
+  }
+  if (isAncestor(upstreamSha, baseSha)) {
+    process.stdout.write(`main already tracks a newer Sub2API source than ${UPSTREAM_TAG}; refusing to downgrade it.\n`)
+    return
+  }
+  if (!isAncestor(baseSha, upstreamSha)) {
+    throw new Error(`Upstream releases are not a verifiable forward update: ${baseTag} -> ${UPSTREAM_TAG}.`)
+  }
+
+  // The repository owns its release VERSION. Keep it independent from the
+  // upstream source VERSION while applying the rest of the release delta.
+  const patch = runGit([
+    'diff', '--binary', '--no-ext-diff', baseSha, upstreamSha, '--', '.',
+    ':(exclude)backend/cmd/server/VERSION',
+    ...[...THEME_OWNED_SOURCE_PATHS].map((file) => `:(exclude)${file}`),
+    ...UPSTREAM_EXCLUDED_SOURCE_PATHS.map((file) => `:(exclude)${file}`),
+    ...MERGED_SOURCE_PATHS.map((file) => `:(exclude)${file}`),
+  ], { quiet: true }).stdout
+  if (patch.length > 0) {
+    runGit(['apply', '--3way', '--index'], { input: patch })
+  }
+
+  await preserveThemeOwnedSource()
+  for (const file of MERGED_SOURCE_PATHS) {
+    await mergeSourceFile(baseSha, upstreamSha, file)
+  }
+
+  await verifySourceCompilation()
+
+  await writeFile(path.join(ROOT, '.apophis-repository-upstream-sha'), `${upstreamSha}\n`, 'utf8')
+  await writeFile(path.join(ROOT, '.apophis-repository-upstream-tag'), `${UPSTREAM_TAG}\n`, 'utf8')
+  runGit(['add', '--all'])
+
+  const staged = runGit(['diff', '--cached', '--quiet'], { quiet: true, allowFailure: true })
+  if (staged.status === 0) {
+    process.stdout.write(`No file changes were needed for Sub2API ${UPSTREAM_TAG}.\n`)
+    return
+  }
+  if (staged.status !== 1) {
+    throw new Error('Could not inspect staged upstream changes.')
+  }
+
+  runGit(['config', 'user.name', 'github-actions[bot]'])
+  runGit(['config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'])
+  runGit(['commit', '-m', `chore(sync): apply Sub2API ${UPSTREAM_TAG} release delta`])
+
+  await retryGit(['fetch', PUSH_REMOTE, `+refs/heads/${TARGET_BRANCH}:refs/remotes/${PUSH_REMOTE}/${TARGET_BRANCH}`])
+  runGit(['rebase', `refs/remotes/${PUSH_REMOTE}/${TARGET_BRANCH}`])
+  await verifySourceCompilation()
+  await retryGit(['push', PUSH_REMOTE, `HEAD:refs/heads/${TARGET_BRANCH}`])
+  process.stdout.write(`Applied only the ${baseTag}..${UPSTREAM_TAG} Sub2API release delta to ${TARGET_BRANCH}.\n`)
+}
+
+main().catch((error) => {
+  process.stderr.write(`${error.message}\n`)
+  process.exitCode = 1
+})
