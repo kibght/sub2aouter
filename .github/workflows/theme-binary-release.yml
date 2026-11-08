@@ -31,7 +31,7 @@ on:
         type: string
 
 concurrency:
-  group: themed-binary-release-${{ inputs.release_ref || github.run_id }}
+  group: themed-binary-release
   cancel-in-progress: false
 
 permissions:
@@ -180,6 +180,10 @@ jobs:
                   EXISTING_RELEASE_SOURCE_MATCH=true
                 fi
               fi
+              if [[ "$EXISTING_RELEASE_SOURCE_MATCH" == "true" ]] &&
+                 [[ "$(git rev-parse 'refs/apophis/existing-release^{tree}')" != "$(git rev-parse 'HEAD^{tree}')" ]]; then
+                EXISTING_RELEASE_SOURCE_MATCH=false
+              fi
             fi
             MISSING_ASSETS=()
             for asset in "${REQUIRED_ASSETS[@]}"; do
@@ -261,9 +265,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          source scripts/ci/retry.sh
           git tag -f "$RELEASE_TAG"
-          retry_with_backoff 4 10 git push --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
 
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         if: env.SHOULD_PUBLISH == 'true'
@@ -285,6 +287,7 @@ jobs:
             test -s "$artifact" || { echo "Missing release artifact: $artifact" >&2; exit 1; }
           done
           test -s dist/checksums.txt
+          node scripts/verify-release-assets.mjs --version "$RELEASE_VERSION" --dist dist
 
       - name: Publish GitHub binary release
         if: env.SHOULD_PUBLISH == 'true'
@@ -301,27 +304,44 @@ jobs:
           fi
 
           if [[ "$RELEASE_EXISTS" == "true" ]]; then
-            retry_with_backoff 4 10 gh release upload "$RELEASE_TAG" \
-              dist/*.tar.gz dist/*.zip dist/checksums.txt \
-              --repo "$GITHUB_REPOSITORY" \
-              --clobber
             retry_with_backoff 4 10 gh release edit "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
-              --target themed-release \
-              --title "$RELEASE_TITLE" \
-              --notes-file .apophis-release-notes.md \
-              --latest \
-              --draft=false \
-              --prerelease=false
+              --draft=true
           else
             retry_with_backoff 4 10 gh release create "$RELEASE_TAG" \
-              dist/*.tar.gz dist/*.zip dist/checksums.txt \
               --repo "$GITHUB_REPOSITORY" \
               --target themed-release \
               --title "$RELEASE_TITLE" \
               --notes-file .apophis-release-notes.md \
-              --latest
+              --draft
           fi
+
+          retry_with_backoff 4 10 gh release upload "$RELEASE_TAG" \
+            "dist/sub2api_${RELEASE_VERSION}_linux_amd64.tar.gz" \
+            "dist/sub2api_${RELEASE_VERSION}_linux_arm64.tar.gz" \
+            "dist/sub2api_${RELEASE_VERSION}_windows_amd64.zip" \
+            "dist/sub2api_${RELEASE_VERSION}_darwin_amd64.tar.gz" \
+            "dist/sub2api_${RELEASE_VERSION}_darwin_arm64.tar.gz" \
+            dist/checksums.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+          RELEASE_API_URL="$(retry_with_backoff 5 3 gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json apiUrl --jq '.apiUrl')"
+          STAGED_RELEASE_JSON="${RUNNER_TEMP}/apophis-staged-release.json"
+          retry_with_backoff 5 3 gh api "$RELEASE_API_URL" > "$STAGED_RELEASE_JSON"
+          node scripts/verify-release-assets.mjs \
+            --version "$RELEASE_VERSION" \
+            --release-json "$STAGED_RELEASE_JSON" \
+            --dist dist
+
+          retry_with_backoff 4 10 git push --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          retry_with_backoff 4 10 gh release edit "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target themed-release \
+            --title "$RELEASE_TITLE" \
+            --notes-file .apophis-release-notes.md \
+            --latest \
+            --draft=false \
+            --prerelease=false
 
       - name: Verify published GitHub release
         if: env.SHOULD_PUBLISH == 'true'

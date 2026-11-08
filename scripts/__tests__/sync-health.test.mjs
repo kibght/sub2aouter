@@ -6,6 +6,7 @@ import {
   fetchWorkflowSnapshot,
   fetchReleaseSnapshot,
   fetchRepositoryContent,
+  waitForSyncRecovery,
 } from '../lib/sync-health.mjs'
 
 const NOW = new Date('2026-08-17T12:00:00Z')
@@ -324,4 +325,171 @@ test('repository content API decodes base64 metadata', async () => {
     sleep: async () => {},
   })
   assert.equal(content, '0.1.242\n')
+})
+
+test('publication is timed from the current stage, with an independent whole-run limit', () => {
+  const publisher = workflow({
+    maxRunMinutes: 330,
+    latestRun: { status: 'in_progress', createdAt: '2026-08-17T09:00:00Z' },
+    jobs: [
+      { name: 'sync-build-publish', status: 'completed', completedAt: '2026-08-17T10:20:00Z' },
+      { name: 'binary-release', status: 'in_progress', startedAt: '2026-08-17T10:30:00Z' },
+    ],
+  })
+  assert.equal(evaluateSyncHealth({ now: NOW, workflows: [publisher] }).state, 'running')
+  publisher.jobs[1].startedAt = '2026-08-17T10:29:00Z'
+  assert.equal(evaluateSyncHealth({ now: NOW, workflows: [publisher] }).state, 'critical')
+  publisher.jobs[1].startedAt = '2026-08-17T11:50:00Z'
+  publisher.latestRun.createdAt = '2026-08-17T06:00:00Z'
+  const overBudget = evaluateSyncHealth({ now: NOW, workflows: [publisher] })
+  assert.equal(overBudget.state, 'critical')
+  assert.equal(overBudget.workflows[0].reason, 'run-budget-exceeded')
+})
+
+test('waiting for the next stage uses the last completion and still detects a stuck queue', () => {
+  const publisher = workflow({
+    latestRun: { status: 'in_progress', createdAt: '2026-08-17T09:00:00Z' },
+    jobs: [{ status: 'completed', completedAt: '2026-08-17T11:50:00Z' }, { status: 'queued' }],
+  })
+  assert.equal(evaluateSyncHealth({ now: NOW, workflows: [publisher] }).state, 'running')
+  publisher.jobs[0].completedAt = '2026-08-17T10:00:00Z'
+  assert.equal(evaluateSyncHealth({ now: NOW, workflows: [publisher] }).state, 'critical')
+  publisher.jobs = [{ status: 'in_progress', startedAt: 'invalid' }]
+  assert.equal(evaluateSyncHealth({ now: NOW, workflows: [publisher] }).state, 'critical')
+})
+
+test('an active coordinator does not hide a failed publisher while suppressing duplicate recovery', () => {
+  const result = evaluateSyncHealth({
+    now: NOW,
+    workflows: [
+      workflow({ id: 'coordinator', latestRun: { status: 'in_progress', createdAt: '2026-08-17T11:55:00Z' } }),
+      workflow({ id: 'publisher', latestRun: { status: 'completed', conclusion: 'failure', createdAt: '2026-08-17T11:50:00Z' } }),
+    ],
+  })
+  assert.equal(result.state, 'running')
+  assert.equal(result.shouldDispatch, false)
+  assert.equal(result.shouldAlert, true)
+  assert.match(result.summary, /failure/)
+})
+
+test('workflow snapshots fetch current job phases for an active run', async () => {
+  const urls = []
+  const result = await fetchWorkflowSnapshot({
+    repository: 'owner/repo', workflowId: 'sync.yml',
+    fetchImpl: async (url) => {
+      urls.push(url)
+      const payload = urls.length === 1
+        ? { workflow_runs: [{ id: 42, status: 'in_progress', created_at: '2026-08-17T09:00:00Z' }] }
+        : { jobs: [{ name: 'binary-release', status: 'in_progress', started_at: '2026-08-17T11:30:00Z' }] }
+      return new Response(JSON.stringify(payload), { status: 200 })
+    },
+  })
+  assert.match(urls[1], /actions\/runs\/42\/jobs\?/)
+  assert.equal(evaluateSyncHealth({ now: NOW, workflows: [result] }).state, 'running')
+})
+
+test('a newer queued run cannot hide an older execution or its whole-run timeout', async () => {
+  const urls = []
+  const snapshot = await fetchWorkflowSnapshot({
+    repository: 'owner/repo', workflowId: 'sync.yml',
+    fetchImpl: async (url) => {
+      urls.push(url)
+      const payload = url.includes('/workflows/')
+        ? { workflow_runs: [
+          { id: 2, status: 'queued', created_at: '2026-08-17T11:55:00Z' },
+          { id: 1, status: 'in_progress', created_at: '2026-08-17T05:00:00Z' },
+        ] }
+        : { jobs: url.includes('/runs/1/')
+          ? [{ name: 'binary-release', status: 'in_progress', started_at: '2026-08-17T11:30:00Z' }]
+          : [] }
+      return new Response(JSON.stringify(payload), { status: 200 })
+    },
+  })
+  assert.equal(snapshot.latestRun.databaseId, '2')
+  assert.deepEqual(snapshot.activeRuns.map((run) => run.databaseId), ['2', '1'])
+  assert.ok(urls.some((url) => url.includes('/runs/1/jobs?')))
+  assert.ok(urls.some((url) => url.includes('/runs/2/jobs?')))
+  const overBudget = evaluateSyncHealth({ now: NOW, workflows: [{ ...snapshot, maxRunMinutes: 330 }] })
+  assert.equal(overBudget.state, 'critical')
+  assert.equal(overBudget.shouldAlert, true)
+  assert.equal(overBudget.shouldDispatch, false)
+  assert.ok(overBudget.workflows.some((entry) => entry.reason === 'run-budget-exceeded'))
+
+  snapshot.activeRuns[1].createdAt = '2026-08-17T09:00:00Z'
+  const progressing = evaluateSyncHealth({ now: NOW, workflows: [{ ...snapshot, maxRunMinutes: 330 }] })
+  assert.equal(progressing.state, 'running')
+  assert.equal(progressing.shouldAlert, false)
+  assert.equal(progressing.shouldDispatch, false)
+  snapshot.activeRuns[1].jobs[0].startedAt = '2026-08-17T10:00:00Z'
+  const stuckStage = evaluateSyncHealth({ now: NOW, workflows: [{ ...snapshot, maxRunMinutes: 330 }] })
+  assert.equal(stuckStage.state, 'critical')
+  assert.equal(stuckStage.shouldAlert, true)
+  assert.equal(stuckStage.shouldDispatch, false)
+  assert.ok(stuckStage.workflows.some((entry) => entry.reason === 'stuck-active-run'))
+})
+
+test('inspecting an older execution retains a newer failed run without dispatching duplicate work', async () => {
+  const snapshot = await fetchWorkflowSnapshot({
+    repository: 'owner/repo', workflowId: 'sync.yml',
+    fetchImpl: async (url) => new Response(JSON.stringify(url.includes('/workflows/')
+      ? { workflow_runs: [
+        { id: 3, status: 'completed', conclusion: 'failure', created_at: '2026-08-17T11:55:00Z' },
+        { id: 2, status: 'in_progress', created_at: '2026-08-17T11:30:00Z' },
+      ] }
+      : { jobs: [{ status: 'in_progress', started_at: '2026-08-17T11:35:00Z' }] }), { status: 200 }),
+  })
+  assert.equal(snapshot.latestRun.databaseId, '3')
+  assert.equal(snapshot.latestRun.conclusion, 'failure')
+  const result = evaluateSyncHealth({ now: NOW, workflows: [snapshot] })
+  assert.equal(result.state, 'running')
+  assert.equal(result.shouldAlert, true)
+  assert.equal(result.shouldDispatch, false)
+  assert.match(result.summary, /failure/)
+})
+
+test('job snapshots fail closed on inspection errors and honor the coordinator CI timeout', async () => {
+  await assert.rejects(fetchWorkflowSnapshot({
+    repository: 'owner/repo', workflowId: 'sync.yml',
+    fetchImpl: async (url) => new Response(JSON.stringify(url.includes('/jobs?') ? {} : {
+      workflow_runs: [{ id: 42, status: 'in_progress', created_at: '2026-08-17T09:00:00Z' }],
+    }), { status: 200 }),
+  }), /missing jobs/)
+  const coordinator = workflow({
+    jobTimeoutMinutes: 360, maxRunMinutes: 900,
+    latestRun: { status: 'in_progress', createdAt: '2026-08-17T06:00:00Z' },
+    jobs: [{ status: 'in_progress', startedAt: '2026-08-17T07:00:00Z' }],
+  })
+  assert.equal(evaluateSyncHealth({ now: NOW, workflows: [coordinator] }).state, 'running')
+})
+
+test('recovery rechecks observe completion instead of retaining the initial stale alarm', async () => {
+  let clock = 0
+  const states = ['recoverable', 'running', 'healthy']
+  const result = await waitForSyncRecovery({
+    inspect: async () => {
+      const state = states.shift()
+      return { state, shouldAlert: state === 'recoverable', summary: state }
+    },
+    waitMs: 60, pollIntervalMs: 20, now: () => clock,
+    sleep: async (delay) => { clock += delay },
+  })
+  assert.equal(result.state, 'healthy')
+  assert.equal(result.shouldAlert, false)
+  assert.equal(clock, 40)
+})
+
+test('bounded recovery waits preserve pending work and real failure states', async () => {
+  for (const state of ['running', 'recoverable', 'critical']) {
+    let clock = 0
+    const result = await waitForSyncRecovery({
+      inspect: async () => ({ state, shouldAlert: state !== 'running', summary: state }),
+      waitMs: 50, pollIntervalMs: 20, now: () => clock,
+      sleep: async (delay) => { clock += delay },
+    })
+    assert.equal(result.state, state)
+    assert.equal(result.shouldAlert, state !== 'running')
+    assert.equal(clock, state === 'critical' ? 0 : 50)
+    assert.equal(result.recoveryPending === true, state === 'running')
+    if (state === 'running') assert.match(result.summary, /next watchdog/)
+  }
 })

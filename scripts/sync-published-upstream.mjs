@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import process from 'node:process'
+import { resolveWireConflict } from './lib/upstream-wire-merge.mjs'
 
 const ROOT = path.resolve(process.argv[2] || '.')
 const UPSTREAM_REPOSITORY = process.env.UPSTREAM_REPOSITORY || 'https://github.com/Wei-Shaw/sub2api.git'
@@ -60,108 +61,81 @@ function gitBlob(ref, file) {
   return runGit(['show', `${ref}:${file}`], { quiet: true }).stdout.toString('utf8')
 }
 
-function resolveConflictBlocks(text, resolver) {
-  const lines = text.split(/\r?\n/)
-  const output = []
-  let index = 0
-  while (index < lines.length) {
-    if (!lines[index].startsWith('<<<<<<< ')) {
-      output.push(lines[index])
-      index += 1
-      continue
-    }
-
-    const ours = []
-    const base = []
-    const theirs = []
-    index += 1
-    while (index < lines.length && !lines[index].startsWith('||||||| ') && !lines[index].startsWith('=======')) {
-      ours.push(lines[index])
-      index += 1
-    }
-    if (index < lines.length && lines[index].startsWith('||||||| ')) {
-      index += 1
-      while (index < lines.length && !lines[index].startsWith('=======')) {
-        base.push(lines[index])
-        index += 1
-      }
-    }
-    if (index >= lines.length || !lines[index].startsWith('=======')) {
-      throw new Error('Malformed merge conflict while synchronizing upstream source.')
-    }
-    index += 1
-    while (index < lines.length && !lines[index].startsWith('>>>>>>> ')) {
-      theirs.push(lines[index])
-      index += 1
-    }
-    if (index >= lines.length) {
-      throw new Error('Malformed merge conflict while synchronizing upstream source.')
-    }
-    index += 1
-    output.push(...resolver({ ours, base, theirs }))
-  }
-  return output.join('\n')
+function optionalGitBlob(ref, file) {
+  const listing = gitText(['ls-tree', ref, '--', file])
+  return listing ? gitBlob(ref, file) : null
 }
 
-function resolveWireConflict(file, merged) {
-  return resolveConflictBlocks(merged, ({ ours, theirs }) => {
-    if (file.endsWith('wire_gen.go')) {
-      const upstreamLine = theirs.find((line) => line.includes('handlers := handler.ProvideHandlers('))
-      const localLine = ours.find((line) => line.includes('handlers := handler.ProvideHandlers('))
-      if (!upstreamLine || !localLine) {
-        throw new Error(`Could not combine handler wiring in ${file}.`)
-      }
-      const combined = upstreamLine.replace(
-        'batchImageHandler, idempotencyCoordinator',
-        'batchImageHandler, botHandler, idempotencyCoordinator',
-      )
-      if (!combined.includes('botHandler')) {
-        throw new Error(`Upstream handler wiring has no bot insertion point in ${file}.`)
-      }
-      return [combined]
-    }
-
-    const union = [...ours, ...theirs]
-    const seen = new Set()
-    return union.filter((line) => {
-      if (!line.trim() || seen.has(line)) return false
-      seen.add(line)
-      return true
-    })
-  })
+function sameSource(left, right) {
+  if (left === null || right === null) return left === right
+  return left.replace(/\r\n/g, '\n') === right.replace(/\r\n/g, '\n')
 }
 
 async function mergeSourceFile(baseSha, upstreamSha, file) {
   const currentPath = path.join(ROOT, file)
-  if (!existsSync(currentPath)) return
+  const baseText = optionalGitBlob(baseSha, file)
+  const theirsText = optionalGitBlob(upstreamSha, file)
+  let oursText
+  try {
+    oursText = await readFile(currentPath, 'utf8')
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+    oursText = null
+  }
+  if (sameSource(baseText, theirsText) || sameSource(oursText, theirsText)) return
+  if (sameSource(oursText, baseText)) {
+    if (theirsText === null) {
+      await rm(currentPath)
+    } else {
+      await mkdir(path.dirname(currentPath), { recursive: true })
+      await writeFile(currentPath, theirsText, 'utf8')
+    }
+    return
+  }
+  if (baseText === null || theirsText === null || oursText === null) {
+    throw new Error(`Conflicting Wire file addition or deletion requires manual resolution: ${file}.`)
+  }
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'sub2api-upstream-merge-'))
   const basePath = path.join(temporaryRoot, 'base')
   const theirsPath = path.join(temporaryRoot, 'theirs')
   try {
-    let baseText
-    let theirsText
-    try {
-      baseText = gitBlob(baseSha, file)
-      theirsText = gitBlob(upstreamSha, file)
-    } catch {
-      return
-    }
     await writeFile(basePath, baseText, 'utf8')
     await writeFile(theirsPath, theirsText, 'utf8')
     const result = runGit([
       'merge-file', '-p', '--diff3', currentPath, basePath, theirsPath,
     ], { quiet: true, allowFailure: true })
-    if (result.status > 1) {
+    // merge-file returns the number of conflicts (up to 127), not just 1.
+    if (result.status === null || result.status < 0 || result.status > 127) {
+      if (result.stderr?.length) process.stderr.write(result.stderr)
       throw new Error(`Could not merge repository-owned source file ${file}.`)
     }
     let merged = result.stdout.toString('utf8')
-    if (result.status === 1) {
-      merged = resolveWireConflict(file, merged)
-    }
+    if (result.status !== 0) merged = resolveWireConflict(file, merged)
     if (merged.includes('<<<<<<< ') || merged.includes('>>>>>>> ')) {
       throw new Error(`Unresolved merge conflict remains in ${file}.`)
     }
     await writeFile(currentPath, merged, 'utf8')
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true })
+  }
+}
+
+async function verifySourceCompilation() {
+  // Non-Go fixtures can exercise the release delta without a toolchain. A real
+  // backend must compile before its sync markers or remote branch are updated.
+  if (!existsSync(path.join(ROOT, 'backend/go.mod'))) return
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'sub2api-upstream-build-'))
+  try {
+    const result = spawnSync('go', [
+      'build', '-mod=readonly', '-o', path.join(temporaryRoot, 'server'), './cmd/server',
+    ], {
+      cwd: path.join(ROOT, 'backend'),
+      stdio: 'inherit',
+      windowsHide: true,
+      env: { ...process.env, CGO_ENABLED: '0' },
+    })
+    if (result.error) throw result.error
+    if (result.status !== 0) throw new Error('Synchronized backend does not compile; refusing to push source changes.')
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true })
   }
@@ -300,6 +274,8 @@ async function main() {
     await mergeSourceFile(baseSha, upstreamSha, file)
   }
 
+  await verifySourceCompilation()
+
   await writeFile(path.join(ROOT, '.apophis-repository-upstream-sha'), `${upstreamSha}\n`, 'utf8')
   await writeFile(path.join(ROOT, '.apophis-repository-upstream-tag'), `${UPSTREAM_TAG}\n`, 'utf8')
   runGit(['add', '--all'])
@@ -319,6 +295,7 @@ async function main() {
 
   await retryGit(['fetch', PUSH_REMOTE, `+refs/heads/${TARGET_BRANCH}:refs/remotes/${PUSH_REMOTE}/${TARGET_BRANCH}`])
   runGit(['rebase', `refs/remotes/${PUSH_REMOTE}/${TARGET_BRANCH}`])
+  await verifySourceCompilation()
   await retryGit(['push', PUSH_REMOTE, `HEAD:refs/heads/${TARGET_BRANCH}`])
   process.stdout.write(`Applied only the ${baseTag}..${UPSTREAM_TAG} Sub2API release delta to ${TARGET_BRANCH}.\n`)
 }

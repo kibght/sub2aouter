@@ -8,6 +8,7 @@ import {
   fetchReleaseSnapshot,
   fetchRepositoryContent,
   fetchWorkflowSnapshot,
+  waitForSyncRecovery,
 } from './lib/sync-health.mjs'
 
 function parseArguments(argv) {
@@ -41,13 +42,7 @@ function githubOutputLines(result) {
   ].join('\n') + '\n'
 }
 
-async function main() {
-  const args = parseArguments(process.argv.slice(2))
-  const repository = args.repository || process.env.GITHUB_REPOSITORY
-  if (!repository) {
-    throw new Error('--repository or GITHUB_REPOSITORY is required')
-  }
-
+async function inspectHealth(args, repository) {
   const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || ''
   const coordinator = args['coordinator-workflow'] || 'infinite-canvas-upstream-sync.yml'
   const publisher = args['publisher-workflow'] || 'upstream-theme-sync.yml'
@@ -68,9 +63,14 @@ async function main() {
     ...(await fetchReleaseSnapshot({ repository, tag: `v${version}`, token })),
     version,
   }
-  const workflows = [coordinatorSnapshot, publisherSnapshot]
+  const workflows = [
+    // Reusable coordinator CI and its merge job use GitHub's 360-minute
+    // default. Publication instead has several sequential 90-minute jobs.
+    { ...coordinatorSnapshot, jobTimeoutMinutes: 360, maxRunMinutes: 900 },
+    { ...publisherSnapshot, maxRunMinutes: 330 },
+  ]
 
-  const result = evaluateSyncHealth({
+  return evaluateSyncHealth({
     now: args.now || new Date(),
     staleAfterMinutes: Number(args['stale-after-minutes'] || 120),
     stuckAfterMinutes: Number(args['stuck-after-minutes'] || 90),
@@ -78,6 +78,21 @@ async function main() {
     release,
     upstream: { ...upstream, synchronizedTag, synchronizedId },
   })
+}
+
+async function main() {
+  const args = parseArguments(process.argv.slice(2))
+  const repository = args.repository || process.env.GITHUB_REPOSITORY
+  if (!repository) {
+    throw new Error('--repository or GITHUB_REPOSITORY is required')
+  }
+  const result = args['wait-for-recovery-seconds'] !== undefined
+    ? await waitForSyncRecovery({
+      inspect: () => inspectHealth(args, repository),
+      waitMs: Number(args['wait-for-recovery-seconds']) * 1_000,
+      pollIntervalMs: Number(args['poll-interval-seconds'] || 20) * 1_000,
+    })
+    : await inspectHealth(args, repository)
   const json = `${JSON.stringify(result, null, 2)}\n`
   process.stdout.write(json)
 

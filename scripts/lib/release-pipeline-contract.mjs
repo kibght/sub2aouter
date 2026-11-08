@@ -18,6 +18,10 @@ export const RELEASE_PIPELINE_FILES = Object.freeze([
   'scripts/ci/release-identity.sh',
   'scripts/ci/preserve-upstream-metadata.sh',
   'scripts/sync-published-upstream.mjs',
+  'scripts/lib/upstream-wire-merge.mjs',
+  'scripts/ci/image-digest.sh',
+  'scripts/ci/align-release-image.sh',
+  'scripts/verify-release-assets.mjs',
   'scripts/write-release-notes.mjs',
   'scripts/lib/release-notes.mjs',
   'scripts/ci/restore-workflow-snapshots.sh',
@@ -164,7 +168,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.canvas_freshness', syncPath, sync.includes('name: Verify Infinite Canvas dependency is current') && sync.includes('LATEST_CANVAS_SHA') && sync.includes('node scripts/resolve-github-release.mjs') && sync.includes('--repository basketikun/infinite-canvas'), 'Theme publication must stop when main is behind the latest published Infinite Canvas release.')
   check('sync.release_notes_encoding', syncPath, sync.includes('node scripts/write-release-notes.mjs') && !/\?{4,}/.test(sync), 'Release notes must use the concrete notes composer without encoding placeholders.')
   check('sync.repository_source', syncPath,
-    sync.includes('git worktree add --detach "$GENERATED_DIR" "${{ github.sha }}"') &&
+    sync.includes('git worktree add --detach "$GENERATED_DIR" "$(git rev-parse HEAD)"') &&
     sync.includes('RELEASE_KIND="repository"') &&
     sync.includes('[[ "$REPOSITORY_RELEASE" == "true" ]]') &&
     sync.includes('Repository push: reusing themed-release without fetching upstream.'),
@@ -243,7 +247,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   'Sync must restore non-owned workflow snapshots through one shared helper before verification and final publication.')
   check('sync.binary_recovery', syncPath,
     sync.includes('NEEDS_BINARY_RELEASE') &&
-    sync.includes('gh release view "$LATEST_RELEASE_TAG"') &&
+    sync.includes('gh release view "$BINARY_RELEASE_TAG"') &&
     sync.includes('LATEST_RELEASE_VERSION') &&
     sync.includes('targetCommitish') &&
     sync.includes('run_binary=$RUN_BINARY') &&

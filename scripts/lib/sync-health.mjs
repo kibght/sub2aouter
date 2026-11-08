@@ -153,6 +153,30 @@ export async function fetchWorkflowSnapshot(options) {
       .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
     const latestRun = runs[0] || null
     const latestSuccess = runs.find((run) => run.status === 'completed' && run.conclusion === 'success') || null
+    const activeRuns = await Promise.all(runs.filter((run) => ACTIVE_STATUSES.has(run.status)).map(async (run) => {
+      if (!run.databaseId) return { ...run }
+      const jobs = []
+      for (let page = 1; ; page += 1) {
+        const jobResult = await fetchJsonEndpoint({
+          endpoint: `${apiBaseUrl.replace(/\/$/, '')}/repos/${repository}/actions/runs/${encodeURIComponent(run.databaseId)}/jobs?per_page=100&filter=latest&page=${page}`,
+          token, fetchImpl, sleep, random, attempts, baseDelayMs, maxDelayMs,
+          description: 'Workflow job query',
+        })
+        if (!Array.isArray(jobResult.payload?.jobs)) {
+          throw new SyncHealthError('Workflow job query response is missing jobs.')
+        }
+        jobs.push(...jobResult.payload.jobs.map((job) => ({
+          name: job.name || '',
+          status: job.status || '',
+          startedAt: job.started_at || '',
+          completedAt: job.completed_at || '',
+        })))
+        if (jobResult.payload.jobs.length < 100) break
+        if (page >= 10) throw new SyncHealthError('Workflow job query exceeded its pagination limit.')
+      }
+      return { ...run, jobs }
+    }))
+    const latestActiveRun = activeRuns.find((run) => run.databaseId === latestRun?.databaseId && run.createdAt === latestRun?.createdAt)
 
     return {
       id: workflowId,
@@ -160,6 +184,8 @@ export async function fetchWorkflowSnapshot(options) {
       latestRun,
       latestSuccessAt: latestSuccess?.updatedAt || '',
       runs,
+      activeRuns,
+      ...(latestActiveRun?.jobs ? { jobs: latestActiveRun.jobs } : {}),
     }
   }
 
@@ -315,7 +341,17 @@ export function evaluateSyncHealth(options) {
   const runningReasons = []
   const details = []
 
-  for (const workflow of workflows) {
+  // A newer queued run must not conceal an older run holding the concurrency
+  // lock. Keep the latest result as well, so a newer failure is still reported.
+  const observedWorkflows = workflows.flatMap((workflow) => [
+    workflow,
+    ...(workflow?.activeRuns || [])
+      .filter((run) => ACTIVE_STATUSES.has(run.status) && (
+        run.databaseId !== workflow.latestRun?.databaseId || run.createdAt !== workflow.latestRun?.createdAt
+      ))
+      .map((run) => ({ ...workflow, latestRun: run, jobs: run.jobs })),
+  ])
+  for (const workflow of observedWorkflows) {
     const name = workflow?.name || workflow?.id || 'unknown workflow'
     const latestRun = workflow?.latestRun
     if (!latestRun) {
@@ -333,8 +369,30 @@ export function evaluateSyncHealth(options) {
     }
 
     if (ACTIVE_STATUSES.has(latestRun.status)) {
-      const activeAge = ageMinutes(now, createdAt)
-      if (activeAge > stuckAfterMinutes) {
+      const totalAge = ageMinutes(now, createdAt)
+      let activeAge = totalAge
+      let activeLimit = stuckAfterMinutes
+      if (Array.isArray(workflow.jobs)) {
+        const activeJobs = workflow.jobs.filter((job) => job.status === 'in_progress')
+        if (activeJobs.some((job) => !validDate(job.startedAt))) {
+          criticalReasons.push(`${name} contains an invalid active-job timestamp.`)
+          details.push({ id: workflow.id || '', name, state: 'critical', reason: 'invalid-job-timestamp' })
+          continue
+        }
+        if (activeJobs.length > 0) {
+          activeAge = Math.max(...activeJobs.map((job) => ageMinutes(now, job.startedAt)))
+          activeLimit = workflow.jobTimeoutMinutes || stuckAfterMinutes
+        } else {
+          // A workflow can wait between jobs; time that wait from its last
+          // completed stage rather than from the beginning of the whole run.
+          const progressTimes = [createdAt, ...workflow.jobs.map((job) => validDate(job.completedAt)).filter(Boolean)]
+          activeAge = ageMinutes(now, new Date(Math.max(...progressTimes.map((date) => date.getTime()))))
+        }
+      }
+      if (workflow.maxRunMinutes && totalAge > workflow.maxRunMinutes) {
+        criticalReasons.push(`${name} exceeded its whole-run budget at ${formatAge(totalAge)}.`)
+        details.push({ id: workflow.id || '', name, state: 'critical', reason: 'run-budget-exceeded', ageMinutes: totalAge })
+      } else if (activeAge > activeLimit) {
         criticalReasons.push(`${name} is stuck in ${latestRun.status} for ${formatAge(activeAge)}.`)
         details.push({ id: workflow?.id || '', name, state: 'critical', reason: 'stuck-active-run', ageMinutes: activeAge })
       } else {
@@ -420,7 +478,7 @@ export function evaluateSyncHealth(options) {
     reasons = criticalReasons
   } else if (runningReasons.length > 0) {
     state = 'running'
-    reasons = runningReasons
+    reasons = [...runningReasons, ...recoverableReasons]
   } else if (recoverableReasons.length > 0) {
     state = 'recoverable'
     reasons = recoverableReasons
@@ -430,7 +488,9 @@ export function evaluateSyncHealth(options) {
     state,
     healthy: state === 'healthy' || state === 'running',
     shouldDispatch: state === 'recoverable',
-    shouldAlert: state === 'recoverable' || state === 'critical',
+    shouldAlert: state === 'recoverable' || state === 'critical' || (
+      state === 'running' && details.some((workflow) => workflow.reason === 'latest-run-failure')
+    ),
     reasons,
     summary: reasons.length > 0 ? reasons.join(' ') : (release ? 'All synchronization workflows and generated release assets are healthy.' : 'All synchronization workflows have a fresh successful run.'),
     evaluatedAt: now.toISOString(),
@@ -439,5 +499,34 @@ export function evaluateSyncHealth(options) {
     workflows: details,
     release: releaseDetails,
     upstream: upstreamDetails,
+  }
+}
+
+export async function waitForSyncRecovery(options) {
+  const {
+    inspect,
+    waitMs = 300_000,
+    pollIntervalMs = 20_000,
+    now = Date.now,
+    sleep = defaultSleep,
+  } = options
+  if (typeof inspect !== 'function' || !Number.isFinite(waitMs) || waitMs < 0 ||
+      !Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) {
+    throw new SyncHealthError('Recovery wait requires a health inspector and valid timing limits.')
+  }
+  const deadline = now() + waitMs
+  while (true) {
+    const result = await inspect()
+    if (result.state === 'healthy' || result.state === 'critical') return result
+    const remaining = deadline - now()
+    if (remaining <= 0) {
+      if (result.state !== 'running') return result
+      return {
+        ...result,
+        recoveryPending: true,
+        summary: `Recovery is still in progress; the next watchdog run will inspect it again. ${result.summary}`,
+      }
+    }
+    await sleep(Math.min(pollIntervalMs, remaining))
   }
 }

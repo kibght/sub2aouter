@@ -15,6 +15,14 @@ test('manual repository publication checks out and records main explicitly', asy
   assert.doesNotMatch(workflow, /RELEASE_SOURCE_SHA="\$\{\{ github\.sha \}\}"/)
 })
 
+test('manual publication can reach binaries after its upstream synchronization ancestor is skipped', async () => {
+  const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
+  const binaryJob = workflow.split('\n  binary-release:\n')[1]?.split('\n  promote-latest:\n')[0]
+  assert.ok(binaryJob)
+  assert.match(binaryJob, /if: \$\{\{ !cancelled\(\) && needs\.sync-build-publish\.result == 'success'/)
+  assert.match(binaryJob, /needs\.sync-build-publish\.outputs\.run_binary == 'true'/)
+})
+
 test('upstream theme workflow runs the full regression suite before publishing latest', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
   assert.match(workflow, /pnpm run test:run/)
@@ -46,7 +54,7 @@ test('upstream sync verifies the release contract before fetching upstream', asy
 test('manual repository releases build the checked out main commit without fetching upstream', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
   assert.match(workflow, /REPOSITORY_RELEASE.*true/)
-  assert.match(workflow, /git worktree add --detach "\$GENERATED_DIR" "\$\{\{ github\.sha \}\}"/)
+  assert.match(workflow, /git worktree add --detach "\$GENERATED_DIR" "\$\(git rev-parse HEAD\)"/)
   assert.match(workflow, /RELEASE_KIND="repository"/)
   assert.match(workflow, /\u672c\u6b21\u4fee\u590d\u5185\u5bb9/)
   assert.match(workflow, /\.apophis-release-notes\.md/)
