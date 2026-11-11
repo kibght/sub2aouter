@@ -1,0 +1,106 @@
+name: Automation Incident Alert
+
+on:
+  workflow_call:
+    inputs:
+      workflow_name:
+        description: Workflow that detected the incident
+        required: true
+        type: string
+      severity:
+        description: Incident severity
+        required: true
+        type: string
+      summary:
+        description: Operator-facing incident summary
+        required: true
+        type: string
+      run_url:
+        description: Run URL containing the evidence
+        required: true
+        type: string
+      issue_title:
+        description: Stable incident issue title
+        required: false
+        default: "[automation] Upstream synchronization unhealthy"
+        type: string
+    secrets:
+      TELEGRAM_BOT_TOKEN:
+        required: false
+      TELEGRAM_CHAT_ID:
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Create or update incident issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_TITLE: ${{ inputs.issue_title }}
+          WORKFLOW_NAME: ${{ inputs.workflow_name }}
+          SEVERITY: ${{ inputs.severity }}
+          INCIDENT_SUMMARY: ${{ inputs.summary }}
+          RUN_URL: ${{ inputs.run_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BODY_FILE=/tmp/automation-incident.md
+          {
+            printf '## Automation incident\n\n'
+            printf -- '- Severity: `%s`\n' "$SEVERITY"
+            printf -- '- Workflow: `%s`\n' "$WORKFLOW_NAME"
+            printf -- '- Repository: `%s`\n' "$GITHUB_REPOSITORY"
+            printf -- '- Observed at: `%s`\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            printf -- '- Run: %s\n\n' "$RUN_URL"
+            printf '### Summary\n\n%s\n' "$INCIDENT_SUMMARY"
+          } > "$BODY_FILE"
+
+          ISSUE_NUMBER="$(
+            gh issue list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --limit 100 \
+              --json number,title |
+              jq -r --arg title "$ISSUE_TITLE" '.[] | select(.title == $title) | .number' |
+              head -n 1
+          )"
+
+          if [[ -n "$ISSUE_NUMBER" ]]; then
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$BODY_FILE"
+            echo "Updated incident issue #${ISSUE_NUMBER}."
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body-file "$BODY_FILE"
+          fi
+
+      - name: Send optional Telegram alert
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          WORKFLOW_NAME: ${{ inputs.workflow_name }}
+          SEVERITY: ${{ inputs.severity }}
+          INCIDENT_SUMMARY: ${{ inputs.summary }}
+          RUN_URL: ${{ inputs.run_url }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$TELEGRAM_BOT_TOKEN" || -z "$TELEGRAM_CHAT_ID" ]]; then
+            echo "Telegram credentials are not configured; GitHub issue notification remains active."
+            exit 0
+          fi
+
+          MESSAGE="$(printf '[%s] %s\n%s\n%s' "$SEVERITY" "$WORKFLOW_NAME" "$INCIDENT_SUMMARY" "$RUN_URL")"
+          curl --fail --silent --show-error \
+            --retry 4 \
+            --retry-all-errors \
+            --connect-timeout 15 \
+            --max-time 45 \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" '{chat_id: $chat_id, text: $text, disable_web_page_preview: true}')"

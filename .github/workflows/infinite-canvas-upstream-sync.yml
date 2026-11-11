@@ -1,0 +1,264 @@
+name: Sync Infinite Canvas Upstream
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+
+concurrency:
+  group: infinite-canvas-upstream-sync
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      changed: ${{ steps.upstream.outputs.changed }}
+      update_sha: ${{ steps.update_branch.outputs.update_sha }}
+      pr_number: ${{ steps.pull_request.outputs.pr_number }}
+    env:
+      UPDATE_BRANCH: automation/infinite-canvas-upstream
+      CANVAS_REPOSITORY: basketikun/infinite-canvas
+    steps:
+      - name: Checkout repository and submodules
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Read Infinite Canvas published release
+        id: canvas_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_JSON=/tmp/infinite-canvas-release.json
+          node scripts/resolve-github-release.mjs \
+            --repository "$CANVAS_REPOSITORY" \
+            --json-output "$RELEASE_JSON" \
+            --github-output "$GITHUB_OUTPUT"
+          INFINITE_CANVAS_RELEASE_FOUND="$(jq -r '.found' "$RELEASE_JSON")"
+          INFINITE_CANVAS_RELEASE_TAG="$(jq -r '.tag' "$RELEASE_JSON")"
+          if [[ "$INFINITE_CANVAS_RELEASE_FOUND" == "false" ]]; then
+            echo "No published Infinite Canvas release; falling back to main."
+          fi
+          if [[ -n "$INFINITE_CANVAS_RELEASE_TAG" ]] && ! git check-ref-format "refs/tags/${INFINITE_CANVAS_RELEASE_TAG}"; then
+            echo "Invalid Infinite Canvas release tag: $INFINITE_CANVAS_RELEASE_TAG" >&2
+            exit 1
+          fi
+          printf 'INFINITE_CANVAS_RELEASE_TAG=%s\n' "$INFINITE_CANVAS_RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "Infinite Canvas published release: ${INFINITE_CANVAS_RELEASE_TAG:-none}"
+
+      - name: Detect upstream update
+        id: upstream
+        env:
+          RELEASE_FOUND: ${{ steps.canvas_release.outputs.found }}
+          RELEASE_TAG: ${{ steps.canvas_release.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          CURRENT_SHA="$(git rev-parse HEAD:integrations/infinite-canvas)"
+          if [[ "$RELEASE_FOUND" == "true" && -n "$RELEASE_TAG" ]]; then
+            retry_with_backoff 5 5 git -C integrations/infinite-canvas fetch --depth=1 origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+            LATEST_SHA="$(git -C integrations/infinite-canvas rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
+          else
+            retry_with_backoff 5 5 git -C integrations/infinite-canvas fetch --depth=1 origin main
+            LATEST_SHA="$(git -C integrations/infinite-canvas rev-parse FETCH_HEAD)"
+          fi
+          echo "current_sha=$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+          echo "latest_sha=$LATEST_SHA" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$CURRENT_SHA" == "$LATEST_SHA" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Infinite Canvas upstream is unchanged."
+          else
+            retry_with_backoff 5 5 git -C integrations/infinite-canvas fetch --depth=1000 origin main
+            if ! git -C integrations/infinite-canvas merge-base --is-ancestor "$CURRENT_SHA" "$LATEST_SHA"; then
+              echo "Refusing to downgrade or cross-grade Infinite Canvas: $CURRENT_SHA -> $LATEST_SHA" >&2
+              exit 1
+            fi
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git -C integrations/infinite-canvas checkout --detach "$LATEST_SHA"
+            echo "Infinite Canvas update: $CURRENT_SHA -> $LATEST_SHA"
+          fi
+
+      - name: Setup Bun
+        if: steps.upstream.outputs.changed == 'true'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.13
+
+      - name: Verify adapter against updated upstream
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          LATEST_SHA: ${{ steps.upstream.outputs.latest_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          node scripts/apply-infinite-canvas-patches.mjs --root integrations/infinite-canvas
+          pushd integrations/infinite-canvas/web
+          retry_with_backoff 3 10 bun install --frozen-lockfile
+          VITE_BASE=/canvas-app/ bun run typecheck
+          VITE_BASE=/canvas-app/ bun run build
+          cp ../VERSION dist/version.txt
+          popd
+          git -C integrations/infinite-canvas reset --hard "$LATEST_SHA"
+          git -C integrations/infinite-canvas clean -f -- web/src/lib/sub2-bridge.ts
+          test -z "$(git -C integrations/infinite-canvas status --short)"
+
+      - name: Run integration contract tests
+        if: steps.upstream.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/apply-sub2-infinite-canvas-integration.mjs --root . --check
+          node --test scripts/__tests__/infinite-canvas-integration.test.mjs scripts/__tests__/infinite-canvas-workflows.test.mjs
+
+      - name: Create update branch
+        id: update_branch
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          LATEST_SHA: ${{ steps.upstream.outputs.latest_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git checkout -B "$UPDATE_BRANCH"
+          git add integrations/infinite-canvas
+          git commit -m "chore: update Infinite Canvas upstream to $LATEST_SHA"
+          UPDATE_SHA="$(git rev-parse HEAD)"
+          retry_with_backoff 5 5 git push --force origin "$UPDATE_BRANCH"
+          echo "update_sha=$UPDATE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update pull request
+        id: pull_request
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          PR_NUMBER="$(retry_with_backoff 5 5 gh pr list --repo "$GITHUB_REPOSITORY" --head "$UPDATE_BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          if [[ -z "$PR_NUMBER" ]]; then
+            retry_with_backoff 5 5 gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head "$UPDATE_BRANCH" \
+              --title "chore: 自动同步 Infinite Canvas 上游" \
+              --body "自动更新 Infinite Canvas 子模块。适配补丁、TypeScript 检查和生产构建已通过；合并仍受仓库完整 CI 门禁保护。"
+            PR_NUMBER="$(retry_with_backoff 5 5 gh pr list --repo "$GITHUB_REPOSITORY" --head "$UPDATE_BRANCH" --base main --state open --json number --jq '.[0].number')"
+          fi
+          test -n "$PR_NUMBER"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+  full-ci:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    uses: ./.github/workflows/backend-ci.yml
+    with:
+      ref: ${{ needs.update.outputs.update_sha }}
+
+  merge:
+    needs: [update, full-ci]
+    if: needs.update.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge verified Infinite Canvas update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.update.outputs.pr_number }}
+          UPDATE_SHA: ${{ needs.update.outputs.update_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PR_NUMBER"
+          test -n "$UPDATE_SHA"
+          PR_HEAD_SHA="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.headRefOid')"
+          if [[ "$PR_HEAD_SHA" != "$UPDATE_SHA" ]]; then
+            echo "Infinite Canvas PR head changed after CI: $PR_HEAD_SHA != $UPDATE_SHA" >&2
+            exit 1
+          fi
+          [[ "$PR_HEAD_SHA" == "$UPDATE_SHA" ]]
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --match-head-commit "$UPDATE_SHA" --squash
+          PR_STATE="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state --jq '.state')"
+          if [[ "$PR_STATE" != "MERGED" ]]; then
+            echo "Infinite Canvas update pull request was not merged: $PR_STATE" >&2
+            exit 1
+          fi
+
+  dispatch-release:
+    needs: [update, full-ci, merge]
+    if: ${{ always() && needs.update.result == 'success' && (needs.update.outputs.changed == 'false' || (needs.update.outputs.changed == 'true' && needs.full-ci.result == 'success' && needs.merge.result == 'success')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout retry helper
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+
+      - name: Trigger unified upstream release sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          retry_with_backoff 5 5 gh workflow run upstream-theme-sync.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f repository_release=false \
+            -f scheduled_round=true
+
+  summary:
+    needs: [update, full-ci, merge, dispatch-release]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Write synchronization summary
+        env:
+          UPDATE_RESULT: ${{ needs.update.result }}
+          CHANGED: ${{ needs.update.outputs.changed }}
+          FULL_CI_RESULT: ${{ needs.full-ci.result }}
+          MERGE_RESULT: ${{ needs.merge.result }}
+          DISPATCH_RESULT: ${{ needs.dispatch-release.result }}
+        shell: bash
+        run: |
+          {
+            echo "## Infinite Canvas synchronization"
+            echo
+            echo "- Update check: \`${UPDATE_RESULT}\`"
+            echo "- Upstream changed: \`${CHANGED:-unknown}\`"
+            echo "- Full CI: \`${FULL_CI_RESULT}\`"
+            echo "- Merge: \`${MERGE_RESULT}\`"
+            echo "- Unified release dispatch: \`${DISPATCH_RESULT}\`"
+            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  alert-failure:
+    needs: [update, full-ci, merge, dispatch-release]
+    if: ${{ always() && (needs.update.result == 'failure' || needs.full-ci.result == 'failure' || needs.merge.result == 'failure' || needs.dispatch-release.result == 'failure') }}
+    uses: ./.github/workflows/automation-alert.yml
+    with:
+      workflow_name: Sync Infinite Canvas Upstream
+      severity: critical
+      summary: >-
+        update=${{ needs.update.result }}, full-ci=${{ needs.full-ci.result }},
+        merge=${{ needs.merge.result }}, dispatch=${{ needs.dispatch-release.result }}.
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    secrets: inherit
