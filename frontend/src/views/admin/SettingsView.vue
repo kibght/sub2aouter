@@ -13431,10 +13431,9 @@ watch(
 }
 
 .dark .settings-save-dock {
-  border-color: rgb(51 65 85 / 0.65);
-  background: rgb(15 23 42 / 0.86);
-  box-shadow:
-    0 14px 32px rgb(0 0 0 / 0.34),
-    0 1px 0 rgb(255 255 255 / 0.06) inset;
+  border-color: hsl(var(--border));
+  background: hsl(var(--card) / 0.96);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
 }
+
 </style>
