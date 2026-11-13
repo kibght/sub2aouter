@@ -55,6 +55,10 @@ const ALLOWED_PATHS = [
 const MIGRATION_SOURCE = 'backend/migrations/250_bot_checkins.sql'
 const OPTIONAL_OVERLAY_PATHS = [
   'backend/internal/handler/admin/setting_handler_partial_payload_test.go',
+  'backend/internal/handler/admin/setting_handler_bot_checkin_usage_test.go',
+  'backend/internal/repository/bot_checkin_repo_integration_test.go',
+  'backend/internal/service/bot_checkin_usage_test.go',
+  'backend/internal/service/setting_bot_checkin_usage_test.go',
   'backend/internal/server/router.go',
 ]
 const PATCH_PATHS = [...ALLOWED_PATHS, ...OPTIONAL_OVERLAY_PATHS].filter((file) => file !== MIGRATION_SOURCE)
@@ -206,6 +210,71 @@ function extractBlock(text, startMarker, endMarker) {
   return text.slice(start, end)
 }
 
+function replaceOrInsertBlock(target, source, startMarker, endMarker, label) {
+  const block = extractBlock(source, startMarker, endMarker)
+  const start = target.indexOf(startMarker)
+  if (start < 0) return insertOnce(target, endMarker, block, label)
+  const end = target.indexOf(endMarker, start)
+  if (end < 0) fail('cannot update ' + label + ': block end not found')
+  return target.slice(0, start) + block + target.slice(end)
+}
+
+const USAGE_FIELDS = ['UsageRequirement', 'RequiredTokens', 'RequiredAmount']
+
+// Shared settings files may be preserved on conflict to retain newer upstream
+// selectors. Carry the usage configuration through those files explicitly.
+function composeUsageSettingsText(relativePath, target, source) {
+  if (!source.includes('BotCheckInUsageRequirement') && !source.includes('SettingKeyBotCheckInUsageRequirement')) return target
+  const upsertLine = (identifier, anchor) => {
+    const sourceLine = source.split('\n').find((line) => identifier.test(line))
+    if (!sourceLine) fail('cannot compose usage settings in ' + relativePath + ': source line missing')
+    if (target.split('\n').some((line) => identifier.test(line))) {
+      return target.split('\n').map((line) => identifier.test(line) ? sourceLine : line).join('\n')
+    }
+    return insertBeforeRegex(target, anchor, sourceLine + '\n', relativePath)
+  }
+  if (relativePath.endsWith('/setting_handler.go')) {
+    for (const field of USAGE_FIELDS) {
+      target = upsertLine(new RegExp('^\\t\\tBotCheckIn' + field + ':'), /^\t\tBotCheckInEnabled:/m)
+    }
+  } else if (relativePath.endsWith('/setting_handler_update.go')) {
+    for (const field of USAGE_FIELDS) {
+      target = upsertLine(new RegExp('^\\tBotCheckIn' + field + '\\s+\\*'), /^\tBotCheckInEnabled\s/m)
+    }
+    const mergeStart = '\tbotCheckIn := previousSettings.BotCheckInSettings\n'
+    const mergeEnd = '\tif req.BotCheckInEnabled != nil {\n'
+    const sourceMerges = extractBlock(source, mergeStart, mergeEnd)
+    const mergeIndex = target.indexOf(mergeStart)
+    const enabledIndex = target.indexOf(mergeEnd, mergeIndex)
+    if (mergeIndex < 0 || enabledIndex < 0) fail('cannot compose usage setting merges in ' + relativePath)
+    target = target.slice(0, mergeIndex) + sourceMerges + target.slice(enabledIndex)
+    for (const field of USAGE_FIELDS) {
+      target = upsertLine(new RegExp('^\\t\\tBotCheckIn' + field + ':'), /^\t\tBotCheckInEnabled:/m)
+    }
+  } else if (relativePath.endsWith('/setting_update.go')) {
+    const normalization = '\tsettings.BotCheckInSettings = defaultBotCheckInUsage(settings.BotCheckInSettings)\n'
+    if (source.includes(normalization)) {
+      target = insertBeforeRegex(target, /^\tif err := validateBotCheckInSettings/m, normalization, relativePath)
+    }
+    for (const field of USAGE_FIELDS) {
+      target = upsertLine(new RegExp('^\\tupdates\\[SettingKeyBotCheckIn' + field + '\\]'), /^\tupdates\[SettingKeyBotCheckInEnabled\]/m)
+    }
+  }
+  return target
+}
+
+function composeUsageSettings() {
+  for (const relativePath of [
+    'backend/internal/handler/admin/setting_handler.go',
+    'backend/internal/handler/admin/setting_handler_update.go',
+    'backend/internal/service/setting_update.go',
+  ]) {
+    if (existsSync(path.join(root, relativePath))) {
+      writeTarget(relativePath, composeUsageSettingsText(relativePath, readTarget(relativePath), sourceFile(ref, relativePath)))
+    }
+  }
+}
+
 function composeBotHandler(source) {
   const relativePath = 'backend/internal/handler/bot_handler.go'
   if (!source.includes('type botCheckInReader interface {')) return
@@ -229,10 +298,8 @@ function composeBotHandler(source) {
   if (!target.includes('BindBonusGranted')) {
     target = insertBeforeRegex(target, /\tUser\s+botBindingClaimUser/m, responseFields, relativePath)
   }
-  const checkInResponse = extractBlock(source, 'type botCheckInResponse struct {', 'type botProfileResponse')
-  target = insertOnce(target, '\ntype botProfileResponse', '\n' + checkInResponse + '\n', relativePath)
-  const checkInMethod = extractBlock(source, '// CheckIn 领取机器人每日签到余额。', '// Unbind')
-  target = insertOnce(target, '// Unbind', checkInMethod + '\n', relativePath)
+  target = replaceOrInsertBlock(target, source, 'type botCheckInResponse struct {', 'type botProfileResponse', relativePath)
+  target = replaceOrInsertBlock(target, source, '// CheckIn 领取机器人每日签到余额。', '// Unbind', relativePath)
 
   if (target.includes('infraerrors.ToHTTP') && !target.includes('internal/pkg/errors')) {
     target = target.replace(
@@ -451,6 +518,7 @@ function composeKnownConflicts(conflicts, source) {
 }
 
 function composeSharedFeatures() {
+  composeUsageSettings()
   const handlerPath = path.join(root, 'backend/internal/handler/bot_handler.go')
   if (existsSync(handlerPath)) {
     composeBotHandler(sourceFile(ref, 'backend/internal/handler/bot_handler.go'))
@@ -537,6 +605,34 @@ function verifyOverlayMarkers(migrationPath, migrationText) {
   ensureTargetMigration(migrationPath, migrationText, false)
 }
 
+function verifyUsageSettings() {
+  if (!sourceFile(ref, 'backend/internal/handler/admin/setting_handler_update.go').includes('BotCheckInUsageRequirement')) return
+  const markers = new Map([
+    ['backend/internal/handler/admin/setting_handler.go', USAGE_FIELDS.map((field) => new RegExp('BotCheckIn' + field + ':\\s+settings\\.' + field + '\\b'))],
+    ['backend/internal/handler/admin/setting_handler_update.go', USAGE_FIELDS.flatMap((field) => [
+      new RegExp('BotCheckIn' + field + '\\s+\\*'),
+      new RegExp('botCheckIn\\.' + field + ' = \\*req\\.BotCheckIn' + field),
+      new RegExp('BotCheckIn' + field + ':\\s+updatedSettings\\.' + field + '\\b'),
+    ])],
+    ['backend/internal/service/setting_update.go', USAGE_FIELDS.map((field) => new RegExp('updates\\[SettingKeyBotCheckIn' + field + '\\] ='))],
+    ['backend/internal/service/setting_parse.go', USAGE_FIELDS.map((field) => 'SettingKeyBotCheckIn' + field)],
+    ['backend/internal/service/settings_view.go', USAGE_FIELDS.map((field) => new RegExp('\\b' + field + '\\s+(?:string|int64|float64)\\b'))],
+    ['backend/internal/service/bot_checkin.go', USAGE_FIELDS.map((field) => new RegExp(field + ':\\s+(?:settings\\.' + field + '|requiredTokens|requiredAmount)\\b'))],
+    ['backend/internal/repository/bot_checkin_repo.go', ['params.UsageRequirement', 'params.RequiredTokens', 'params.RequiredAmount', 'today_amount >= $7::numeric']],
+    ['backend/internal/handler/dto/settings.go', ['bot_checkin_usage_requirement', 'bot_checkin_required_tokens', 'bot_checkin_required_amount']],
+    ['backend/internal/handler/bot_handler.go', ['json:"usage_requirement"', 'json:"today_amount"', 'json:"required_amount"', 'UsageRequirement: result.UsageRequirement', 'TodayAmount: result.TodayAmount', 'RequiredAmount: result.RequiredAmount']],
+    ['frontend/src/views/admin/SettingsView.vue', ['bot_checkin_usage_requirement', 'bot_checkin_required_tokens', 'bot_checkin_required_amount']],
+  ])
+  for (const [relativePath, required] of markers) {
+    const target = readTarget(relativePath)
+    for (const marker of required) {
+      if (typeof marker === 'string' ? !target.includes(marker) : !marker.test(target)) {
+        fail('usage configuration marker is missing in ' + relativePath + ': ' + marker)
+      }
+    }
+  }
+}
+
 function main() {
   if (path.resolve(process.argv[1] || '') !== scriptPath) return
 
@@ -558,6 +654,7 @@ function main() {
   if (checkOnly) {
     if (!reverseApplies) verifyOverlayMarkers(migrationPath, migrationText)
     else ensureTargetMigration(migrationPath, migrationText, false)
+    verifyUsageSettings()
     console.log('Verified bot check-in rewards overlay from ' + ref + ' (base ' + baseRef + ', migration ' + migrationPath + ').')
     return
   }
@@ -599,6 +696,7 @@ function main() {
 
   ensureTargetMigration(migrationPath, migrationText, true)
   composeSharedFeatures()
+  verifyUsageSettings()
   console.log((reverseApplies ? 'Preserved' : 'Applied') + ' bot check-in rewards overlay from ' + ref + ' (base ' + baseRef + ', migration ' + migrationPath + ').')
 }
 
@@ -611,4 +709,4 @@ if (path.resolve(process.argv[1] || '') === scriptPath) {
   }
 }
 
-export { ALLOWED_PATHS }
+export { ALLOWED_PATHS, composeUsageSettingsText, replaceOrInsertBlock }
