@@ -102,6 +102,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	if err := validateBotBindingSettings(settings.BotBindingSettings); err != nil {
 		return nil, infraerrors.BadRequest("INVALID_BOT_BINDING_SETTINGS", err.Error())
 	}
+	settings.BotCheckInSettings = defaultBotCheckInUsage(settings.BotCheckInSettings)
 	if err := validateBotCheckInSettings(settings.BotCheckInSettings); err != nil {
 		return nil, infraerrors.BadRequest("INVALID_BOT_CHECKIN_SETTINGS", err.Error())
 	}
@@ -391,6 +392,9 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyAffiliateRebatePerInviteeCap] = strconv.FormatFloat(settings.AffiliateRebatePerInviteeCap, 'f', 8, 64)
 	updates[SettingKeyAffiliateAdminRechargeEnabled] = strconv.FormatBool(settings.AdminRechargeRebateEnabled)
 	updates[SettingKeyBotBindingBonusAmount] = strconv.FormatFloat(settings.BonusAmount, 'f', 8, 64)
+	updates[SettingKeyBotCheckInUsageRequirement] = settings.UsageRequirement
+	updates[SettingKeyBotCheckInRequiredTokens] = strconv.FormatInt(settings.RequiredTokens, 10)
+	updates[SettingKeyBotCheckInRequiredAmount] = strconv.FormatFloat(settings.RequiredAmount, 'f', 8, 64)
 	updates[SettingKeyBotCheckInEnabled] = strconv.FormatBool(settings.Enabled)
 	updates[SettingKeyBotCheckInFirstRewardMin] = strconv.FormatFloat(settings.FirstRewardMin, 'f', 8, 64)
 	updates[SettingKeyBotCheckInFirstRewardMax] = strconv.FormatFloat(settings.FirstRewardMax, 'f', 8, 64)

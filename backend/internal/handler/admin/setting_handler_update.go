@@ -178,6 +178,9 @@ type UpdateSettingsRequest struct {
 	AffiliateRebatePerInviteeCap              *float64                          `json:"affiliate_rebate_per_invitee_cap"`
 	AdminRechargeRebateEnabled                *bool                             `json:"affiliate_admin_recharge_enabled"`
 	BotBindingBonusAmount                     *float64                          `json:"bot_binding_bonus_amount"`
+	BotCheckInUsageRequirement                *string                           `json:"bot_checkin_usage_requirement"`
+	BotCheckInRequiredTokens                  *int64                            `json:"bot_checkin_required_tokens"`
+	BotCheckInRequiredAmount                  *float64                          `json:"bot_checkin_required_amount"`
 	BotCheckInEnabled                         *bool                             `json:"bot_checkin_enabled"`
 	BotCheckInFirstRewardMin                  *float64                          `json:"bot_checkin_first_reward_min"`
 	BotCheckInFirstRewardMax                  *float64                          `json:"bot_checkin_first_reward_max"`
@@ -626,6 +629,15 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 	botCheckIn := previousSettings.BotCheckInSettings
+	if req.BotCheckInUsageRequirement != nil {
+		botCheckIn.UsageRequirement = *req.BotCheckInUsageRequirement
+	}
+	if req.BotCheckInRequiredTokens != nil {
+		botCheckIn.RequiredTokens = *req.BotCheckInRequiredTokens
+	}
+	if req.BotCheckInRequiredAmount != nil {
+		botCheckIn.RequiredAmount = *req.BotCheckInRequiredAmount
+	}
 	if req.BotCheckInEnabled != nil {
 		botCheckIn.Enabled = *req.BotCheckInEnabled
 	}
@@ -2367,6 +2379,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebatePerInviteeCap:                           updatedSettings.AffiliateRebatePerInviteeCap,
 		AdminRechargeRebateEnabled:                             updatedSettings.AdminRechargeRebateEnabled,
 		BotBindingBonusAmount:                                  updatedSettings.BonusAmount,
+		BotCheckInUsageRequirement:                             updatedSettings.UsageRequirement,
+		BotCheckInRequiredTokens:                               updatedSettings.RequiredTokens,
+		BotCheckInRequiredAmount:                               updatedSettings.RequiredAmount,
 		BotCheckInEnabled:                                      updatedSettings.Enabled,
 		BotCheckInFirstRewardMin:                               updatedSettings.FirstRewardMin,
 		BotCheckInFirstRewardMax:                               updatedSettings.FirstRewardMax,

@@ -324,12 +324,15 @@ type SystemSettings struct {
 }
 
 type BotCheckInSettings struct {
-	Enabled        bool
-	FirstRewardMin float64
-	FirstRewardMax float64
-	IncrementMin   float64
-	IncrementMax   float64
-	DailyCap       float64
+	UsageRequirement string
+	RequiredTokens   int64
+	RequiredAmount   float64
+	Enabled          bool
+	FirstRewardMin   float64
+	FirstRewardMax   float64
+	IncrementMin     float64
+	IncrementMax     float64
+	DailyCap         float64
 }
 
 type BotBindingSettings struct {

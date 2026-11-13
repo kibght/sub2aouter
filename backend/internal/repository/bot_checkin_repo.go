@@ -25,6 +25,9 @@ func (r *botCheckInRepository) CheckIn(ctx context.Context, params service.BotCh
 	if r == nil || r.db == nil || params.UserID <= 0 {
 		return nil, fmt.Errorf("bot check-in repository is unavailable")
 	}
+	if params.UsageRequirement != service.BotCheckInUsageTokens && params.UsageRequirement != service.BotCheckInUsageAmount {
+		return nil, fmt.Errorf("invalid bot check-in usage requirement")
+	}
 	rewardDate, err := time.Parse("2006-01-02", params.RewardDate)
 	if err != nil {
 		return nil, fmt.Errorf("invalid check-in date: %w", err)
@@ -53,51 +56,58 @@ func (r *botCheckInRepository) CheckIn(ctx context.Context, params service.BotCh
 	if err != nil {
 		return nil, fmt.Errorf("lock bot check-in user: %w", err)
 	}
+	result := &service.BotCheckInResult{
+		UsageRequirement: params.UsageRequirement,
+		Balance:          balance, RewardDate: rewardDate,
+	}
+	if params.UsageRequirement == service.BotCheckInUsageTokens {
+		result.RequiredTokens = params.RequiredTokens
+	} else {
+		result.RequiredAmount = params.RequiredAmount
+	}
 	if status != service.StatusActive {
-		return &service.BotCheckInResult{
-			Status: service.BotCheckInStatusInactive, RequiredTokens: service.BotCheckInRequiredTokens,
-			Balance: balance, RewardDate: rewardDate,
-		}, nil
+		result.Status = service.BotCheckInStatusInactive
+		return result, nil
 	}
 
 	dayStart, err := timezone.ParseInLocation("2006-01-02", params.RewardDate)
 	if err != nil {
 		return nil, fmt.Errorf("invalid check-in date: %w", err)
 	}
-	var todayTokens int64
+	var eligible bool
+	// Compare the monetary aggregate as NUMERIC in PostgreSQL, before converting it to float64 for display.
 	err = tx.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0)
-		FROM usage_logs
-		WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
-	`, params.UserID, dayStart.UTC(), dayStart.AddDate(0, 0, 1).UTC()).Scan(&todayTokens)
+		SELECT today_tokens, today_amount,
+			CASE WHEN $5 = 'tokens' THEN today_tokens >= $6
+				ELSE today_amount >= $7::numeric END
+		FROM (
+			SELECT COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) AS today_tokens,
+				COALESCE(SUM(actual_cost) FILTER (WHERE billing_type = $4), 0) AS today_amount
+			FROM usage_logs
+			WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
+		) AS daily_usage
+	`, params.UserID, dayStart.UTC(), dayStart.AddDate(0, 0, 1).UTC(), service.BillingTypeBalance,
+		params.UsageRequirement, params.RequiredTokens, strconv.FormatFloat(params.RequiredAmount, 'f', 8, 64),
+	).Scan(&result.TodayTokens, &result.TodayAmount, &eligible)
 	if err != nil {
 		return nil, fmt.Errorf("load today bot check-in usage: %w", err)
 	}
 
-	var existing service.BotCheckInResult
 	err = tx.QueryRowContext(ctx, `
 		SELECT reward_amount, streak_day, reward_date, created_at
 		FROM bot_checkins
 		WHERE user_id = $1 AND reward_date = $2
-	`, params.UserID, rewardDate).Scan(&existing.Reward, &existing.StreakDay, &existing.RewardDate, &existing.CreatedAt)
+	`, params.UserID, rewardDate).Scan(&result.Reward, &result.StreakDay, &result.RewardDate, &result.CreatedAt)
 	if err == nil {
-		existing.Balance = balance
-		existing.CheckedIn = false
-		existing.Status = service.BotCheckInStatusAlreadyCheckedIn
-		existing.Eligible = false
-		existing.TodayTokens = todayTokens
-		existing.RequiredTokens = service.BotCheckInRequiredTokens
-		return &existing, nil
+		result.Status = service.BotCheckInStatusAlreadyCheckedIn
+		return result, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("load existing bot check-in: %w", err)
 	}
-	if todayTokens < service.BotCheckInRequiredTokens {
-		return &service.BotCheckInResult{
-			Status: service.BotCheckInStatusInsufficientUsage, Eligible: false,
-			TodayTokens: todayTokens, RequiredTokens: service.BotCheckInRequiredTokens,
-			Balance: balance, RewardDate: rewardDate,
-		}, nil
+	if !eligible {
+		result.Status = service.BotCheckInStatusInsufficientUsage
+		return result, nil
 	}
 
 	var previousReward float64
@@ -151,12 +161,14 @@ func (r *botCheckInRepository) CheckIn(ctx context.Context, params service.BotCh
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit bot check-in: %w", err)
 	}
-	return &service.BotCheckInResult{
-		Status: service.BotCheckInStatusSuccess, Eligible: true,
-		TodayTokens: todayTokens, RequiredTokens: service.BotCheckInRequiredTokens,
-		CheckedIn: true, Reward: reward, Balance: balanceAfter,
-		StreakDay: streakDay, RewardDate: rewardDate, CreatedAt: params.Now,
-	}, nil
+	result.Status = service.BotCheckInStatusSuccess
+	result.Eligible = true
+	result.CheckedIn = true
+	result.Reward = reward
+	result.Balance = balanceAfter
+	result.StreakDay = streakDay
+	result.CreatedAt = params.Now
+	return result, nil
 }
 
 func formatBotCheckInAmount(amount float64) string {

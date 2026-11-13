@@ -37,15 +37,21 @@ const (
 )
 
 const (
-	BotBindingBonusAmountDefault    = 0.5
-	BotBindingBonusAmountMax        = 1000.0
-	BotCheckInEnabledDefault        = false
-	BotCheckInFirstRewardMinDefault = 0.01
-	BotCheckInFirstRewardMaxDefault = 0.20
-	BotCheckInIncrementMinDefault   = 0.01
-	BotCheckInIncrementMaxDefault   = 0.05
-	BotCheckInDailyCapDefault       = 0.50
-	BotCheckInRewardMax             = 1000.0
+	BotBindingBonusAmountDefault            = 0.5
+	BotBindingBonusAmountMax                = 1000.0
+	BotCheckInUsageTokens                   = "tokens"
+	BotCheckInUsageAmount                   = "amount"
+	BotCheckInUsageRequirementDefault       = BotCheckInUsageTokens
+	BotCheckInRequiredTokensDefault   int64 = 1_000_000
+	BotCheckInRequiredTokensMax       int64 = 9_007_199_254_740_991
+	BotCheckInRequiredAmountDefault         = 0.0
+	BotCheckInEnabledDefault                = false
+	BotCheckInFirstRewardMinDefault         = 0.01
+	BotCheckInFirstRewardMaxDefault         = 0.20
+	BotCheckInIncrementMinDefault           = 0.01
+	BotCheckInIncrementMaxDefault           = 0.05
+	BotCheckInDailyCapDefault               = 0.50
+	BotCheckInRewardMax                     = 1000.0
 )
 
 // Platform constants
@@ -246,6 +252,9 @@ const (
 	SettingKeyAffiliateRebatePerInviteeCap        = "affiliate_rebate_per_invitee_cap" // 单人返利上限（0=无上限）
 	SettingKeyAffiliateAdminRechargeEnabled       = "affiliate_admin_recharge_enabled" // 管理员充值是否产生返利
 	SettingKeyBotBindingBonusAmount               = "bot_binding_bonus_amount"
+	SettingKeyBotCheckInUsageRequirement          = "bot_checkin_usage_requirement"
+	SettingKeyBotCheckInRequiredTokens            = "bot_checkin_required_tokens"
+	SettingKeyBotCheckInRequiredAmount            = "bot_checkin_required_amount"
 	SettingKeyBotCheckInEnabled                   = "bot_checkin_enabled"
 	SettingKeyBotCheckInFirstRewardMin            = "bot_checkin_first_reward_min"
 	SettingKeyBotCheckInFirstRewardMax            = "bot_checkin_first_reward_max"

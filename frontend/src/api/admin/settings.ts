@@ -434,6 +434,9 @@ export interface SystemSettings {
   affiliate_admin_recharge_enabled: boolean;
   bot_binding_bonus_amount: number;
   bot_checkin_enabled: boolean;
+  bot_checkin_usage_requirement: 'tokens' | 'amount';
+  bot_checkin_required_tokens: number;
+  bot_checkin_required_amount: number;
   bot_checkin_first_reward_min: number;
   bot_checkin_first_reward_max: number;
   bot_checkin_increment_min: number;
@@ -794,6 +797,9 @@ export interface UpdateSettingsRequest {
   affiliate_admin_recharge_enabled?: boolean;
   bot_binding_bonus_amount?: number;
   bot_checkin_enabled?: boolean;
+  bot_checkin_usage_requirement?: 'tokens' | 'amount';
+  bot_checkin_required_tokens?: number;
+  bot_checkin_required_amount?: number;
   bot_checkin_first_reward_min?: number;
   bot_checkin_first_reward_max?: number;
   bot_checkin_increment_min?: number;

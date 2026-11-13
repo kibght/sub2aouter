@@ -103,6 +103,9 @@ type botBindingClaimResponse struct {
 }
 
 type botCheckInResponse struct {
+	UsageRequirement string    `json:"usage_requirement"`
+	TodayAmount      float64   `json:"today_amount"`
+	RequiredAmount   float64   `json:"required_amount"`
 	Status           string    `json:"status"`
 	Eligible         bool      `json:"eligible"`
 	TodayTokens      int64     `json:"today_tokens"`
@@ -357,7 +360,8 @@ func (h *BotHandler) CheckIn(c *gin.Context) {
 		messageKey = "check_in_inactive"
 	}
 	response.Success(c, botCheckInResponse{
-		Status:   status,
+		Status:           status,
+		UsageRequirement: result.UsageRequirement, TodayAmount: result.TodayAmount, RequiredAmount: result.RequiredAmount,
 		Eligible: result.Eligible, TodayTokens: result.TodayTokens, RequiredTokens: result.RequiredTokens,
 		CheckedIn: result.CheckedIn, AlreadyCheckedIn: status == "already_checked_in",
 		Reward: result.Reward, Balance: result.Balance, StreakDay: result.StreakDay,

@@ -311,6 +311,28 @@ func TestBotHandlerCheckInReturnsRewardAndDuplicateAmount(t *testing.T) {
 	require.Equal(t, "check_in_success", data["message_key"])
 }
 
+func TestBotHandlerCheckInReturnsAmountUsageRequirement(t *testing.T) {
+	h := NewBotHandler(&stubBotBindings{}, &stubBotUsage{}, &stubBotAPIKeys{}, &stubBotUsers{})
+	h.SetCheckInService(&stubBotCheckIn{result: &service.BotCheckInResult{
+		Status:           service.BotCheckInStatusInsufficientUsage,
+		UsageRequirement: service.BotCheckInUsageAmount,
+		TodayTokens:      2_000_000, RequiredTokens: 0,
+		TodayAmount: 0.04, RequiredAmount: 0.07,
+		RewardDate: time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC),
+	}})
+	router := newBotTestRouter(botTestRouterOptions{handler: h, userID: 7, withAuth: true})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/bot/check-in", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	data := decodeBotData(t, rec)
+	require.Equal(t, "amount", data["usage_requirement"])
+	require.Equal(t, 0.04, data["today_amount"])
+	require.Equal(t, 0.07, data["required_amount"])
+	require.Equal(t, float64(0), data["required_tokens"])
+	require.Equal(t, "check_in_insufficient_usage", data["message_key"])
+}
+
 func TestBotHandlerCheckInReturnsMachineReadableErrorStatus(t *testing.T) {
 	h := NewBotHandler(&stubBotBindings{}, &stubBotUsage{}, &stubBotAPIKeys{}, &stubBotUsers{})
 	h.SetCheckInService(&stubBotCheckIn{err: infraerrors.Forbidden("BOT_CHECKIN_USAGE_REQUIRED", "今日 token 使用量不足")})

@@ -250,9 +250,17 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.defaults.platformQuotaNotice": "月限额为 30 天滚动窗口，非自然月",
     "admin.settings.defaults.botCheckInRewardRule": "每天都是随机0.01-0.2",
     "admin.settings.defaults.botCheckInSeventhDayBonus": "累计七天第七天在随机金额上面乘以2倍到账",
-    "admin.settings.defaults.botCheckInUsageRequirement": "每天使用量必须达到1m token使用量，签到才有效",
-    "admin.settings.defaults.botCheckInFirstMin": "签到首日最低金额",
-    "admin.settings.defaults.botCheckInFirstMax": "签到首日最高金额",
+    "admin.settings.defaults.botCheckInUsageRequirement": "签到使用量条件",
+    "admin.settings.defaults.botCheckInTokenMode": "Token 用量",
+    "admin.settings.defaults.botCheckInAmountMode": "每日消费金额",
+    "admin.settings.defaults.botCheckInUsageHint": "当天累计使用量达到所选条件即可签到，门槛设为 0 表示不限制。",
+    "admin.settings.defaults.botCheckInRequiredTokens": "每日最低 Token 用量",
+    "admin.settings.defaults.botCheckInRequiredAmount": "每日最低消费金额（$）",
+    "admin.settings.defaults.botCheckInAmountHint": "仅统计当天从余额支付的实际消费金额，不包含订阅用量。",
+    "admin.settings.defaults.botCheckInTokensInvalid": "Token 门槛必须是非负整数。",
+    "admin.settings.defaults.botCheckInAmountInvalid": "消费金额门槛必须是非负数字，最多支持 8 位小数。",
+    "admin.settings.defaults.botCheckInDailyMin": "每日赠送最低金额",
+    "admin.settings.defaults.botCheckInDailyMax": "每日赠送最高金额",
     "admin.settings.authSourceDefaults.platformQuotasOverride": "平台限额覆盖",
     "admin.settings.authSourceDefaults.platformQuotasOverrideHint": "留空的字段继承「系统默认平台限额」；填 0 表示禁止该窗口使用。",
   };
@@ -387,6 +395,9 @@ const baseSettingsResponse = {
   default_balance: 0,
   bot_binding_bonus_amount: 0.5,
   bot_checkin_enabled: false,
+  bot_checkin_usage_requirement: "tokens",
+  bot_checkin_required_tokens: 1000000,
+  bot_checkin_required_amount: 0,
   bot_checkin_first_reward_min: 0.01,
   bot_checkin_first_reward_max: 0.2,
   bot_checkin_increment_min: 0.01,
@@ -622,6 +633,21 @@ async function openUsersTab(wrapper: ReturnType<typeof mountView>) {
 }
 
 describe("admin SettingsView bot check-in rewards", () => {
+  beforeEach(() => {
+    getSettings.mockReset().mockResolvedValue({ ...baseSettingsResponse });
+    updateSettings.mockReset().mockImplementation(async (payload) => ({
+      ...baseSettingsResponse,
+      ...payload,
+    }));
+    showError.mockReset();
+    getWebSearchEmulationConfig.mockResolvedValue({ enabled: false, providers: [] });
+    updateWebSearchEmulationConfig.mockResolvedValue({ enabled: false, providers: [] });
+    getAdminApiKey.mockResolvedValue({ exists: false, masked_key: "" });
+    getGroups.mockResolvedValue([]);
+    listProxies.mockResolvedValue({ items: [] });
+    getProviders.mockResolvedValue({ data: [] });
+  });
+
   it("shows configurable daily reward bounds and keeps the binding bonus configurable", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
@@ -638,10 +664,11 @@ describe("admin SettingsView bot check-in rewards", () => {
     await flushPromises();
     await openUsersTab(wrapper);
 
-    expect(wrapper.text()).toContain("签到首日最低金额");
-    expect(wrapper.text()).toContain("签到首日最高金额");
+    expect(wrapper.text()).toContain("每日赠送最低金额");
+    expect(wrapper.text()).toContain("每日赠送最高金额");
     expect(wrapper.text()).toContain("累计七天第七天在随机金额上面乘以2倍到账");
-    expect(wrapper.text()).toContain("每天使用量必须达到1m token使用量，签到才有效");
+    expect(wrapper.text()).toContain("签到使用量条件");
+    expect(wrapper.text()).not.toContain("签到首日");
     expect(wrapper.text()).not.toContain("admin.settings.defaults.botCheckInIncrementMin");
 
     await wrapper.find("form").trigger("submit.prevent");
@@ -651,11 +678,123 @@ describe("admin SettingsView bot check-in rewards", () => {
       expect.objectContaining({
         bot_binding_bonus_amount: 1.25,
         bot_checkin_enabled: true,
+        bot_checkin_usage_requirement: "tokens",
+        bot_checkin_required_tokens: 1000000,
+        bot_checkin_required_amount: 0,
         bot_checkin_first_reward_min: 0.1,
         bot_checkin_first_reward_max: 0.3,
         bot_checkin_daily_cap: 0.6,
       }),
     );
+  });
+
+  it("preserves both configurable thresholds when switching modes and saves the selected mode", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      bot_checkin_enabled: true,
+      bot_checkin_required_tokens: 2500000,
+      bot_checkin_required_amount: 1500.07,
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    await wrapper.get("#bot-checkin-required-tokens").setValue("1500000");
+    await wrapper.get('[data-testid="bot-checkin-usage-requirement"]').setValue("amount");
+    expect(wrapper.find("#bot-checkin-required-tokens").exists()).toBe(false);
+    expect((wrapper.get("#bot-checkin-required-amount").element as HTMLInputElement).value).toBe("1500.07");
+    expect(wrapper.text()).toContain("仅统计当天从余额支付的实际消费金额，不包含订阅用量。");
+    await wrapper.get("#bot-checkin-required-amount").setValue("0.00000001");
+    await wrapper.get('[data-testid="bot-checkin-usage-requirement"]').setValue("tokens");
+    expect((wrapper.get("#bot-checkin-required-tokens").element as HTMLInputElement).value).toBe("1500000");
+    await wrapper.get('[data-testid="bot-checkin-usage-requirement"]').setValue("amount");
+    expect((wrapper.get("#bot-checkin-required-amount").element as HTMLInputElement).value).toBe("1e-8");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      bot_checkin_usage_requirement: "amount",
+      bot_checkin_required_tokens: 1500000,
+      bot_checkin_required_amount: 0.00000001,
+    }));
+    wrapper.unmount();
+  });
+
+  it("accepts spending above the reward cap limit and zero thresholds", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      bot_checkin_enabled: true,
+      bot_checkin_usage_requirement: "amount",
+      bot_checkin_required_tokens: 0,
+      bot_checkin_required_amount: 1500.07,
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenLastCalledWith(expect.objectContaining({
+      bot_checkin_usage_requirement: "amount",
+      bot_checkin_required_tokens: 0,
+      bot_checkin_required_amount: 1500.07,
+    }));
+
+    await wrapper.get("#bot-checkin-required-amount").setValue("0");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenLastCalledWith(expect.objectContaining({
+      bot_checkin_required_tokens: 0,
+      bot_checkin_required_amount: 0,
+    }));
+    wrapper.unmount();
+  });
+
+  it("defaults missing usage fields from older settings to one million tokens", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      bot_checkin_enabled: true,
+      bot_checkin_usage_requirement: undefined,
+      bot_checkin_required_tokens: undefined,
+      bot_checkin_required_amount: undefined,
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+    expect((wrapper.get("#bot-checkin-required-tokens").element as HTMLInputElement).value).toBe("1000000");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      bot_checkin_usage_requirement: "tokens",
+      bot_checkin_required_tokens: 1000000,
+      bot_checkin_required_amount: 0,
+    }));
+    wrapper.unmount();
+  });
+
+  it.each([
+    { mode: "tokens", value: "-1", error: "Token 门槛必须是非负整数。" },
+    { mode: "tokens", value: "1.5", error: "Token 门槛必须是非负整数。" },
+    { mode: "tokens", value: "9007199254740992", error: "Token 门槛必须是非负整数。" },
+    { mode: "tokens", value: "", error: "Token 门槛必须是非负整数。" },
+    { mode: "amount", value: "-0.01", error: "消费金额门槛必须是非负数字，最多支持 8 位小数。" },
+    { mode: "amount", value: "0.123456789", error: "消费金额门槛必须是非负数字，最多支持 8 位小数。" },
+    { mode: "amount", value: "", error: "消费金额门槛必须是非负数字，最多支持 8 位小数。" },
+  ])("rejects invalid $mode threshold $value before saving", async ({ mode, value, error }) => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      bot_checkin_enabled: true,
+      bot_checkin_usage_requirement: mode,
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await openUsersTab(wrapper);
+    showError.mockClear();
+    await wrapper.get(`#bot-checkin-required-${mode}`).setValue(value);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(showError).toHaveBeenCalledWith(error);
+    wrapper.unmount();
   });
 });
 

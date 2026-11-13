@@ -381,7 +381,7 @@ func (s *SettingService) GetAllSettings(ctx context.Context) (*SystemSettings, e
 }
 
 func (s *SettingService) GetBotCheckInSettings(ctx context.Context) BotCheckInSettings {
-	defaults := BotCheckInSettings{Enabled: BotCheckInEnabledDefault, FirstRewardMin: BotCheckInFirstRewardMinDefault, FirstRewardMax: BotCheckInFirstRewardMaxDefault, IncrementMin: BotCheckInIncrementMinDefault, IncrementMax: BotCheckInIncrementMaxDefault, DailyCap: BotCheckInDailyCapDefault}
+	defaults := defaultBotCheckInSettings()
 	if s == nil || s.settingRepo == nil {
 		return defaults
 	}

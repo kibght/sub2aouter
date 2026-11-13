@@ -3868,10 +3868,28 @@
                 <div v-if="form.bot_checkin_enabled" class="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div class="space-y-2 text-sm text-gray-600 dark:text-gray-300 md:col-span-2">
                     <p>{{ t("admin.settings.defaults.botCheckInSeventhDayBonus") }}</p>
-                    <p>{{ t("admin.settings.defaults.botCheckInUsageRequirement") }}</p>
                   </div>
-                  <div><label class="input-label">{{ t("admin.settings.defaults.botCheckInFirstMin") }}</label><input v-model.number="form.bot_checkin_first_reward_min" type="number" min="0" max="1000" step="0.01" class="input" /></div>
-                  <div><label class="input-label">{{ t("admin.settings.defaults.botCheckInFirstMax") }}</label><input v-model.number="form.bot_checkin_first_reward_max" type="number" min="0" max="1000" step="0.01" class="input" /></div>
+                  <div>
+                    <label class="input-label" id="bot-checkin-usage-label">{{ t("admin.settings.defaults.botCheckInUsageRequirement") }}</label>
+                    <Select
+                      v-model="form.bot_checkin_usage_requirement"
+                      :options="botCheckInUsageOptions"
+                      aria-labelledby="bot-checkin-usage-label"
+                      data-testid="bot-checkin-usage-requirement"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.settings.defaults.botCheckInUsageHint") }}</p>
+                  </div>
+                  <div v-if="form.bot_checkin_usage_requirement === 'tokens'">
+                    <label class="input-label" for="bot-checkin-required-tokens">{{ t("admin.settings.defaults.botCheckInRequiredTokens") }}</label>
+                    <input id="bot-checkin-required-tokens" v-model.number="form.bot_checkin_required_tokens" type="number" min="0" :max="Number.MAX_SAFE_INTEGER" step="1" class="input" />
+                  </div>
+                  <div v-else>
+                    <label class="input-label" for="bot-checkin-required-amount">{{ t("admin.settings.defaults.botCheckInRequiredAmount") }}</label>
+                    <input id="bot-checkin-required-amount" v-model.number="form.bot_checkin_required_amount" type="number" min="0" step="0.00000001" class="input" />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.settings.defaults.botCheckInAmountHint") }}</p>
+                  </div>
+                  <div><label class="input-label">{{ t("admin.settings.defaults.botCheckInDailyMin") }}</label><input v-model.number="form.bot_checkin_first_reward_min" type="number" min="0" max="1000" step="0.01" class="input" /></div>
+                  <div><label class="input-label">{{ t("admin.settings.defaults.botCheckInDailyMax") }}</label><input v-model.number="form.bot_checkin_first_reward_max" type="number" min="0" max="1000" step="0.01" class="input" /></div>
                   <div><label class="input-label">{{ t("admin.settings.defaults.botCheckInDailyCap") }}</label><input v-model.number="form.bot_checkin_daily_cap" type="number" min="0" max="1000" step="0.01" class="input" /></div>
                 </div>
               </div>
@@ -9700,7 +9718,11 @@ type SettingsForm = Omit<
   | "wechat_connect_mp_enabled"
   | "wechat_connect_mobile_enabled"
   | "openai_oauth_scheduling_rate_multiplier"
+  | "bot_checkin_required_tokens"
+  | "bot_checkin_required_amount"
 > & {
+  bot_checkin_required_tokens: number | "";
+  bot_checkin_required_amount: number | "";
   /** Form always binds a concrete boolean (SystemSettings marks this optional). */
   channel_monitor_hide_throughput: boolean;
   channel_monitor_show_quota: boolean;
@@ -9788,6 +9810,9 @@ const form = reactive<SettingsForm>({
   affiliate_admin_recharge_enabled: false,
   bot_binding_bonus_amount: 0.5,
   bot_checkin_enabled: false,
+  bot_checkin_usage_requirement: "tokens",
+  bot_checkin_required_tokens: 1000000,
+  bot_checkin_required_amount: 0,
   bot_checkin_first_reward_min: 0.01,
   bot_checkin_first_reward_max: 0.2,
   bot_checkin_increment_min: 0.01,
@@ -11046,6 +11071,9 @@ async function loadSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
+    form.bot_checkin_usage_requirement = settings.bot_checkin_usage_requirement ?? "tokens";
+    form.bot_checkin_required_tokens = settings.bot_checkin_required_tokens ?? 1000000;
+    form.bot_checkin_required_amount = settings.bot_checkin_required_amount ?? 0;
     // For this optional override, null explicitly selects per-account rates.
     if (settings.openai_oauth_scheduling_rate_multiplier === null) {
       form.openai_oauth_scheduling_rate_multiplier = null;
@@ -11307,9 +11335,32 @@ const siteBillingModeHint = computed(() =>
   t(`admin.settings.features.siteBillingMode.hints.${SITE_BILLING_MODE_I18N_KEYS[siteBillingMode.value]}`),
 );
 
+const botCheckInUsageOptions = computed<SelectOption[]>(() => [
+  { value: "tokens", label: t("admin.settings.defaults.botCheckInTokenMode") },
+  { value: "amount", label: t("admin.settings.defaults.botCheckInAmountMode") },
+]);
+
 async function saveSettings() {
   saving.value = true;
   try {
+    if (
+      !["tokens", "amount"].includes(form.bot_checkin_usage_requirement) ||
+      !Number.isSafeInteger(form.bot_checkin_required_tokens) ||
+      Number(form.bot_checkin_required_tokens) < 0
+    ) {
+      appStore.showError(t("admin.settings.defaults.botCheckInTokensInvalid"));
+      return;
+    }
+    const requiredAmount = form.bot_checkin_required_amount;
+    if (
+      typeof requiredAmount !== "number" ||
+      !Number.isFinite(requiredAmount) ||
+      requiredAmount < 0 ||
+      Number(requiredAmount.toFixed(8)) !== requiredAmount
+    ) {
+      appStore.showError(t("admin.settings.defaults.botCheckInAmountInvalid"));
+      return;
+    }
     const normalizedTableDefaultPageSize = Math.floor(
       Number(form.table_default_page_size),
     );
@@ -11502,6 +11553,9 @@ async function saveSettings() {
       affiliate_admin_recharge_enabled: form.affiliate_admin_recharge_enabled,
       bot_binding_bonus_amount: Math.max(0, Math.min(1000, Number(form.bot_binding_bonus_amount) || 0)),
       bot_checkin_enabled: form.bot_checkin_enabled,
+      bot_checkin_usage_requirement: form.bot_checkin_usage_requirement,
+      bot_checkin_required_tokens: Number(form.bot_checkin_required_tokens),
+      bot_checkin_required_amount: requiredAmount,
       bot_checkin_first_reward_min: Math.max(0, Number(form.bot_checkin_first_reward_min) || 0),
       bot_checkin_first_reward_max: Math.max(0, Number(form.bot_checkin_first_reward_max) || 0),
       bot_checkin_increment_min: Math.max(0, Number(form.bot_checkin_increment_min) || 0),

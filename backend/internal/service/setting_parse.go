@@ -19,17 +19,35 @@ import (
 )
 
 func parseBotCheckInSettings(raw map[string]string) BotCheckInSettings {
-	defaults := BotCheckInSettings{Enabled: BotCheckInEnabledDefault, FirstRewardMin: BotCheckInFirstRewardMinDefault, FirstRewardMax: BotCheckInFirstRewardMaxDefault, IncrementMin: BotCheckInIncrementMinDefault, IncrementMax: BotCheckInIncrementMaxDefault, DailyCap: BotCheckInDailyCapDefault}
+	defaults := defaultBotCheckInSettings()
 	valid := true
 	parseAmount := func(key string, fallback float64) float64 {
-		value, err := strconv.ParseFloat(strings.TrimSpace(raw[key]), 64)
-		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		text, exists := raw[key]
+		if !exists {
+			return fallback
+		}
+		value, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
+		if err != nil || !validBotCheckInAmount(value) {
 			valid = false
 			return fallback
 		}
 		return value
 	}
 	settings := BotCheckInSettings{Enabled: raw[SettingKeyBotCheckInEnabled] == "true", FirstRewardMin: parseAmount(SettingKeyBotCheckInFirstRewardMin, defaults.FirstRewardMin), FirstRewardMax: parseAmount(SettingKeyBotCheckInFirstRewardMax, defaults.FirstRewardMax), IncrementMin: parseAmount(SettingKeyBotCheckInIncrementMin, defaults.IncrementMin), IncrementMax: parseAmount(SettingKeyBotCheckInIncrementMax, defaults.IncrementMax), DailyCap: parseAmount(SettingKeyBotCheckInDailyCap, defaults.DailyCap)}
+	settings.UsageRequirement = defaults.UsageRequirement
+	if value, exists := raw[SettingKeyBotCheckInUsageRequirement]; exists {
+		settings.UsageRequirement = strings.TrimSpace(value)
+	}
+	settings.RequiredTokens = defaults.RequiredTokens
+	if value, exists := raw[SettingKeyBotCheckInRequiredTokens]; exists {
+		parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil {
+			valid = false
+		} else {
+			settings.RequiredTokens = parsed
+		}
+	}
+	settings.RequiredAmount = parseAmount(SettingKeyBotCheckInRequiredAmount, defaults.RequiredAmount)
 	if !valid || validateBotCheckInSettings(settings) != nil {
 		defaults.Enabled = false
 		return defaults
@@ -157,6 +175,9 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyAffiliateRebateFreezeHours:                strconv.Itoa(AffiliateRebateFreezeHoursDefault),
 		SettingKeyAffiliateRebateDurationDays:               strconv.Itoa(AffiliateRebateDurationDaysDefault),
 		SettingKeyAffiliateRebatePerInviteeCap:              strconv.FormatFloat(AffiliateRebatePerInviteeCapDefault, 'f', 2, 64),
+		SettingKeyBotCheckInUsageRequirement:                BotCheckInUsageRequirementDefault,
+		SettingKeyBotCheckInRequiredTokens:                  strconv.FormatInt(BotCheckInRequiredTokensDefault, 10),
+		SettingKeyBotCheckInRequiredAmount:                  strconv.FormatFloat(BotCheckInRequiredAmountDefault, 'f', 8, 64),
 		SettingKeyBotCheckInEnabled:                         strconv.FormatBool(BotCheckInEnabledDefault),
 		SettingKeyBotCheckInFirstRewardMin:                  strconv.FormatFloat(BotCheckInFirstRewardMinDefault, 'f', 8, 64),
 		SettingKeyBotCheckInFirstRewardMax:                  strconv.FormatFloat(BotCheckInFirstRewardMaxDefault, 'f', 8, 64),

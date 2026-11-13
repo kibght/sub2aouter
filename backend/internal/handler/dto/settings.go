@@ -173,6 +173,9 @@ type SystemSettings struct {
 	AffiliateRebatePerInviteeCap float64                      `json:"affiliate_rebate_per_invitee_cap"`
 	AdminRechargeRebateEnabled   bool                         `json:"affiliate_admin_recharge_enabled"`
 	BotBindingBonusAmount        float64                      `json:"bot_binding_bonus_amount"`
+	BotCheckInUsageRequirement   string                       `json:"bot_checkin_usage_requirement"`
+	BotCheckInRequiredTokens     int64                        `json:"bot_checkin_required_tokens"`
+	BotCheckInRequiredAmount     float64                      `json:"bot_checkin_required_amount"`
 	BotCheckInEnabled            bool                         `json:"bot_checkin_enabled"`
 	BotCheckInFirstRewardMin     float64                      `json:"bot_checkin_first_reward_min"`
 	BotCheckInFirstRewardMax     float64                      `json:"bot_checkin_first_reward_max"`

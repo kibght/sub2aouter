@@ -106,7 +106,7 @@ func TestBotCheckInRejectsDisabledSetting(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, BotCheckInStatusDisabled, result.Status)
-	require.Equal(t, BotCheckInRequiredTokens, result.RequiredTokens)
+	require.Equal(t, BotCheckInRequiredTokensDefault, result.RequiredTokens)
 	require.False(t, next.IsZero())
 	require.Equal(t, BotCheckInParams{}, repo.params)
 }
