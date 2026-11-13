@@ -1,0 +1,1 @@
+    image: ${SUB2API_IMAGE:-ghcr.io/kibght/sub2aouter:latest}
