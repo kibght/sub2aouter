@@ -107,6 +107,8 @@ def iter_vulns(data: dict):
                 advisories.append(via)
                 titles.append(via)
             title = "; ".join([t for t in titles if t])
+            if not any(advisories):
+                yield name, severity, None, title
             for advisory_id in [a for a in advisories if a]:
                 yield name, severity, advisory_id, title
 
@@ -147,6 +149,25 @@ def main() -> int:
 
     with open(args.audit, "r", encoding="utf-8") as handle:
         audit = json.load(handle)
+    if not isinstance(audit, dict) or audit.get("error") or audit.get("code"):
+        sys.stderr.write("Dependency audit failed or returned an error response.\n")
+        return 1
+    reports = [audit[key] for key in ("advisories", "vulnerabilities") if key in audit]
+    if not reports or any(not isinstance(report, dict) for report in reports):
+        sys.stderr.write("Dependency audit returned an unrecognized report.\n")
+        return 1
+    for report in reports:
+        for entry in report.values():
+            if not isinstance(entry, dict) or entry.get("severity") not in {"info", "low", "moderate", "high", "critical"}:
+                sys.stderr.write("Dependency audit returned an incomplete advisory.\n")
+                return 1
+    findings = list(iter_vulns(audit))
+    summary = audit.get("metadata", {}).get("vulnerabilities", {})
+    if any(summary.get(severity, 0) for severity in HIGH_SEVERITIES) and not any(
+        normalize_severity(severity) in HIGH_SEVERITIES for _, severity, _, _ in findings
+    ):
+        sys.stderr.write("Dependency audit omitted its High/Critical advisory details.\n")
+        return 1
 
     # 读取异常清单并建立索引，便于快速匹配包名 + advisory。
     exceptions = parse_exceptions(args.exceptions)
@@ -190,9 +211,12 @@ def main() -> int:
 
     # 去重处理：同一包名 + advisory 可能在不同字段重复出现。
     seen = set()
-    for name, severity, advisory_id, title in iter_vulns(audit):
+    for name, severity, advisory_id, title in findings:
         sev = normalize_severity(severity)
-        if sev not in HIGH_SEVERITIES or not name:
+        if sev not in HIGH_SEVERITIES:
+            continue
+        if not name:
+            errors.append("High/Critical vulnerability missing package name")
             continue
         advisory_key = normalize_advisory(advisory_id)
         if not advisory_key:

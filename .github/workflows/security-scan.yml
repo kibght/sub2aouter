@@ -1,6 +1,18 @@
 name: Security Scan
 
 on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit, branch, or tag to scan without publishing
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact source ref being released
+        required: false
+        type: string
   push:
   pull_request:
   schedule:
@@ -15,6 +27,24 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Checkout scan policy
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .security-policy
+          sparse-checkout: |
+            scripts/ci/check-security.sh
+            tools/check_pnpm_audit_exceptions.py
+            tools/test_check_pnpm_audit_exceptions.py
+          sparse-checkout-cone-mode: false
+      - name: Use current scan implementation
+        run: |
+          mkdir -p scripts/ci tools
+          cp .security-policy/scripts/ci/check-security.sh scripts/ci/check-security.sh
+          cp .security-policy/tools/check_pnpm_audit_exceptions.py tools/check_pnpm_audit_exceptions.py
+          cp .security-policy/tools/test_check_pnpm_audit_exceptions.py tools/test_check_pnpm_audit_exceptions.py
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
@@ -27,15 +57,39 @@ jobs:
           test -n "$GO_VERSION"
           test "$(go env GOVERSION)" = "go${GO_VERSION}"
       - name: Run govulncheck
-        working-directory: backend
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+        run: bash scripts/ci/check-security.sh backend
+
+      - name: Preserve security report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: backend-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sub2api-security/
+          if-no-files-found: ignore
+          retention-days: 14
 
   frontend-security:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Checkout scan policy
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .security-policy
+          sparse-checkout: |
+            scripts/ci/check-security.sh
+            tools/check_pnpm_audit_exceptions.py
+            tools/test_check_pnpm_audit_exceptions.py
+          sparse-checkout-cone-mode: false
+      - name: Use current scan implementation
+        run: |
+          mkdir -p scripts/ci tools
+          cp .security-policy/scripts/ci/check-security.sh scripts/ci/check-security.sh
+          cp .security-policy/tools/check_pnpm_audit_exceptions.py tools/check_pnpm_audit_exceptions.py
+          cp .security-policy/tools/test_check_pnpm_audit_exceptions.py tools/test_check_pnpm_audit_exceptions.py
       - name: Set up pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
@@ -49,12 +103,15 @@ jobs:
       - name: Install dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
+      - name: Audit validator regression tests
+        run: python3 tools/test_check_pnpm_audit_exceptions.py
       - name: Run pnpm audit
-        working-directory: frontend
-        run: |
-          pnpm audit --prod --audit-level=high --json > audit.json || true
-      - name: Check audit exceptions
-        run: |
-          python tools/check_pnpm_audit_exceptions.py \
-            --audit frontend/audit.json \
-            --exceptions .github/audit-exceptions.yml
+        run: bash scripts/ci/check-security.sh frontend
+      - name: Preserve security report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: frontend-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sub2api-security/
+          if-no-files-found: ignore
+          retention-days: 14

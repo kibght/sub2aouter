@@ -162,29 +162,22 @@ test('Docker builds use the official release update path', async () => {
 test('upstream sync captures release notes only for a release contained in the fetched source', async () => {
   const workflow = await read('.github/workflows/upstream-theme-sync.yml')
   assert.match(workflow, /node scripts\/resolve-github-release\.mjs[\s\S]*--repository Wei-Shaw\/sub2api/)
-  assert.match(workflow, /gh api[\s\S]*--jq/)
-  assert.doesNotMatch(workflow, /\n\s+jq -r/)
+  assert.match(workflow, /gh api "\$RELEASE_ENDPOINT" > "\$RELEASE_JSON"/)
   assert.match(workflow, /merge-base --is-ancestor/)
   assert.match(workflow, /\.apophis-upstream-release-tag/)
   assert.match(workflow, /\.apophis-upstream-release-name/)
   assert.match(workflow, /\.apophis-upstream-release-url/)
   assert.match(workflow, /\.apophis-upstream-release-notes\.md/)
-  assert.match(workflow, /git -C "\$GENERATED_DIR" log/)
+  assert.match(workflow, /test.*UPSTREAM_RELEASE_ID/)
 })
 
-test('repository release notes describe fixes instead of listing bare commit hashes', async () => {
+test('release notes read concrete changes from immutable Canvas revisions', async () => {
   const workflow = await read('.github/workflows/upstream-theme-sync.yml')
-  assert.match(workflow, /git log --reverse --format='- %s \(`%h`\)\.'/)
-  assert.match(workflow, /git log -1 --format='%s'/)
-  assert.doesNotMatch(workflow, /git log --reverse --format='%h'/)
-})
-
-test('repository release notes use the current push boundary before the last published repository revision', async () => {
-  const workflow = await read('.github/workflows/upstream-theme-sync.yml')
-  const pushBoundary = workflow.indexOf('BASE_SHA="${{ github.event.before }}"')
-  const publishedFallback = workflow.indexOf('BASE_SHA="$PREVIOUS_REPOSITORY_SHA"', pushBoundary)
-  assert.ok(pushBoundary >= 0, 'repository notes must start from the current push boundary')
-  assert.ok(publishedFallback > pushBoundary, 'last published revision must only be a fallback')
+  const composer = await read('scripts/write-release-notes.mjs')
+  assert.match(workflow, /node scripts\/write-release-notes\.mjs/)
+  assert.match(composer, /previousCanvas.*CHANGELOG\.md/)
+  assert.match(composer, /CURRENT_CANVAS_SHA.*CHANGELOG\.md/)
+  assert.match(composer, /previousRepository/)
 })
 
 test('themed binary releases publish generated repository or upstream notes from a common notes file', async () => {

@@ -29,6 +29,13 @@ func RegisterUserRoutes(
 		user := authenticated.Group("/user")
 		{
 			user.GET("/profile", h.User.GetProfile)
+			if h.MCPOAuth != nil {
+				user.GET("/mcp/config", h.MCPOAuth.ConnectionConfig)
+				user.GET("/mcp/grants", h.MCPOAuth.ListGrants)
+				user.DELETE("/mcp/grants/:id", h.MCPOAuth.RevokeGrant)
+				user.GET("/mcp/authorize", h.MCPOAuth.Preview)
+				user.POST("/mcp/authorize", h.MCPOAuth.Decide)
+			}
 			user.PUT("/password", h.User.ChangePassword)
 			user.PUT("", h.User.UpdateProfile)
 			user.GET("/aff", h.User.GetAffiliate)
@@ -39,6 +46,11 @@ func RegisterUserRoutes(
 			user.POST("/auth-identities/bind/start", h.User.StartIdentityBinding)
 			user.GET("/api-keys/:id/usage/daily", panelRateLimiter.Heavy(), h.Usage.GetMyAPIKeyDailyUsage)
 			user.GET("/platform-quotas", h.User.GetMyPlatformQuotas)
+
+			// 聊天机器人绑定：网站生成一次性绑定码，机器人用绑定码换取独立令牌。
+			user.POST("/bot-bindings/code", h.Bot.CreateBindingCode)
+			user.GET("/bot-bindings", h.Bot.ListBindings)
+			user.DELETE("/bot-bindings/:id", h.Bot.RevokeBinding)
 
 			// 通知邮箱管理
 			notifyEmail := user.Group("/notify-email")
@@ -140,6 +152,19 @@ func RegisterUserRoutes(
 		{
 			monitors.GET("", h.ChannelMonitor.List)
 			monitors.GET("/:id/status", h.ChannelMonitor.GetStatus)
+		}
+
+		// V2 passive views require feature on + mode=v2.
+		monitorV2 := authenticated.Group("/channel-monitor-v2")
+		monitorV2.Use(panelRateLimiter.Heavy())
+		monitorV2.Use(channelMonitorModeV2Guard(settingService))
+		{
+			monitorV2.GET("/dimensions", h.ChannelMonitorV2.Dimensions)
+			monitorV2.GET("/snapshot", h.ChannelMonitorV2.Snapshot)
+			monitorV2.GET("/models", h.ChannelMonitorV2.Models)
+			monitorV2.GET("/matrix", h.ChannelMonitorV2.Matrix)
+			monitorV2.GET("/errors", h.ChannelMonitorV2.Errors)
+			monitorV2.GET("/users", h.ChannelMonitorV2.Users)
 		}
 	}
 }

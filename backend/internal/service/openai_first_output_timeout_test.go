@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -150,6 +151,33 @@ func TestOpenAINativeFirstOutputTimeoutIgnoresPreambleAndCleansReader(t *testing
 	case <-time.After(time.Second):
 		t.Fatal("stream reader/writer goroutine did not exit after first-output timeout")
 	}
+}
+
+func TestNewOpenAIFirstOutputTimeoutErrorRecordsCallerProxyAttribution(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	svc := &OpenAIGatewayService{}
+	proxyID := int64(10060)
+	account := &Account{ID: 1, Name: "acc", Platform: PlatformOpenAI, ProxyID: &proxyID, Proxy: &Proxy{ID: proxyID, Name: "ws-proxy"}}
+
+	// WebSocket callers pass the WS attribution; HTTP callers pass the HTTP one.
+	wsID, wsName := opsUpstreamWSProxyAttribution(&Account{ID: 2, Platform: PlatformOpenAI})
+	_ = svc.newOpenAIFirstOutputTimeoutError(context.Background(), c, &Account{ID: 2, Name: "ws", Platform: PlatformOpenAI},
+		wsID, wsName, time.Now(), "gpt-5.5", "", time.Second, "websocket_first_semantic_output", nil)
+	_ = svc.newOpenAIFirstOutputTimeoutError(context.Background(), c, account,
+		opsUpstreamProxyID(account), opsUpstreamProxyName(account), time.Now(), "gpt-5.5", "", time.Second, "semantic_output", nil)
+
+	raw, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := raw.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 2)
+	require.Equal(t, "first_output_timeout", events[0].Kind)
+	require.Nil(t, events[0].ProxyID)
+	require.Equal(t, opsProxyNameUnknown, events[0].ProxyName)
+	require.NotNil(t, events[1].ProxyID)
+	require.Equal(t, proxyID, *events[1].ProxyID)
+	require.Equal(t, "ws-proxy", events[1].ProxyName)
 }
 
 func TestOpenAIFirstOutputTimeoutForReasoningEffort(t *testing.T) {
@@ -403,6 +431,16 @@ func assertOpenAINativeLargeOpenEventTimesOutWithoutLeak(t *testing.T, line stri
 }
 
 func TestOpenAINativeFirstOutputEOFDispatchesTerminalEventWithoutBlankLine(t *testing.T) {
+	gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
+		openAITTFTMode: OpenAITTFTModeVisible,
+		expiresAt:      time.Now().Add(time.Minute).UnixNano(),
+	})
+	t.Cleanup(func() {
+		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
+			openAITTFTMode: OpenAITTFTModeSemantic,
+			expiresAt:      time.Now().Add(time.Minute).UnixNano(),
+		})
+	})
 	cfg := &config.Config{Gateway: config.GatewayConfig{
 		OpenAIFirstOutputTimeoutSeconds: 1,
 		MaxLineSize:                     defaultMaxLineSize,
@@ -425,7 +463,7 @@ func TestOpenAINativeFirstOutputEOFDispatchesTerminalEventWithoutBlankLine(t *te
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.NotNil(t, result.firstTokenMs)
+	require.Nil(t, result.firstTokenMs, "usage-only terminal event is not visible output")
 	require.Equal(t, "resp_eof", result.responseID)
 	require.Equal(t, 3, result.usage.InputTokens)
 	require.Equal(t, 2, result.usage.OutputTokens)
@@ -444,10 +482,12 @@ func TestOpenAINativeFirstOutputStageOverflowFailsOverWithoutAttemptBytes(t *tes
 	}}
 	svc := &OpenAIGatewayService{cfg: cfg, responseHeaderFilter: compileResponseHeaderFilter(cfg)}
 	const lineSize = 1024*1024 - 256
-	prefix := `data: {"type":"response.output_text.delta","delta":"`
-	suffix := `"}`
+	// Complete metadata events stay staged until visible output arrives. Each
+	// event fits the transport cap; their cumulative size exceeds the stage cap.
+	prefix := `data: {"type":"response.in_progress","response":{"id":"resp_staged","padding":"`
+	suffix := `"}}`
 	line := prefix + strings.Repeat("x", lineSize-len(prefix)-len(suffix)) + suffix
-	body := strings.Repeat(line+"\n", 9)
+	body := strings.Repeat(line+"\n\n", 9)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
@@ -470,6 +510,45 @@ func TestOpenAINativeFirstOutputStageOverflowFailsOverWithoutAttemptBytes(t *tes
 	require.Empty(t, rec.Body.String())
 	require.Empty(t, rec.Header().Values("X-Request-Id"))
 	require.Empty(t, rec.Header().Values("X-Ratelimit-Remaining-Requests"))
+}
+
+func TestOpenAINativeFirstOutputEventLimitFailsOverWithoutAttemptBytes(t *testing.T) {
+	for _, explicitLimit := range []int64{0, 1024} {
+		t.Run(fmt.Sprintf("event_limit_%d", explicitLimit), func(t *testing.T) {
+			cfg := &config.Config{Gateway: config.GatewayConfig{
+				OpenAIFirstOutputTimeoutSeconds: 30,
+				MaxLineSize:                     2048,
+				SSEEventMaxBytes:                explicitLimit,
+			}}
+			svc := &OpenAIGatewayService{cfg: cfg, responseHeaderFilter: compileResponseHeaderFilter(cfg)}
+			line := `data: {"type":"response.output_text.delta","delta":"` + strings.Repeat("x", 700) + `"}`
+			// No blank line: several individually legal lines form one oversized
+			// event, which must fail before the independent 8 MiB stage limit.
+			body := strings.Repeat(line+"\n", 4)
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"X-Request-Id":                   []string{"request-event-overflow"},
+					"X-Ratelimit-Remaining-Requests": []string{"1"},
+				},
+				Body: io.NopCloser(strings.NewReader(body)),
+			}
+
+			_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, time.Now(), "model", "model")
+
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+			require.True(t, failoverErr.SafeToFailoverAfterWrite)
+			require.Contains(t, string(failoverErr.ResponseBody), "event exceeds first-output transport limit")
+			require.Empty(t, rec.Body.String())
+			require.Empty(t, rec.Header().Values("X-Request-Id"))
+			require.Empty(t, rec.Header().Values("X-Ratelimit-Remaining-Requests"))
+		})
+	}
 }
 
 func TestOpenAINativeFirstOutputScannerRejectsOversizedLineWithoutLeak(t *testing.T) {
@@ -542,7 +621,7 @@ func TestOpenAINativeFirstOutputScannerAllowsLargeEventAfterSemanticBoundary(t *
 	require.Equal(t, "request-large-image", rec.Result().Header.Get("X-Request-Id"))
 }
 
-func TestOpenAINativeFirstOutputTimeoutDisabledPreservesKeepaliveFlush(t *testing.T) {
+func TestOpenAINativeFirstOutputTimeoutDisabledKeepsPreamblePrivateAcrossKeepalive(t *testing.T) {
 	svc := &OpenAIGatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{
 		StreamKeepaliveInterval: 1,
 		MaxLineSize:             defaultMaxLineSize,
@@ -552,7 +631,7 @@ func TestOpenAINativeFirstOutputTimeoutDisabledPreservesKeepaliveFlush(t *testin
 		defer func() { _ = pw.Close() }()
 		_, _ = pw.Write([]byte("data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_stalled\"}}\n\n"))
 		_, _ = pw.Write([]byte("data: {\"type\":\"response.in_progress\",\"response\":{\"id\":\"resp_stalled\"}}\n\n"))
-		time.Sleep(1100 * time.Millisecond)
+		time.Sleep(2100 * time.Millisecond)
 	}()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -561,10 +640,11 @@ func TestOpenAINativeFirstOutputTimeoutDisabledPreservesKeepaliveFlush(t *testin
 
 	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, time.Now(), "model", "model")
 
-	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
 	require.Contains(t, rec.Body.String(), ":\n\n")
-	require.Contains(t, rec.Body.String(), "response.created")
-	require.Contains(t, rec.Body.String(), "response.in_progress")
+	require.NotContains(t, rec.Body.String(), "response.created")
+	require.NotContains(t, rec.Body.String(), "response.in_progress")
 }
 
 func TestOpenAINativeFirstOutputFailoverKeepsAttemptHeadersPrivateAfterKeepaliveCommit(t *testing.T) {

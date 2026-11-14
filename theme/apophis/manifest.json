@@ -587,6 +587,13 @@
       "sentinel": "background: hsl(var(--card) / 0.96);"
     },
     {
+      "target": "frontend/src/views/admin/SettingsView.vue",
+      "operation": "replace",
+      "marker": ".dark .settings-save-dock {\n  border-color: rgb(51 65 85 / 0.65);\n  background: rgb(15 23 42 / 0.86);\n  box-shadow:\n    0 14px 32px rgb(0 0 0 / 0.34),\n    0 1px 0 rgb(255 255 255 / 0.06) inset;\n}",
+      "source": "patches/admin-settings-neutral-dark-save-dock.txt",
+      "sentinel": ".dark .settings-save-dock {\n  border-color: hsl(var(--border));\n  background: hsl(var(--card) / 0.96);\n  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);\n}"
+    },
+    {
       "target": "frontend/src/views/admin/__tests__/GroupsView.codexManifest.spec.ts",
       "marker": "vi.mock(\"@/stores/app\", () => ({\n  useAppStore: () => ({\n    showError: vi.fn(),\n    showSuccess: vi.fn(),\n  }),\n}));",
       "position": "after",

@@ -9,7 +9,7 @@
 
 ARG NODE_IMAGE=node:24-alpine
 ARG BUN_IMAGE=oven/bun:1.3.13
-ARG GOLANG_IMAGE=golang:1.26.6-alpine
+ARG GOLANG_IMAGE=golang:1.27.4-alpine
 ARG ALPINE_IMAGE=alpine:3.21
 ARG POSTGRES_IMAGE=postgres:18-alpine
 ARG GOPROXY=https://goproxy.cn,direct
@@ -162,6 +162,7 @@ COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/
 
 # Create data directory
 RUN mkdir -p /app/data && chown -R sub2api:sub2api /app
+
 
 # Copy entrypoint script (fixes volume permissions then drops to sub2api)
 COPY deploy/docker-entrypoint.sh /app/docker-entrypoint.sh

@@ -28,6 +28,25 @@ test('current repository satisfies the automatic release and frontend update con
   assert.deepEqual(violations, [])
 })
 
+test('publication gates reject missing scans and tags advanced before scanning', async () => {
+  for (const [path, marker, replacement, code] of [
+    ['.github/workflows/upstream-theme-sync.yml', 'bash scripts/ci/check-security.sh backend', 'true', 'security.generated_source'],
+    ['.github/workflows/theme-binary-release.yml', 'bash scripts/ci/check-security.sh frontend', 'true', 'security.binary_source'],
+    ['.github/workflows/release.yml', 'needs: [update-version, build-frontend, security]', 'needs: [update-version, build-frontend]', 'security.tag_release'],
+  ]) {
+    const files = await loadContractFiles()
+    files.set(path, files.get(path).replace(marker, replacement))
+    const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+    assert.ok(violations.some((entry) => entry.code === code), code)
+  }
+  const files = await loadContractFiles()
+  const path = '.github/workflows/theme-binary-release.yml'
+  const source = files.get(path).replace('git tag -f "$RELEASE_TAG"', '')
+  files.set(path, source.replace('bash scripts/ci/check-security.sh frontend', 'git tag -f "$RELEASE_TAG"\n          bash scripts/ci/check-security.sh frontend'))
+  const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+  assert.ok(violations.some((entry) => entry.code === 'security.binary_source'))
+})
+
 test('contract requires Docker builds to use the generated Go module version', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/upstream-theme-sync.yml'
@@ -53,13 +72,94 @@ test('contract requires preserving non-owned upstream workflow files', async () 
   assert.ok(violations.some((violation) => violation.code === 'sync.workflow_preservation'))
 })
 
+test('contract requires fetching, applying, and verifying bot check-in rewards', async () => {
+  for (const [marker, replacement] of [
+    ['git fetch origin "refs/heads/feat/bot-checkin-rewards:refs/remotes/origin/feat/bot-checkin-rewards"', 'true'],
+    ['node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards\n', ''],
+    ['node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards --check', 'true'],
+  ]) {
+    const files = await loadContractFiles()
+    const workflowPath = '.github/workflows/upstream-theme-sync.yml'
+    files.set(workflowPath, files.get(workflowPath).replace(marker, replacement))
+    const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+    assert.ok(violations.some((entry) => entry.code === 'sync.bot_checkin_rewards_overlay'))
+  }
+})
+
+test('contract requires fetching, applying, and verifying bot personal-info', async () => {
+  for (const [marker, replacement] of [
+    ['git fetch --depth=1 origin "refs/heads/QQbot:refs/remotes/origin/QQbot"', 'true'],
+    ['node scripts/apply-bot-personal-info.mjs --root . --ref origin/QQbot\n', ''],
+    ['node scripts/apply-bot-personal-info.mjs --root . --ref origin/QQbot --check', 'true'],
+  ]) {
+    const files = await loadContractFiles()
+    const workflowPath = '.github/workflows/upstream-theme-sync.yml'
+    files.set(workflowPath, files.get(workflowPath).replace(marker, replacement))
+    const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+    assert.ok(violations.some((entry) => entry.code === 'sync.bot_personal_info_overlay'))
+  }
+})
+
+test('QQ bot overlay permits all known generated wiring conflicts after bot binding', async () => {
+  const files = await loadContractFiles()
+  const qqScript = files.get('scripts/apply-qq-bot-binding.mjs')
+  for (const path of [
+    'backend/cmd/server/wire_gen.go',
+    'backend/internal/handler/wire.go',
+    'backend/internal/repository/wire.go',
+    'backend/internal/server/router.go',
+    'backend/internal/service/balance_notify_service.go',
+    'backend/internal/service/wire.go',
+  ]) {
+    assert.match(qqScript, new RegExp(path.replaceAll('/', '\\/')))
+  }
+  assert.match(qqScript, /git\(\['checkout', '--ours'/)
+  assert.match(qqScript, /applyQQChanges/)
+  assert.match(qqScript, /EnqueueBalanceLow/)
+  assert.match(qqScript, /ProvideBalanceNotifyService\(nil, nil, nil, nil, nil\)/)
+})
+
+test('bot check-in overlay permits known wiring conflicts after QQ integration', async () => {
+  const script = (await loadContractFiles()).get('scripts/apply-bot-checkin-rewards.mjs')
+  for (const path of [
+    'backend/cmd/server/wire_gen.go',
+    'backend/internal/handler/bot_handler.go',
+    'backend/internal/handler/wire.go',
+    'backend/internal/repository/wire.go',
+    'backend/internal/server/routes/bot.go',
+    'backend/internal/server/routes/bot_test.go',
+  ]) {
+    assert.match(script, new RegExp(path.replaceAll('/', '\\/')))
+  }
+})
+
+test('bot check-in overlay check mode tolerates composed wiring while requiring feature markers', async () => {
+  const script = (await loadContractFiles()).get('scripts/apply-bot-checkin-rewards.mjs')
+  assert.match(script, /if \(!reverseApplies\) verifyOverlayMarkers\(migrationPath, migrationText\)/)
+  for (const marker of [
+    'type BotCheckInService',
+    'botCheckInService :=',
+    'BotCheckInRedeemType',
+    'bot_checkin_enabled',
+  ]) {
+    assert.match(script, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  }
+})
+
+test('bot overlays preserve isolated integration fixture cleanup', async () => {
+  const files = await loadContractFiles()
+  const binding = files.get('scripts/apply-bot-binding.mjs') || ''
+  assert.match(binding, /normalizeBotBindingIntegrationTest/)
+  assert.match(binding, /must clean up its own fixture users and rewards/)
+})
+
 test('contract rejects literal question-mark placeholders in upstream release notes', async () => {
   const files = await loadContractFiles()
   const path = '.github/workflows/upstream-theme-sync.yml'
   files.set(
     path,
     files.get(path).replace(
-      "cat \"$GENERATED_DIR/.apophis-upstream-release-notes.md\"",
+      "node scripts/write-release-notes.mjs",
       "printf '???????%s\\n\\n' \"$UPSTREAM_RELEASE_URL\"",
     ),
   )
