@@ -7,10 +7,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import InfiniteCanvasView from '../InfiniteCanvasView.vue'
 import { CANVAS_CONFIGURED_MESSAGE, CANVAS_INIT_MESSAGE, CANVAS_READY_MESSAGE } from '@/features/infiniteCanvas/bridge'
 
+declare const jsdom: { reconfigure: (options: { url: string }) => void }
+
 const { listKeys, showError, publicSettings, fetchAgentConfig, writeClipboard } = vi.hoisted(() => ({
   listKeys: vi.fn(),
   showError: vi.fn(),
-  publicSettings: { api_base_url: 'https://gateway.example.com' },
+  publicSettings: { api_base_url: 'https://api.kinght.top' },
   fetchAgentConfig: vi.fn(),
   writeClipboard: vi.fn(),
 }))
@@ -67,11 +69,12 @@ const activeKey = {
   reset_7d_at: null,
 }
 
-describe('InfiniteCanvasView', () => {
+describe.each(['https://api.kinght.top', 'https://api.aouter.top'])('InfiniteCanvasView (%s)', (origin) => {
   beforeEach(() => {
+    jsdom.reconfigure({ url: `${origin}/workspace/canvas` })
     vi.clearAllMocks()
     localStorage.clear()
-    publicSettings.api_base_url = 'https://gateway.example.com'
+    publicSettings.api_base_url = 'https://api.kinght.top'
     fetchAgentConfig.mockRejectedValue(new TypeError('Agent unavailable'))
     vi.stubGlobal('fetch', fetchAgentConfig)
     writeClipboard.mockResolvedValue(undefined)
@@ -174,7 +177,7 @@ describe('InfiniteCanvasView', () => {
         type: CANVAS_INIT_MESSAGE,
         payload: expect.objectContaining({
           apiKey: 'sk-canvas-secret',
-          baseUrl: 'https://gateway.example.com/v1',
+          baseUrl: `${origin}/v1`,
         }),
       }),
       window.location.origin,
@@ -239,7 +242,7 @@ describe('InfiniteCanvasView', () => {
         type: CANVAS_INIT_MESSAGE,
         payload: expect.objectContaining({
           apiKey: 'sk-canvas-secret',
-          baseUrl: 'https://gateway.example.com/v1',
+          baseUrl: `${origin}/v1`,
           locale: 'zh-CN',
         }),
       }),
