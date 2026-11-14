@@ -1,0 +1,1 @@
+          <h1 class="auth-site-name text-gradient mb-2 text-3xl font-bold">
