@@ -1,0 +1,1 @@
+    <div class="auth-container relative z-10 w-full max-w-md">

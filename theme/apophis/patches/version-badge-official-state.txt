@@ -1,0 +1,1 @@
+const isReleaseBuild = computed(() => buildType.value === 'release')
