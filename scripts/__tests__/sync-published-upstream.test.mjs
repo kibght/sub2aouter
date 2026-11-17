@@ -129,6 +129,53 @@ test('sync leaves main unchanged when the upstream delta conflicts with a reposi
   )
 })
 
+test('sync preserves customized Dockerfiles when the upstream Go image update is already applied', async (t) => {
+  const dockerfiles = ['Dockerfile', 'backend/Dockerfile', 'deploy/Dockerfile']
+  const base = 'ARG NODE_IMAGE=node:24-alpine\nARG GOLANG_IMAGE=golang:1.27.3-alpine\nARG ALPINE_IMAGE=alpine:3.21\n\nFROM ${GOLANG_IMAGE} AS backend-builder\nRUN echo base\n'
+  const upstream = base.replace('golang:1.27.3-alpine', 'golang:1.27.4-alpine')
+  const customized = upstream.replace('ARG GOLANG_IMAGE=', 'ARG BUN_IMAGE=oven/bun:1.3.13\nARG GOLANG_IMAGE=')
+  const files = (contents) => Object.fromEntries(dockerfiles.map((file) => [file, contents]))
+  const data = await fixture(t, {
+    initialTag: 'v1.0.0',
+    baseFiles: files(base),
+    localFiles: files(customized),
+    upstreamFiles: files(upstream),
+  })
+
+  const result = sync(data)
+
+  assert.equal(result.status, 0, result.stderr)
+  for (const file of dockerfiles) {
+    const published = execFileSync('git', [`--git-dir=${data.origin}`, 'show', `main:${file}`])
+    assert.deepEqual(published, Buffer.from(customized))
+  }
+  assert.equal(git(data.root, [`--git-dir=${data.origin}`, 'show', 'main:upstream-only.txt']), 'release 1.0.1')
+  assert.equal(git(data.root, [`--git-dir=${data.origin}`, 'show', 'main:.apophis-repository-upstream-sha']), data.upstreamSha)
+})
+
+test('sync rejects real Dockerfile command conflicts alongside an already applied Go image update', async (t) => {
+  const base = 'ARG NODE_IMAGE=node:24-alpine\nARG GOLANG_IMAGE=golang:1.27.3-alpine\nARG ALPINE_IMAGE=alpine:3.21\n\nFROM ${GOLANG_IMAGE} AS backend-builder\nRUN echo base\n'
+  const upgraded = base.replace('golang:1.27.3-alpine', 'golang:1.27.4-alpine')
+  const customized = upgraded.replace('ARG GOLANG_IMAGE=', 'ARG BUN_IMAGE=oven/bun:1.3.13\nARG GOLANG_IMAGE=').replace('RUN echo base', 'RUN echo repository')
+  const data = await fixture(t, {
+    initialTag: 'v1.0.0',
+    baseFiles: { Dockerfile: base },
+    localFiles: { Dockerfile: customized },
+    upstreamFiles: { Dockerfile: upgraded.replace('RUN echo base', 'RUN echo upstream') },
+  })
+  const main = `--git-dir=${data.origin}`
+  const before = git(data.root, [main, 'rev-parse', 'main'])
+
+  const result = sync(data)
+
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /git apply --3way --index failed/)
+  assert.equal(git(data.root, [main, 'rev-parse', 'main']), before)
+  assert.equal(git(data.root, [main, 'show', 'main:Dockerfile']), customized.trim())
+  assert.equal(spawnSync('git', [main, 'show', 'main:.apophis-repository-upstream-tag']).status, 128)
+  await assert.rejects(readFile(path.join(data.repository, '.apophis-repository-upstream-tag')), { code: 'ENOENT' })
+})
+
 const serviceWire = 'backend/internal/service/wire.go'
 const generatedWire = 'backend/cmd/server/wire_gen.go'
 

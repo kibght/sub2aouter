@@ -33,6 +33,8 @@ const MERGED_SOURCE_PATHS = [
   'backend/internal/repository/wire.go',
   'backend/internal/service/wire.go',
 ]
+const GO_IMAGE_SOURCE_PATHS = ['Dockerfile', 'backend/Dockerfile', 'deploy/Dockerfile']
+const GO_IMAGE_PATTERN = /\bgolang:\d+\.\d+\.\d+-alpine(?=[\s"']|$)/g
 
 function runGit(args, { input, quiet = false, allowFailure = false } = {}) {
   const result = spawnSync('git', args, {
@@ -69,6 +71,32 @@ function optionalGitBlob(ref, file) {
 function sameSource(left, right) {
   if (left === null || right === null) return left === right
   return left.replace(/\r\n/g, '\n') === right.replace(/\r\n/g, '\n')
+}
+
+async function alreadyAppliedGoImagePaths(baseSha, upstreamSha) {
+  const applied = []
+  for (const file of GO_IMAGE_SOURCE_PATHS) {
+    const baseText = optionalGitBlob(baseSha, file)
+    const upstreamText = optionalGitBlob(upstreamSha, file)
+    if (baseText === null || upstreamText === null || baseText === upstreamText) continue
+    const upstreamImages = upstreamText.match(GO_IMAGE_PATTERN)
+    if (!upstreamImages ||
+        baseText.replace(GO_IMAGE_PATTERN, 'golang:<version>-alpine') !==
+        upstreamText.replace(GO_IMAGE_PATTERN, 'golang:<version>-alpine')) continue
+    let currentText
+    try {
+      currentText = await readFile(path.join(ROOT, file), 'utf8')
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+      continue
+    }
+    const currentImages = currentText.match(GO_IMAGE_PATTERN) || []
+    if (currentImages.length === upstreamImages.length &&
+        currentImages.every((image, index) => image === upstreamImages[index])) {
+      applied.push(file)
+    }
+  }
+  return applied
 }
 
 async function mergeSourceFile(baseSha, upstreamSha, file) {
@@ -258,12 +286,16 @@ async function main() {
 
   // The repository owns its release VERSION. Keep it independent from the
   // upstream source VERSION while applying the rest of the release delta.
+  // A Go-only image update can already be present beside a local Canvas ARG.
+  // Exclude it only after checking the complete upstream change and images.
+  const appliedGoImagePaths = await alreadyAppliedGoImagePaths(baseSha, upstreamSha)
   const patch = runGit([
     'diff', '--binary', '--no-ext-diff', baseSha, upstreamSha, '--', '.',
     ':(exclude)backend/cmd/server/VERSION',
     ...[...THEME_OWNED_SOURCE_PATHS].map((file) => `:(exclude)${file}`),
     ...UPSTREAM_EXCLUDED_SOURCE_PATHS.map((file) => `:(exclude)${file}`),
     ...MERGED_SOURCE_PATHS.map((file) => `:(exclude)${file}`),
+    ...appliedGoImagePaths.map((file) => `:(exclude)${file}`),
   ], { quiet: true }).stdout
   if (patch.length > 0) {
     runGit(['apply', '--3way', '--index'], { input: patch })
