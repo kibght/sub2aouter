@@ -100,6 +100,9 @@ func (r *botCheckInRepository) CheckIn(ctx context.Context, params service.BotCh
 	`, params.UserID, rewardDate).Scan(&result.Reward, &result.StreakDay, &result.RewardDate, &result.CreatedAt)
 	if err == nil {
 		result.Status = service.BotCheckInStatusAlreadyCheckedIn
+		if err := loadBotCheckInStats(ctx, tx, params.UserID, dayStart, result); err != nil {
+			return nil, err
+		}
 		return result, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -158,6 +161,9 @@ func (r *botCheckInRepository) CheckIn(ctx context.Context, params service.BotCh
 		return nil, fmt.Errorf("record bot check-in balance history: %w", err)
 	}
 
+	if err := loadBotCheckInStats(ctx, tx, params.UserID, dayStart, result); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit bot check-in: %w", err)
 	}
@@ -169,6 +175,29 @@ func (r *botCheckInRepository) CheckIn(ctx context.Context, params service.BotCh
 	result.StreakDay = streakDay
 	result.CreatedAt = params.Now
 	return result, nil
+}
+
+func loadBotCheckInStats(ctx context.Context, tx *sql.Tx, userID int64, dayStart time.Time, result *service.BotCheckInResult) error {
+	monthStart := timezone.StartOfMonth(dayStart)
+	weekStart := timezone.StartOfWeek(dayStart)
+	result.MonthTotalDays = monthStart.AddDate(0, 1, -1).Day()
+	// Calendar history records the full streak independently of the seven-day reward cycle.
+	err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FILTER (WHERE reward_date >= $3::date),
+			COUNT(*) FILTER (WHERE reward_date >= $4::date),
+			COUNT(*) FILTER (WHERE reward_date = $2::date - (day_number - 1)::int)
+		FROM (
+			SELECT reward_date, ROW_NUMBER() OVER (ORDER BY reward_date DESC) AS day_number
+			FROM bot_checkins
+			WHERE user_id = $1 AND reward_date <= $2::date
+		) AS checkin_dates
+	`, userID, dayStart.Format("2006-01-02"), monthStart.Format("2006-01-02"), weekStart.Format("2006-01-02")).Scan(
+		&result.MonthCheckedDays, &result.WeekCheckedDays, &result.ConsecutiveDays,
+	)
+	if err != nil {
+		return fmt.Errorf("load bot check-in calendar statistics: %w", err)
+	}
+	return nil
 }
 
 func formatBotCheckInAmount(amount float64) string {

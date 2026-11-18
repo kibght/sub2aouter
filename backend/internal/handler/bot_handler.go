@@ -115,6 +115,10 @@ type botCheckInResponse struct {
 	Reward           float64   `json:"reward"`
 	Balance          float64   `json:"balance"`
 	StreakDay        int       `json:"streak_day"`
+	MonthCheckedDays int       `json:"month_checked_days"`
+	MonthTotalDays   int       `json:"month_total_days"`
+	WeekCheckedDays  int       `json:"week_checked_days"`
+	ConsecutiveDays  int       `json:"consecutive_days"`
 	CheckInDate      string    `json:"check_in_date"`
 	NextCheckInAt    time.Time `json:"next_check_in_at"`
 	MessageKey       string    `json:"message_key"`
@@ -365,6 +369,8 @@ func (h *BotHandler) CheckIn(c *gin.Context) {
 		Eligible: result.Eligible, TodayTokens: result.TodayTokens, RequiredTokens: result.RequiredTokens,
 		CheckedIn: result.CheckedIn, AlreadyCheckedIn: status == "already_checked_in",
 		Reward: result.Reward, Balance: result.Balance, StreakDay: result.StreakDay,
+		MonthCheckedDays: result.MonthCheckedDays, MonthTotalDays: result.MonthTotalDays,
+		WeekCheckedDays: result.WeekCheckedDays, ConsecutiveDays: result.ConsecutiveDays,
 		CheckInDate: checkInDate, NextCheckInAt: nextCheckInAt, MessageKey: messageKey,
 	})
 }

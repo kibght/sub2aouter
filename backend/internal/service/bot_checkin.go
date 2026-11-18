@@ -56,6 +56,10 @@ type BotCheckInResult struct {
 	Reward           float64
 	Balance          float64
 	StreakDay        int
+	MonthCheckedDays int
+	MonthTotalDays   int
+	WeekCheckedDays  int
+	ConsecutiveDays  int
 	RewardDate       time.Time
 	CreatedAt        time.Time
 }

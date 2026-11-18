@@ -202,6 +202,10 @@ func TestBotCheckInPostgres(t *testing.T) {
 		successes, repeats := 0, 0
 		for result := range results {
 			require.NotNil(t, result)
+			require.Equal(t, 1, result.MonthCheckedDays)
+			require.Equal(t, 30, result.MonthTotalDays)
+			require.Equal(t, 1, result.WeekCheckedDays)
+			require.Equal(t, 1, result.ConsecutiveDays)
 			switch result.Status {
 			case service.BotCheckInStatusSuccess:
 				successes++
@@ -231,6 +235,97 @@ func TestBotCheckInPostgres(t *testing.T) {
 		require.Equal(t, 7, result.StreakDay)
 		require.Equal(t, 0.5, result.Reward)
 		require.Equal(t, 1.5, result.Balance)
+	})
+
+	t.Run("calendar statistics include today and preserve history on retry", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			date        string
+			history     []string
+			monthDays   int
+			monthTotal  int
+			weekDays    int
+			consecutive int
+		}{
+			{name: "28 day month starts Monday", date: "2027-02-01", history: []string{"2027-01-30", "2027-01-31"}, monthDays: 1, monthTotal: 28, weekDays: 1, consecutive: 3},
+			{name: "leap February", date: "2028-02-29", history: []string{"2028-02-27", "2028-02-28"}, monthDays: 3, monthTotal: 29, weekDays: 2, consecutive: 3},
+			{name: "30 day month with earlier gap", date: "2026-11-18", history: []string{"2026-10-31", "2026-11-02", "2026-11-16", "2026-11-17"}, monthDays: 4, monthTotal: 30, weekDays: 3, consecutive: 3},
+			{name: "31 day month", date: "2026-12-31", history: []string{"2026-12-29", "2026-12-30"}, monthDays: 3, monthTotal: 31, weekDays: 3, consecutive: 3},
+			{name: "Sunday stays in current week", date: "2026-11-22", history: []string{"2026-11-15", "2026-11-16", "2026-11-20", "2026-11-21"}, monthDays: 5, monthTotal: 30, weekDays: 4, consecutive: 3},
+			{name: "Monday starts new week", date: "2026-11-23", history: []string{"2026-11-21", "2026-11-22"}, monthDays: 3, monthTotal: 30, weekDays: 1, consecutive: 3},
+			{name: "week and streak cross month at local midnight", date: "2026-11-01", history: []string{"2026-10-30", "2026-10-31"}, monthDays: 1, monthTotal: 30, weekDays: 3, consecutive: 3},
+			{name: "week and streak cross year", date: "2027-01-01", history: []string{"2026-12-30", "2026-12-31"}, monthDays: 1, monthTotal: 31, weekDays: 3, consecutive: 3},
+			{name: "missing yesterday resets only streak", date: "2026-11-18", history: []string{"2026-11-14", "2026-11-16"}, monthDays: 3, monthTotal: 30, weekDays: 2, consecutive: 1},
+			{name: "future rows excluded", date: "2026-11-18", history: []string{"2026-11-17", "2026-11-19", "2026-11-20", "2026-12-01"}, monthDays: 2, monthTotal: 30, weekDays: 2, consecutive: 2},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				id := createUser(t)
+				otherID := createUser(t)
+				date, err := timezone.ParseInLocation("2006-01-02", tc.date)
+				require.NoError(t, err)
+				for _, previous := range tc.history {
+					_, err := db.ExecContext(ctx, `INSERT INTO bot_checkins
+						(user_id, reward_date, streak_day, reward_amount, balance_before, balance_after, created_at)
+						VALUES ($1, $2, 1, 0.1, 0.9, 1, $3)`, id, previous, now)
+					require.NoError(t, err)
+				}
+				_, err = db.ExecContext(ctx, `INSERT INTO bot_checkins
+					(user_id, reward_date, streak_day, reward_amount, balance_before, balance_after, created_at)
+					VALUES ($1, $2, 1, 0.1, 0.9, 1, $3)`, otherID, tc.date, now)
+				require.NoError(t, err)
+				params := paramsFor(id, service.BotCheckInUsageAmount)
+				params.RewardDate, params.Now, params.RequiredAmount = tc.date, date.Add(time.Second).UTC(), 0
+				first, err := repo.CheckIn(ctx, params)
+				require.NoError(t, err)
+				require.True(t, first.CheckedIn)
+				require.Equal(t, tc.monthDays, first.MonthCheckedDays)
+				require.Equal(t, tc.monthTotal, first.MonthTotalDays)
+				require.Equal(t, tc.weekDays, first.WeekCheckedDays)
+				require.Equal(t, tc.consecutive, first.ConsecutiveDays)
+				repeated, err := repo.CheckIn(ctx, params)
+				require.NoError(t, err)
+				require.Equal(t, service.BotCheckInStatusAlreadyCheckedIn, repeated.Status)
+				require.Equal(t, first.MonthCheckedDays, repeated.MonthCheckedDays)
+				require.Equal(t, first.MonthTotalDays, repeated.MonthTotalDays)
+				require.Equal(t, first.WeekCheckedDays, repeated.WeekCheckedDays)
+				require.Equal(t, first.ConsecutiveDays, repeated.ConsecutiveDays)
+				var checkIns, histories int
+				var balance float64
+				require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM bot_checkins WHERE user_id = $1`, id).Scan(&checkIns))
+				require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM redeem_codes WHERE used_by = $1`, id).Scan(&histories))
+				require.NoError(t, db.QueryRowContext(ctx, `SELECT balance FROM users WHERE id = $1`, id).Scan(&balance))
+				require.Equal(t, len(tc.history)+1, checkIns)
+				require.Equal(t, 1, histories)
+				require.Equal(t, 1.1, balance)
+			})
+		}
+	})
+
+	t.Run("eighth day continues streak while reward cycle resets", func(t *testing.T) {
+		id := createUser(t)
+		start, err := timezone.ParseInLocation("2006-01-02", "2026-10-28")
+		require.NoError(t, err)
+		for i := 0; i < 8; i++ {
+			date := start.AddDate(0, 0, i)
+			params := paramsFor(id, service.BotCheckInUsageAmount)
+			params.RequiredAmount, params.FirstReward = 0, 0.19
+			params.RewardDate, params.Now = date.Format("2006-01-02"), date.Add(time.Second).UTC()
+			result, err := repo.CheckIn(ctx, params)
+			require.NoError(t, err)
+			require.True(t, result.CheckedIn)
+			require.Equal(t, i+1, result.ConsecutiveDays)
+			require.Equal(t, i%7+1, result.StreakDay)
+			if i == 6 {
+				require.Equal(t, 0.38, result.Reward)
+			} else {
+				require.Equal(t, 0.19, result.Reward)
+			}
+			if i == 7 {
+				require.Equal(t, 4, result.MonthCheckedDays)
+				require.Equal(t, 30, result.MonthTotalDays)
+				require.Equal(t, 3, result.WeekCheckedDays)
+			}
+		}
 	})
 }
 

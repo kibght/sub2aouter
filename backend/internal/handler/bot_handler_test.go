@@ -291,6 +291,7 @@ func TestBotHandlerCheckInReturnsRewardAndDuplicateAmount(t *testing.T) {
 	checkIn := &stubBotCheckIn{
 		result: &service.BotCheckInResult{
 			CheckedIn: true, Reward: 0.18, Balance: 1.43, StreakDay: 3, RewardDate: rewardDate,
+			MonthCheckedDays: 3, MonthTotalDays: 30, WeekCheckedDays: 2, ConsecutiveDays: 10,
 		},
 		next: rewardDate.AddDate(0, 0, 1),
 	}
@@ -308,7 +309,25 @@ func TestBotHandlerCheckInReturnsRewardAndDuplicateAmount(t *testing.T) {
 	require.Equal(t, 0.18, data["reward"])
 	require.Equal(t, 1.43, data["balance"])
 	require.Equal(t, float64(3), data["streak_day"])
+	require.Equal(t, float64(3), data["month_checked_days"])
+	require.Equal(t, float64(30), data["month_total_days"])
+	require.Equal(t, float64(2), data["week_checked_days"])
+	require.Equal(t, float64(10), data["consecutive_days"])
 	require.Equal(t, "check_in_success", data["message_key"])
+
+	checkIn.result.CheckedIn = false
+	checkIn.result.Status = service.BotCheckInStatusAlreadyCheckedIn
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/bot/check-in", nil))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	data = decodeBotData(t, rec)
+	require.Equal(t, true, data["already_checked_in"])
+	require.Equal(t, "already_checked_in", data["status"])
+	require.Equal(t, 0.18, data["reward"])
+	require.Equal(t, float64(3), data["month_checked_days"])
+	require.Equal(t, float64(30), data["month_total_days"])
+	require.Equal(t, float64(2), data["week_checked_days"])
+	require.Equal(t, float64(10), data["consecutive_days"])
 }
 
 func TestBotHandlerCheckInReturnsAmountUsageRequirement(t *testing.T) {
