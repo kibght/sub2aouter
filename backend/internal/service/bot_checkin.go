@@ -16,8 +16,8 @@ import (
 
 const botCheckInAmountScale int64 = 100_000_000
 
-// BotCheckInStreakCycleDays is the number of consecutive check-in days before
-// the reward cycle starts again from the daily reward range.
+// BotCheckInStreakCycleDays preserves the legacy streak_day cycle length.
+// The double reward depends on completing the current calendar week instead.
 const BotCheckInStreakCycleDays = 7
 
 const (

@@ -412,7 +412,7 @@ export default {
         botCheckInDescription: 'When enabled, bot check-ins grant a random balance amount. First-bind rewards are configured separately.',
         botBindingBonusAmount: 'First-bind bonus amount',
         botCheckInRewardRule: 'Each day draws a random reward from $0.01 to $0.20.',
-        botCheckInSeventhDayBonus: "On the seventh consecutive day, that day's random reward is doubled.",
+        botCheckInSeventhDayBonus: 'Check in every day from Monday through Sunday to receive double the random reward on Sunday.',
         botCheckInUsageRequirement: 'Check-in usage requirement',
         botCheckInTokenMode: 'Token usage',
         botCheckInAmountMode: 'Daily spending',

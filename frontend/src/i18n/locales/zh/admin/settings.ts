@@ -409,7 +409,7 @@ export default {
         botCheckInDescription: '开启后机器人签到按随机金额赠送余额；首次绑定赠送金额由绑定流程单独配置。',
         botBindingBonusAmount: '首次绑定赠送金额',
         botCheckInRewardRule: '每天都是随机0.01-0.2',
-        botCheckInSeventhDayBonus: '累计七天第七天在随机金额上面乘以2倍到账',
+        botCheckInSeventhDayBonus: '本周签到满 7 天才双倍：周一至周日每天都签到，周日领取双倍',
         botCheckInUsageRequirement: '签到使用量条件',
         botCheckInTokenMode: 'Token 用量',
         botCheckInAmountMode: '每日消费金额',

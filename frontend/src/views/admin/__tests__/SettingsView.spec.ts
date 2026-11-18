@@ -249,7 +249,7 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.defaults.defaultPlatformQuotasHint": "新用户注册时自动写入平台限额记录；已有用户不受影响。留空 = 该平台该窗口不限制。",
     "admin.settings.defaults.platformQuotaNotice": "月限额为 30 天滚动窗口，非自然月",
     "admin.settings.defaults.botCheckInRewardRule": "每天都是随机0.01-0.2",
-    "admin.settings.defaults.botCheckInSeventhDayBonus": "累计七天第七天在随机金额上面乘以2倍到账",
+    "admin.settings.defaults.botCheckInSeventhDayBonus": "本周签到满 7 天才双倍：周一至周日每天都签到，周日领取双倍",
     "admin.settings.defaults.botCheckInUsageRequirement": "签到使用量条件",
     "admin.settings.defaults.botCheckInTokenMode": "Token 用量",
     "admin.settings.defaults.botCheckInAmountMode": "每日消费金额",
@@ -666,7 +666,7 @@ describe("admin SettingsView bot check-in rewards", () => {
 
     expect(wrapper.text()).toContain("每日赠送最低金额");
     expect(wrapper.text()).toContain("每日赠送最高金额");
-    expect(wrapper.text()).toContain("累计七天第七天在随机金额上面乘以2倍到账");
+    expect(wrapper.text()).toContain("本周签到满 7 天才双倍：周一至周日每天都签到，周日领取双倍");
     expect(wrapper.text()).toContain("签到使用量条件");
     expect(wrapper.text()).not.toContain("签到首日");
     expect(wrapper.text()).not.toContain("admin.settings.defaults.botCheckInIncrementMin");

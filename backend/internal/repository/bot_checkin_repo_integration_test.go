@@ -220,14 +220,16 @@ func TestBotCheckInPostgres(t *testing.T) {
 		assertWrites(t, id, 1, "1.1")
 	})
 
-	t.Run("seventh day doubles and obeys cap", func(t *testing.T) {
+	t.Run("full calendar week doubles and obeys cap", func(t *testing.T) {
 		id := createUser(t)
 		params := paramsFor(id, service.BotCheckInUsageAmount)
 		params.RequiredAmount = 0
 		params.FirstReward = 0.3
+		params.RewardDate = "2026-11-15"
 		_, err := db.ExecContext(ctx, `INSERT INTO bot_checkins
 			(user_id, reward_date, streak_day, reward_amount, increment_amount, balance_before, balance_after, created_at)
-			VALUES ($1, $2::date - 1, 6, 0.1, 0, 0.9, 1, $3)`, id, params.RewardDate, now.Add(-24*time.Hour))
+			SELECT $1, $2::date - day_number, 7 - day_number, 0.1, 0, 0.9, 1, $3
+			FROM generate_series(1, 6) AS day_number`, id, params.RewardDate, now.Add(-24*time.Hour))
 		require.NoError(t, err)
 		result, err := repo.CheckIn(ctx, params)
 		require.NoError(t, err)
@@ -315,16 +317,61 @@ func TestBotCheckInPostgres(t *testing.T) {
 			require.True(t, result.CheckedIn)
 			require.Equal(t, i+1, result.ConsecutiveDays)
 			require.Equal(t, i%7+1, result.StreakDay)
-			if i == 6 {
-				require.Equal(t, 0.38, result.Reward)
-			} else {
-				require.Equal(t, 0.19, result.Reward)
-			}
+			// Starting on Wednesday never completes a calendar week within these eight days.
+			require.Equal(t, 0.19, result.Reward)
 			if i == 7 {
 				require.Equal(t, 4, result.MonthCheckedDays)
 				require.Equal(t, 30, result.MonthTotalDays)
 				require.Equal(t, 3, result.WeekCheckedDays)
 			}
+		}
+	})
+
+	t.Run("calendar week bonus follows Monday reset and requires all seven days", func(t *testing.T) {
+		for _, tc := range []struct {
+			name    string
+			start   string
+			days    int
+			skipDay int
+		}{
+			{name: "two full weeks across month", start: "2026-10-26", days: 14, skipDay: -1},
+			{name: "midweek start does not earn first Sunday bonus", start: "2026-10-28", days: 12, skipDay: -1},
+			{name: "missing Tuesday prevents first Sunday bonus", start: "2026-10-26", days: 14, skipDay: 1},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				id := createUser(t)
+				start, err := timezone.ParseInLocation("2006-01-02", tc.start)
+				require.NoError(t, err)
+				weekDays := 0
+				for i := 0; i < tc.days; i++ {
+					date := start.AddDate(0, 0, i)
+					if date.Weekday() == time.Monday {
+						weekDays = 0
+					}
+					if i == tc.skipDay {
+						continue
+					}
+					weekDays++
+					params := paramsFor(id, service.BotCheckInUsageAmount)
+					params.RewardDate, params.Now = date.Format("2006-01-02"), date.Add(time.Second).UTC()
+					params.RequiredAmount, params.FirstReward = 0, 0.19
+					result, err := repo.CheckIn(ctx, params)
+					require.NoError(t, err)
+					require.True(t, result.CheckedIn)
+					require.Equal(t, weekDays, result.WeekCheckedDays)
+					expectedReward := 0.19
+					if weekDays == 7 {
+						require.Equal(t, time.Sunday, date.Weekday())
+						expectedReward = 0.38
+					}
+					require.Equal(t, expectedReward, result.Reward, params.RewardDate)
+					retry, err := repo.CheckIn(ctx, params)
+					require.NoError(t, err)
+					require.Equal(t, service.BotCheckInStatusAlreadyCheckedIn, retry.Status)
+					require.Equal(t, expectedReward, retry.Reward)
+					require.Equal(t, weekDays, retry.WeekCheckedDays)
+				}
+			})
 		}
 	})
 }

@@ -112,6 +112,9 @@ func (r *botCheckInRepository) CheckIn(ctx context.Context, params service.BotCh
 		result.Status = service.BotCheckInStatusInsufficientUsage
 		return result, nil
 	}
+	if err := loadBotCheckInStats(ctx, tx, params.UserID, dayStart, result); err != nil {
+		return nil, err
+	}
 
 	var previousReward float64
 	var previousStreak int
@@ -125,7 +128,7 @@ func (r *botCheckInRepository) CheckIn(ctx context.Context, params service.BotCh
 	}
 
 	streakDay, reward, increment := calculateBotCheckInReward(
-		previousReward, previousStreak, params.FirstReward, params.Increment, params.DailyCap, err == nil,
+		previousReward, previousStreak, params.FirstReward, params.Increment, params.DailyCap, err == nil, result.WeekCheckedDays,
 	)
 
 	updated := tx.QueryRowContext(ctx, `
@@ -213,15 +216,17 @@ func calculateBotCheckInReward(
 	increment float64,
 	dailyCap float64,
 	hasPrevious bool,
+	weekCheckedDays int,
 ) (streakDay int, reward float64, appliedIncrement float64) {
 	streakDay = 1
 	rewardUnits := service.BotCheckInUnits(firstReward)
 	incrementUnits := int64(0)
 	if hasPrevious && previousStreak > 0 && previousStreak < service.BotCheckInStreakCycleDays {
 		streakDay = previousStreak + 1
-		if streakDay == service.BotCheckInStreakCycleDays {
-			rewardUnits *= 2
-		}
+	}
+	// Only completing this Monday-to-Sunday week earns the double reward.
+	if weekCheckedDays == service.BotCheckInStreakCycleDays-1 {
+		rewardUnits *= 2
 	}
 	capUnits := service.BotCheckInUnits(dailyCap)
 	if rewardUnits > capUnits {

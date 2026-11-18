@@ -11,12 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCalculateBotCheckInRewardStartsCycleAfterSevenDays(t *testing.T) {
+func TestCalculateBotCheckInRewardDoublesOnlyForCompleteCalendarWeek(t *testing.T) {
 	tests := []struct {
 		name           string
 		previousReward float64
 		previousStreak int
 		hasPrevious    bool
+		weekDays       int
 		firstReward    float64
 		increment      float64
 		dailyCap       float64
@@ -26,15 +27,18 @@ func TestCalculateBotCheckInRewardStartsCycleAfterSevenDays(t *testing.T) {
 	}{
 		{name: "first day", firstReward: 0.1, increment: 0.03, dailyCap: 1, wantStreak: 1, wantReward: 0.1},
 		{name: "second day uses a new random amount", previousReward: 0.19, previousStreak: 1, hasPrevious: true, firstReward: 0.07, increment: 0.03, dailyCap: 1, wantStreak: 2, wantReward: 0.07},
-		{name: "seventh day doubles today's random reward", previousReward: 0.28, previousStreak: 6, hasPrevious: true, firstReward: 0.1, increment: 0.03, dailyCap: 1, wantStreak: 7, wantReward: 0.2},
+		{name: "full calendar week doubles today's random reward", previousReward: 0.28, previousStreak: 6, hasPrevious: true, weekDays: 6, firstReward: 0.1, increment: 0.03, dailyCap: 1, wantStreak: 7, wantReward: 0.2},
+		{name: "seven consecutive days across weeks do not double", previousReward: 0.28, previousStreak: 6, hasPrevious: true, weekDays: 3, firstReward: 0.1, dailyCap: 1, wantStreak: 7, wantReward: 0.1},
+		{name: "full week doubles independently of legacy cycle", previousStreak: 3, hasPrevious: true, weekDays: 6, firstReward: 0.19, dailyCap: 1, wantStreak: 4, wantReward: 0.38},
+		{name: "missed day prevents Sunday bonus", previousStreak: 5, hasPrevious: true, weekDays: 5, firstReward: 0.19, dailyCap: 1, wantStreak: 6, wantReward: 0.19},
 		{name: "eighth day resets", previousReward: 0.31, previousStreak: 7, hasPrevious: true, firstReward: 0.1, increment: 0.03, dailyCap: 1, wantStreak: 1, wantReward: 0.1},
-		{name: "cap still applies", previousReward: 0.49, previousStreak: 6, hasPrevious: true, firstReward: 0.3, increment: 0.03, dailyCap: 0.5, wantStreak: 7, wantReward: 0.5},
+		{name: "cap still applies", previousReward: 0.49, previousStreak: 6, hasPrevious: true, weekDays: 6, firstReward: 0.3, increment: 0.03, dailyCap: 0.5, wantStreak: 7, wantReward: 0.5},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			streak, reward, increment := calculateBotCheckInReward(
-				tt.previousReward, tt.previousStreak, tt.firstReward, tt.increment, tt.dailyCap, tt.hasPrevious,
+				tt.previousReward, tt.previousStreak, tt.firstReward, tt.increment, tt.dailyCap, tt.hasPrevious, tt.weekDays,
 			)
 			require.Equal(t, tt.wantStreak, streak)
 			require.InDelta(t, tt.wantReward, reward, 1e-9)
@@ -61,6 +65,8 @@ func TestBotCheckInRollsBackWhenBalanceHistoryFails(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"today_tokens", "today_amount", "eligible"}).AddRow(0, 0, true))
 	mock.ExpectQuery(`SELECT reward_amount, streak_day, reward_date, created_at FROM bot_checkins`).
 		WillReturnRows(sqlmock.NewRows([]string{"reward_amount", "streak_day", "reward_date", "created_at"}))
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FILTER`).
+		WillReturnRows(sqlmock.NewRows([]string{"month_days", "week_days", "consecutive"}).AddRow(0, 0, 0))
 	mock.ExpectQuery(`SELECT reward_amount, streak_day FROM bot_checkins`).
 		WillReturnRows(sqlmock.NewRows([]string{"reward_amount", "streak_day"}))
 	mock.ExpectQuery(`UPDATE users SET balance = balance \+ \$2, updated_at = \$3`).
