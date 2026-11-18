@@ -8,7 +8,12 @@ const env = process.env
 const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()
 const generated = env.GENERATED_DIR
 if (!generated || !/^\d+\.\d+\.\d+$/.test(env.RELEASE_VERSION || "")) throw new Error("Missing release output directory or version.")
-const releases = JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp', 'repos/' + env.GITHUB_REPOSITORY + '/releases?per_page=100'], { encoding: 'utf8' }))
+// Filter before capturing stdout so release bodies and assets cannot exhaust the buffer.
+const releaseRows = execFileSync('gh', [
+  'api', '--paginate', 'repos/' + env.GITHUB_REPOSITORY + '/releases?per_page=100',
+  '--jq', '.[] | {tag_name, draft, prerelease} | @json',
+], { encoding: 'utf8' }).trim()
+const releases = releaseRows ? releaseRows.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line)) : []
 const baseTag = previousReleaseTag(releases, env.RELEASE_VERSION)
 if (!baseTag) throw new Error('No earlier published release found for concrete change comparison.')
 const baseRef = 'refs/apophis/release-notes-base'
