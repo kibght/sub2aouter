@@ -1,0 +1,1 @@
+expect(Object.keys(result).length).toBeGreaterThan(0)
