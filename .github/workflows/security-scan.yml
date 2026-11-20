@@ -1,0 +1,117 @@
+name: Security Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit, branch, or tag to scan without publishing
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact source ref being released
+        required: false
+        type: string
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  backend-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Checkout scan policy
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .security-policy
+          sparse-checkout: |
+            scripts/ci/check-security.sh
+            tools/check_pnpm_audit_exceptions.py
+            tools/test_check_pnpm_audit_exceptions.py
+          sparse-checkout-cone-mode: false
+      - name: Use current scan implementation
+        run: |
+          mkdir -p scripts/ci tools
+          cp .security-policy/scripts/ci/check-security.sh scripts/ci/check-security.sh
+          cp .security-policy/tools/check_pnpm_audit_exceptions.py tools/check_pnpm_audit_exceptions.py
+          cp .security-policy/tools/test_check_pnpm_audit_exceptions.py tools/test_check_pnpm_audit_exceptions.py
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache-dependency-path: backend/go.sum
+      - name: Verify Go version
+        run: |
+          GO_VERSION="$(awk '$1 == "go" { print $2; exit }' backend/go.mod)"
+          test -n "$GO_VERSION"
+          test "$(go env GOVERSION)" = "go${GO_VERSION}"
+      - name: Run govulncheck
+        run: bash scripts/ci/check-security.sh backend
+
+      - name: Preserve security report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: backend-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sub2api-security/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  frontend-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Checkout scan policy
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .security-policy
+          sparse-checkout: |
+            scripts/ci/check-security.sh
+            tools/check_pnpm_audit_exceptions.py
+            tools/test_check_pnpm_audit_exceptions.py
+          sparse-checkout-cone-mode: false
+      - name: Use current scan implementation
+        run: |
+          mkdir -p scripts/ci tools
+          cp .security-policy/scripts/ci/check-security.sh scripts/ci/check-security.sh
+          cp .security-policy/tools/check_pnpm_audit_exceptions.py tools/check_pnpm_audit_exceptions.py
+          cp .security-policy/tools/test_check_pnpm_audit_exceptions.py tools/test_check_pnpm_audit_exceptions.py
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 9.15.9
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Audit validator regression tests
+        run: python3 tools/test_check_pnpm_audit_exceptions.py
+      - name: Run pnpm audit
+        run: bash scripts/ci/check-security.sh frontend
+      - name: Preserve security report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: frontend-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sub2api-security/
+          if-no-files-found: ignore
+          retention-days: 14
