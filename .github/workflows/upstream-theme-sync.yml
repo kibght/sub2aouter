@@ -566,6 +566,33 @@ jobs:
         run: node scripts/apply-bot-personal-info.mjs --root . --ref origin/QQbot
         working-directory: ${{ env.GENERATED_DIR }}
 
+      - name: Verify legacy overlays before QQ website integration
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        working-directory: ${{ env.GENERATED_DIR }}
+        run: |
+          set -euo pipefail
+          node scripts/apply-theme.mjs --root . --check
+          node scripts/apply-sub2-plugin-compatibility.mjs --root . --check
+          node scripts/apply-sub2-infinite-canvas-integration.mjs --root . --check
+          node scripts/apply-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding --check
+          node scripts/apply-qq-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding --check
+          node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards --check
+          node scripts/apply-bot-personal-info.mjs --root . --ref origin/QQbot --check
+
+      - name: Apply QQ website integration
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+            git fetch --unshallow origin "refs/heads/QQbot:refs/remotes/origin/QQbot"
+          else
+            git fetch origin "refs/heads/QQbot:refs/remotes/origin/QQbot"
+          fi
+          git show origin/QQbot:scripts/apply-qqbot-website.mjs > "$RUNNER_TEMP/apply-qqbot-website.mjs"
+          node "$RUNNER_TEMP/apply-qqbot-website.mjs" --root "$GENERATED_DIR" --ref origin/QQbot
+
       - name: Write unified release metadata
         if: env.SHOULD_PUBLISH == 'true'
         shell: bash
@@ -631,19 +658,14 @@ jobs:
         run: pnpm install --lockfile-only --no-frozen-lockfile
         working-directory: ${{ env.GENERATED_DIR }}/frontend
 
-      - name: Verify theme overlay and UTF-8
+      - name: Verify QQ website integration and UTF-8
         if: env.SHOULD_PUBLISH == 'true'
         shell: bash
         working-directory: ${{ env.GENERATED_DIR }}
         run: |
           set -euo pipefail
-          node scripts/apply-theme.mjs --root . --check
-          node scripts/apply-sub2-plugin-compatibility.mjs --root . --check
-          node scripts/apply-sub2-infinite-canvas-integration.mjs --root . --check
-          node scripts/apply-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding --check
-          node scripts/apply-qq-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding --check
-          node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards --check
-          node scripts/apply-bot-personal-info.mjs --root . --ref origin/QQbot --check
+          git show origin/QQbot:scripts/apply-qqbot-website.mjs > "$RUNNER_TEMP/apply-qqbot-website.mjs"
+          node "$RUNNER_TEMP/apply-qqbot-website.mjs" --root . --ref origin/QQbot --check
           node scripts/check-encoding.mjs .
           node --test scripts/__tests__/*.test.mjs
 
