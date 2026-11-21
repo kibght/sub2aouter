@@ -13,7 +13,7 @@ import (
 func TestBotRechargeNotificationClaimOnlyCompletedOriginalBinding(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 	repo := &botRechargeRepository{db: db}
 	now := time.Now().UTC()
 	mock.ExpectBegin()
@@ -38,7 +38,7 @@ func TestBotRechargeNotificationClaimOnlyCompletedOriginalBinding(t *testing.T) 
 func TestBotRechargeNotificationAckCannotAcknowledgeOtherBinding(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 	repo := &botRechargeRepository{db: db}
 	mock.ExpectExec(`(?s)UPDATE bot_recharge_notifications.*WHERE id = \$1 AND user_id = \$2 AND binding_id = \$3`).
 		WithArgs(int64(1), int64(7), int64(10)).WillReturnResult(sqlmock.NewResult(0, 0))
@@ -51,7 +51,7 @@ func TestBotRechargeNotificationAckCannotAcknowledgeOtherBinding(t *testing.T) {
 func TestBotRechargeFindOrderAlwaysScopesUser(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 	repo := &botRechargeRepository{db: db}
 	mock.ExpectQuery(`(?s)FROM bot_recharge_requests WHERE user_id = \$1 AND payment_order_id = \$2`).
 		WithArgs(int64(7), int64(51)).WillReturnRows(sqlmock.NewRows([]string{"payment_order_id", "binding_id", "platform", "external_id", "payment_type", "requested_amount"}))
