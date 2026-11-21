@@ -6,7 +6,7 @@ import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { HELPER_FILES, MANIFEST_PATH } from '../apply-qqbot-website.mjs'
+import { composeSharedConflicts, HELPER_FILES, MANIFEST_PATH } from '../apply-qqbot-website.mjs'
 
 const scriptPath = fileURLToPath(new URL('../apply-qqbot-website.mjs', import.meta.url))
 const testPath = fileURLToPath(import.meta.url)
@@ -58,6 +58,7 @@ var ProviderSet = wire.NewSet(NewBotLotteryHandler, NewBotRechargeHandler)
   'frontend/src/views/HomeView.vue': '<template>\n<header>Base home</header>\n' + '<section>Content</section>\n'.repeat(12) + '<footer>Base footer</footer>\n</template>\n',
   'backend/internal/service/payment_order.go': 'package service\n// unchanged payment boundary\nconst paymentGuard = true\n' + '// preserved upstream context\n'.repeat(12) + 'const transportGuard = false\n',
   'frontend/src/original.ts': 'export const label = "原文"\n',
+  'backend/internal/service/balance_notify_service.go': 'package service\ntype BalanceNotifyService struct {\n\temailService *EmailService\n\tusageNotifications *usageNotificationWorker\n}\n',
 }
 
 async function fixture(t, options = {}) {
@@ -177,4 +178,85 @@ test('workflow stages the source helper and verifies older layers before the web
   assert.match(workflow, /git show origin\/QQbot:scripts\/apply-qqbot-website\.mjs/)
   assert.match(workflow, /git fetch --unshallow origin/)
   assert.match(workflow, /apply-qqbot-website\.mjs" --root .* --ref origin\/QQbot --check/)
+})
+
+const conflict = (ours, base, theirs) => ['<<<<<<< generated', ...ours, '||||||| base', ...base, '=======', ...theirs, '>>>>>>> QQbot'].join('\n')
+
+test('composes only the six known bot constructors while preserving moved services and extra upstream handlers', () => {
+  const moved = '\tidempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)'
+  const old = ['\tbotHandler := handler.ProvideBotHandler(botBindingService, userService)', moved, '\thandlers := handler.ProvideHandlers(botHandler, idempotencyCleanupService)']
+  const ours = ['\tbotHandler := handler.ProvideBotHandler(botBindingService, userService, balanceNotifyQQRepository, concurrencyCache)', '\thandlers := handler.ProvideHandlers(billingHandler, botHandler, idempotencyCleanupService)']
+  const source = [ours[0], '\tbotLotteryRepository := repository.NewBotLotteryRepository(db)', '\tbotLotteryService := service.ProvideBotLotteryService(botLotteryRepository, billingCacheService, apiKeyAuthCacheInvalidator)', '\tbotLotteryHandler := handler.NewBotLotteryHandler(botLotteryService)', '\tbotRechargeRepository := repository.NewBotRechargeRepository(db)', '\tbotRechargeService := service.NewBotRechargeService(paymentService, paymentConfigService, botRechargeRepository)', '\tbotRechargeHandler := handler.NewBotRechargeHandler(botRechargeService)', moved, '\thandlers := handler.ProvideHandlers(botHandler, botLotteryHandler, botRechargeHandler, idempotencyCleanupService)']
+  const result = composeSharedConflicts('backend/cmd/server/wire_gen.go', moved + '\n' + conflict(ours, old, source), { ours: moved + '\n' + ours.join('\n') })
+  assert.equal(result.split(moved).length - 1, 1)
+  assert.match(result, /ProvideHandlers\(billingHandler, botHandler, botLotteryHandler, botRechargeHandler, idempotencyCleanupService\)/)
+  assert.ok(result.includes(ours[0]))
+  for (const name of ['botLotteryRepository', 'botLotteryService', 'botLotteryHandler', 'botRechargeRepository', 'botRechargeService', 'botRechargeHandler']) assert.equal((result.match(new RegExp('\\b' + name + ' :=' ,'g')) || []).length, 1)
+  assert.throws(() => composeSharedConflicts('backend/cmd/server/wire_gen.go', conflict(ours, old, [...source.slice(0, -1), '\tunsafeService := service.DisableBilling(db)', source.at(-1)]), { ours: moved + '\n' + ours.join('\n') }), /unknown new Wire constructor/)
+})
+
+test('preserves generated BotHandler field types and exactly one maintained QQ setter', () => {
+  const ours = ['\tbindings botBindingManager', '\tcheckIn botCheckInReader', '\tbalanceNotifyQQRepo service.BalanceNotifyQQRepository', '\tconcurrency botConcurrencyReader']
+  const base = ours.slice(0, 2)
+  const source = [ours[0], ours[2], ours[1], ours[3], '}', '', 'func (h *BotHandler) SetBalanceNotifyQQRepository(repo service.BalanceNotifyQQRepository) {', '\th.balanceNotifyQQRepo = repo']
+  const setter = 'func (h *BotHandler) SetBalanceNotifyQQRepository(repo service.BalanceNotifyQQRepository) {\n\th.balanceNotifyQQRepo = repo\n}'
+  const context = { ours: 'type BotHandler struct {\n' + ours.join('\n') + '\n}\n' + setter }
+  const result = composeSharedConflicts('backend/internal/handler/bot_handler.go', 'type BotHandler struct {\n' + conflict(ours, base, source) + '\n}\n', context)
+  assert.equal(result.split('func (h *BotHandler) SetBalanceNotifyQQRepository(').length - 1, 1)
+  assert.ok(result.includes(ours.join('\n')))
+  assert.throws(() => composeSharedConflicts('backend/internal/handler/bot_handler.go', 'type BotHandler struct {\n' + conflict(ours, base, source.map((line) => line.replace('concurrency botConcurrencyReader', 'concurrency unsafeReader'))) + '\n}\n', context), /Different BotHandler field definitions/)
+})
+
+test('composes provider additions and removes only the duplicated legacy QQ provider', () => {
+  const merged = 'var ProviderSet = wire.NewSet(\n\tNewBalanceNotifyQQRepository,\n' + conflict(['\tNewBalanceNotifyQQRepository,'], [], ['\tNewBotLotteryRepository,', '\tNewBotRechargeRepository,']) + '\n\tNewBillingRepository,\n)'
+  const result = composeSharedConflicts('backend/internal/repository/wire.go', merged, { ours: '' })
+  assert.equal(result.split('NewBalanceNotifyQQRepository,').length - 1, 1)
+  assert.match(result, /NewBotLotteryRepository,/); assert.match(result, /NewBotRechargeRepository,/); assert.match(result, /NewBillingRepository,/)
+})
+
+test('keeps the maintained bot registration position and adds only lottery and recharge beside it', () => {
+  const bot = '\troutes.RegisterBotRoutes(v1, h, adminAuth, botAuth, panelRateLimiter)'
+  const newRoutes = [bot, '\troutes.RegisterBotLotteryRoutes(v1, h.BotLottery, adminAuth, botAuth, panelRateLimiter)', '\troutes.RegisterBotRechargeRoutes(v1, h.BotRecharge, adminAuth, botAuth, settingService, panelRateLimiter)']
+  const merged = conflict([], [bot], newRoutes) + '\n\troutes.RegisterMCPOAuthRoutes(r, v1, h, redisClient)\n' + bot + '\n'
+  const result = composeSharedConflicts('backend/internal/server/router.go', merged, { ours: bot })
+  assert.equal(result.split('routes.RegisterBotRoutes(').length - 1, 1)
+  assert.ok(result.indexOf('RegisterMCPOAuthRoutes') < result.indexOf('RegisterBotRoutes'))
+  assert.ok(result.includes(newRoutes.join('\n')))
+  const repeated = composeSharedConflicts('backend/internal/server/router.go', conflict([], [bot], newRoutes) + '\n\troutes.RegisterMCPOAuthRoutes(r, v1, h, redisClient)\n' + newRoutes.join('\n') + '\n', { ours: bot })
+  assert.equal(repeated, result)
+})
+
+test('composes homepage and check-in form fields without changing either type', () => {
+  const ours = ['  bot_checkin_required_tokens: number | "";', '  bot_checkin_required_amount: number | "";']
+  const result = composeSharedConflicts('frontend/src/views/admin/SettingsView.vue', conflict(ours, [], ['  home_hero_image: string;']), { ours: '' })
+  for (const line of [...ours, '  home_hero_image: string;']) assert.ok(result.includes(line))
+  assert.throws(() => composeSharedConflicts('frontend/src/views/admin/SettingsView.vue', conflict(ours, [], ['  bot_checkin_required_tokens: string;']), { ours: '' }), /Conflicting form property type/)
+})
+
+test('a bot route test conflict may only retain a superset of existing assertions and request cases', () => {
+  const ours = ['\trequests := []struct {', '\t\t{method: http.MethodGet, path: "/api/v1/bot/profile"},', '\t}', '\tfor _, test := range requests {', '\t\trequire.Equal(t, http.StatusUnauthorized, rec.Code)', '\t}']
+  const source = [...ours.slice(0, 2), '\t\t{method: http.MethodGet, path: "/api/v1/bot/personal-info"},', ...ours.slice(2)]
+  assert.equal(composeSharedConflicts('backend/internal/server/routes/bot_test.go', conflict(ours, [], source), { ours: '' }), source.join('\n'))
+  assert.throws(() => composeSharedConflicts('backend/internal/server/routes/bot_test.go', conflict(ours, [], source.filter((line) => !line.includes('require.Equal'))), { ours: '' }), /remove an existing assertion/)
+})
+
+test('accepts an already-carried new text file differing only by CRLF', async (t) => {
+  const f = await fixture(t)
+  await f.put('frontend/src/api/admin/botLottery.ts', 'export const lotteryEnabled = true\r\n')
+  f.run(); f.run('--check')
+  assert.equal(await readFile(path.join(f.root, 'frontend/src/api/admin/botLottery.ts'), 'utf8'), 'export const lotteryEnabled = true\r\n')
+})
+
+test('deduplicates identical maintained QQ fields and routes after clean merges', async (t) => {
+  const file = 'backend/internal/service/balance_notify_service.go'
+  const routeFile = 'backend/internal/server/routes/bot.go'
+  const field = '\tqqNotificationRepo BalanceNotifyQQRepository\n'
+  const f = await fixture(t, { alterSource: (source) => { source.set(file, baseFiles[file].replace('\tusageNotifications', field + '\tusageNotifications')); source.set(routeFile, baseFiles[routeFile] + '// website integration\n') } })
+  await f.put(file, baseFiles[file].replace('\n}', '\n' + field + '}'))
+  await f.put(routeFile, baseFiles[routeFile].replace('\n}', '\n bot.GET("/balance-alerts", h.Bot.BalanceLowAlerts)\n}'))
+  f.run(); f.run('--check')
+  const result = await readFile(path.join(f.root, file), 'utf8')
+  assert.equal((result.match(/qqNotificationRepo/g) || []).length, 1)
+  assert.match(result, /usageNotifications \*usageNotificationWorker/)
+  assert.equal((await readFile(path.join(f.root, routeFile), 'utf8')).split('bot.GET("/balance-alerts",').length - 1, 1)
 })
