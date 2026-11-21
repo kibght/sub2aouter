@@ -58,7 +58,7 @@ test('frontend security override pins the patched nanoid release across upstream
     entry.optional === true
   ))
   const reconcile = workflow.indexOf('pnpm install --lockfile-only --no-frozen-lockfile')
-  const contractCheck = workflow.indexOf('name: Verify theme overlay and UTF-8')
+  const contractCheck = workflow.indexOf('name: Verify QQ website integration and UTF-8')
   const frozenInstall = workflow.indexOf('pnpm install --frozen-lockfile')
   assert.ok(reconcile >= 0 && reconcile < contractCheck)
   assert.ok(contractCheck < frozenInstall)
