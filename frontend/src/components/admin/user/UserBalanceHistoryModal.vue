@@ -137,7 +137,7 @@
                 {{ t('redeem.adminAdjustment') }}
               </p>
               <p
-                v-else
+                v-else-if="item.type !== 'bot_lottery'"
                 class="font-mono text-xs text-gray-400 dark:text-dark-500"
               >
                 {{ item.code.slice(0, 8) }}...
@@ -206,6 +206,7 @@ const typeOptions = computed(() => [
   { value: 'admin_balance', label: t('admin.users.typeAdminBalance') },
   { value: 'bot_binding_bonus', label: t('admin.users.typeBotBindingBonus') },
   { value: 'bot_checkin', label: t('admin.users.typeBotCheckin') },
+  { value: 'bot_lottery', label: t('admin.botLottery.adminBalanceHistory') },
   { value: 'concurrency', label: t('admin.users.typeConcurrency') },
   { value: 'admin_concurrency', label: t('admin.users.typeAdminConcurrency') },
   { value: 'subscription', label: t('admin.users.typeSubscription') }
@@ -248,7 +249,7 @@ const loadHistory = async (page: number) => {
 const isAdminType = (type: string) => type === 'admin_balance' || type === 'admin_concurrency'
 
 // Helper: check if balance type (includes admin_balance)
-const isBalanceType = (type: string) => type === 'balance' || type === 'admin_balance' || type === 'affiliate_balance' || type === 'bot_binding_bonus' || type === 'bot_checkin'
+const isBalanceType = (type: string) => type === 'balance' || type === 'admin_balance' || type === 'affiliate_balance' || type === 'bot_binding_bonus' || type === 'bot_checkin' || type === 'bot_lottery'
 
 // Helper: check if subscription type
 const isSubscriptionType = (type: string) => type === 'subscription'
@@ -312,6 +313,8 @@ const getItemTitle = (item: BalanceHistoryItem) => {
       return t('redeem.balanceAddedBotBindingBonus')
     case 'bot_checkin':
       return t('redeem.balanceAddedBotCheckin')
+    case 'bot_lottery':
+      return t('admin.botLottery.adminBalanceHistory')
     case 'concurrency':
       return t('redeem.concurrencyAddedRedeem')
     case 'admin_concurrency':

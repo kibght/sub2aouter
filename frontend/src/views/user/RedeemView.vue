@@ -408,7 +408,7 @@ const contactInfo = ref('')
 
 // Helper functions for history display
 const isBalanceType = (type: string) => {
-  return type === 'balance' || type === 'affiliate_balance' || type === 'admin_balance' || type === 'bot_binding_bonus' || type === 'bot_checkin'
+  return type === 'balance' || type === 'affiliate_balance' || type === 'admin_balance' || type === 'bot_binding_bonus' || type === 'bot_checkin' || type === 'bot_lottery'
 }
 
 const isSubscriptionType = (type: string) => {
@@ -420,7 +420,7 @@ const isAdminAdjustment = (type: string) => {
 }
 
 const isGeneratedBalanceReward = (type: string) => {
-  return type === 'bot_binding_bonus' || type === 'bot_checkin'
+  return type === 'bot_binding_bonus' || type === 'bot_checkin' || type === 'bot_lottery'
 }
 
 const getHistoryItemTitle = (item: RedeemHistoryItem) => {
@@ -434,6 +434,8 @@ const getHistoryItemTitle = (item: RedeemHistoryItem) => {
     return t('redeem.balanceAddedBotBindingBonus')
   } else if (item.type === 'bot_checkin') {
     return t('redeem.balanceAddedBotCheckin')
+  } else if (item.type === 'bot_lottery') {
+    return t('redeem.balanceAddedBotLottery')
   } else if (item.type === 'concurrency') {
     return t('redeem.concurrencyAddedRedeem')
   } else if (item.type === 'admin_concurrency') {

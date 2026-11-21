@@ -263,6 +263,11 @@
               {{ t('admin.users.bulkDelete.action', { count: selectedCount }) }}
             </button>
 
+            <button type="button" class="btn btn-secondary flex-1 md:flex-initial" data-test="grant-all-lottery" @click="openLotteryGrant(null)">
+              <Icon name="gift" size="md" class="mr-2" />
+              {{ t('admin.botLottery.allUsersButton') }}
+            </button>
+
             <!-- Create User Button (full width on mobile, auto width on desktop) -->
             <button @click="showCreateModal = true" class="btn btn-primary flex-1 md:flex-initial">
               <Icon name="plus" size="md" class="mr-2" />
@@ -282,7 +287,7 @@
           selectable
           :selected-keys="selectedIds"
           :selection-label="getUserSelectionLabel"
-          :actions-count="7"
+          :actions-count="8"
           :server-side-sort="true"
           default-sort-key="created_at"
           default-sort-order="desc"
@@ -741,6 +746,16 @@
                 {{ t('admin.users.balanceHistory') }}
               </button>
 
+              <button
+                type="button"
+                data-test="grant-user-lottery"
+                @click="openLotteryGrant(user); closeActionMenu()"
+                class="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
+              >
+                <Icon name="gift" size="sm" class="text-violet-500" :stroke-width="2" />
+                {{ t('admin.botLottery.grantButton') }}
+              </button>
+
               <div class="my-1 border-t border-gray-100 dark:border-dark-700"></div>
 
               <!-- Delete (not for admin) -->
@@ -786,6 +801,7 @@
     <UserAllowedGroupsModal :show="showAllowedGroupsModal" :user="allowedGroupsUser" @close="closeAllowedGroupsModal" @success="loadUsers" />
     <UserBalanceModal :show="showBalanceModal" :user="balanceUser" :operation="balanceOperation" @close="closeBalanceModal" @success="loadUsers" />
     <UserBalanceHistoryModal :show="showBalanceHistoryModal" :user="balanceHistoryUser" @close="closeBalanceHistoryModal" @deposit="handleDepositFromHistory" @withdraw="handleWithdrawFromHistory" />
+    <BotLotteryGrantModal :show="showLotteryGrantModal" :user="lotteryGrantUser" @close="showLotteryGrantModal = false" @success="handleLotteryGrantSuccess" />
     <GroupReplaceModal :show="showGroupReplaceModal" :user="groupReplaceUser" :old-group="groupReplaceOldGroup" :all-groups="allGroups" @close="closeGroupReplaceModal" @success="loadUsers" />
     <UserAttributesConfigModal :show="showAttributesModal" @close="handleAttributesModalClose" />
   </AppLayout>
@@ -829,6 +845,7 @@ import UserApiKeysModal from '@/components/admin/user/UserApiKeysModal.vue'
 import UserAllowedGroupsModal from '@/components/admin/user/UserAllowedGroupsModal.vue'
 import UserBalanceModal from '@/components/admin/user/UserBalanceModal.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
+import BotLotteryGrantModal from '@/components/admin/user/BotLotteryGrantModal.vue'
 import GroupReplaceModal from '@/components/admin/user/GroupReplaceModal.vue'
 
 const appStore = useAppStore()
@@ -1557,6 +1574,8 @@ const balanceOperation = ref<'add' | 'subtract'>('add')
 
 // Balance History modal state
 const showBalanceHistoryModal = ref(false)
+const showLotteryGrantModal = ref(false)
+const lotteryGrantUser = ref<AdminUser | null>(null)
 const balanceHistoryUser = ref<AdminUser | null>(null)
 
 // 计算剩余天数
@@ -1862,6 +1881,15 @@ const closeBalanceModal = () => {
 const handleBalanceHistory = (user: AdminUser) => {
   balanceHistoryUser.value = user
   showBalanceHistoryModal.value = true
+}
+
+const openLotteryGrant = (user: AdminUser | null) => {
+  lotteryGrantUser.value = user
+  showLotteryGrantModal.value = true
+}
+
+const handleLotteryGrantSuccess = () => {
+  if (lotteryGrantUser.value) loadUsers()
 }
 
 const closeBalanceHistoryModal = () => {

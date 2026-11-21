@@ -70,16 +70,16 @@ func providePrivacyClientFactory() service.PrivacyClientFactory {
 func provideServiceBuildInfo(buildInfo handler.BuildInfo) service.BuildInfo {
 	return service.BuildInfo{
 		CompatibilityVersion: buildInfo.CompatibilityVersion,
-		Version:   buildInfo.Version,
-		BuildType: buildInfo.BuildType,
+		Version:              buildInfo.Version,
+		BuildType:            buildInfo.BuildType,
 	}
 }
 
 func providePluginHostInfo(buildInfo handler.BuildInfo) service.PluginHostInfo {
 	return service.PluginHostInfo{
 		CompatibilityVersion: buildInfo.CompatibilityVersion,
-		Version:   buildInfo.Version,
-		BuildType: buildInfo.BuildType,
+		Version:              buildInfo.Version,
+		BuildType:            buildInfo.BuildType,
 	}
 }
 
@@ -136,6 +136,7 @@ func provideCleanup(
 	openAIAutoReset *service.OpenAIQuotaAutoResetService,
 	promptAudit *securityaudit.PromptService,
 	pluginManager *service.PluginManager,
+	botLottery *service.BotLotteryService,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -148,6 +149,12 @@ func provideCleanup(
 
 		// 应用层清理步骤可并行执行，基础设施资源（Redis/Ent）最后按顺序关闭。
 		parallelSteps := []cleanupStep{
+			{"BotLotteryService", func() error {
+				if botLottery != nil {
+					botLottery.Stop()
+				}
+				return nil
+			}},
 			{"DigestSessionStore", func() error {
 				if digestSessions != nil {
 					digestSessions.Close()

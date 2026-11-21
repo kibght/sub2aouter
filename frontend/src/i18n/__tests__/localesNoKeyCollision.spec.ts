@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import enAdminAccounts from '../locales/en/admin/accounts'
 import enAdminChannels from '../locales/en/admin/channels'
+import enAdminBotLottery from '../locales/en/admin/botLottery'
 import enAdminOps from '../locales/en/admin/ops'
 import enAdminOverview from '../locales/en/admin/overview'
 import enAdminResources from '../locales/en/admin/resources'
@@ -12,6 +13,7 @@ import enLanding from '../locales/en/landing'
 import enMisc from '../locales/en/misc'
 import zhAdminAccounts from '../locales/zh/admin/accounts'
 import zhAdminChannels from '../locales/zh/admin/channels'
+import zhAdminBotLottery from '../locales/zh/admin/botLottery'
 import zhAdminOps from '../locales/zh/admin/ops'
 import zhAdminOverview from '../locales/zh/admin/overview'
 import zhAdminResources from '../locales/zh/admin/resources'
@@ -48,6 +50,7 @@ const roots: Record<string, Modules> = {
 
 const admins: Record<string, Modules> = {
   zh: {
+    botLottery: zhAdminBotLottery,
     overview: zhAdminOverview,
     channels: zhAdminChannels,
     accounts: zhAdminAccounts,
@@ -56,6 +59,7 @@ const admins: Record<string, Modules> = {
     settings: zhAdminSettings
   },
   en: {
+    botLottery: enAdminBotLottery,
     overview: enAdminOverview,
     channels: enAdminChannels,
     accounts: enAdminAccounts,

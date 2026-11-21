@@ -791,6 +791,7 @@ export default {
     balanceAddedAdmin: 'Balance Added (Admin)',
     balanceAddedBotBindingBonus: 'Balance Added (First Bot Binding Bonus)',
     balanceAddedBotCheckin: 'Balance Added (Check-in Bonus)',
+    balanceAddedBotLottery: 'Balance Added (Bot Lottery Reward)',
     balanceDeductedAdmin: 'Balance Deducted (Admin)',
     concurrencyAddedRedeem: 'Concurrency Added (Redeem)',
     concurrencyAddedAdmin: 'Concurrency Added (Admin)',

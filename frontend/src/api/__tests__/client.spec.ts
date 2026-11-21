@@ -330,6 +330,55 @@ describe('API Client', () => {
   // --- 401 Token 刷新 ---
 
   describe('401 Token 刷新', () => {
+    it.each([true, false])('preserves opt-in home navigation on anonymous 401: %s', async (skipAuthRedirect) => {
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { ...originalLocation, pathname: '/home', href: '/home' }, writable: true,
+      })
+      apiClient.defaults.adapter = vi.fn().mockImplementation((config) => Promise.reject({
+        response: { status: 401, data: { code: 'UNAUTHORIZED' }, headers: {} }, config,
+      }))
+      try {
+        await expect(apiClient.get('/model-plaza', { skipAuthRedirect })).rejects.toMatchObject({ status: 401 })
+        expect(window.location.href).toBe(skipAuthRedirect ? '/home' : '/login')
+        expect(sessionStorage.getItem('auth_expired')).toBeNull()
+      } finally {
+        Object.defineProperty(window, 'location', { value: originalLocation, writable: true })
+      }
+    })
+
+    it('retains home after refresh rejection while clearing the invalid session', async () => {
+      localStorage.setItem('auth_token', 'expired-token')
+      localStorage.setItem('refresh_token', 'expired-refresh')
+      localStorage.setItem('auth_user', '{"id":7}')
+      localStorage.setItem('token_expires_at', '123')
+      const refresh = await import('@/api/tokenRefresh')
+      vi.spyOn(refresh, 'refreshAuthTokens').mockRejectedValueOnce(new Error('Invalid refresh response'))
+      apiClient.defaults.adapter = vi.fn().mockImplementation((config) => Promise.reject({
+        response: { status: 401, data: { code: 'TOKEN_EXPIRED' }, headers: {} }, config,
+      }))
+      window.history.replaceState({}, '', '/home')
+      await expect(apiClient.get('/model-plaza', { skipAuthRedirect: true })).rejects.toMatchObject({ code: 'TOKEN_REFRESH_FAILED' })
+      expect(window.location.pathname).toBe('/home')
+      for (const key of ['auth_token', 'refresh_token', 'auth_user', 'token_expires_at']) expect(localStorage.getItem(key)).toBeNull()
+      expect(sessionStorage.getItem('auth_expired')).toBe('1')
+    })
+
+    it('still refreshes and retries opted-in home requests', async () => {
+      localStorage.setItem('auth_token', 'expired-token')
+      localStorage.setItem('refresh_token', 'refresh-token')
+      const refresh = await import('@/api/tokenRefresh')
+      vi.spyOn(refresh, 'refreshAuthTokens').mockResolvedValueOnce({ access_token: 'new-token', refresh_token: 'new-refresh', expires_in: 3600, token_type: 'Bearer' })
+      const adapter = vi.fn().mockImplementationOnce((config) => Promise.reject({
+        response: { status: 401, data: { code: 'TOKEN_EXPIRED' }, headers: {} }, config,
+      })).mockImplementationOnce((config) => Promise.resolve({ status: 200, data: { code: 0, data: { groups: [] } }, headers: {}, config, statusText: 'OK' }))
+      apiClient.defaults.adapter = adapter
+      await expect(apiClient.get('/model-plaza', { skipAuthRedirect: true })).resolves.toMatchObject({ data: { groups: [] } })
+      expect(adapter).toHaveBeenCalledTimes(2)
+      expect(adapter.mock.calls[1][0].skipAuthRedirect).toBe(true)
+      expect(refresh.refreshAuthTokens).toHaveBeenCalledWith({ failedAccessToken: 'expired-token' })
+    })
+
     it('无 refresh_token 时 401 清除 localStorage', async () => {
       localStorage.setItem('auth_token', 'expired-token')
       // 不设置 refresh_token

@@ -44,6 +44,8 @@ function mountHome(settings: Record<string, unknown> = {}) {
     global: {
       stubs: {
         RouterLink: RouterLinkStub,
+        HomeModelPricing: { template: '<section id="pricing" />' },
+        HomeHeroScene: { template: '<div />' },
         LocaleSwitcher: { template: '<div data-testid="locale-switcher" />' },
         Icon: { template: '<span data-testid="icon" />' },
       },

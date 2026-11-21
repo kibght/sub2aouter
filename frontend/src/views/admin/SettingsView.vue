@@ -3873,6 +3873,8 @@
                 </div>
               </div>
 
+              <BotLotterySettings />
+
               <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
                 <div class="mb-3 flex items-center justify-between">
                   <div>
@@ -6682,6 +6684,32 @@
                 />
               </div>
 
+              <!-- Home Hero Image -->
+              <div>
+                <label
+                  for="home-hero-image-url"
+                  class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {{ t("admin.settings.site.homeHeroImage") }}
+                </label>
+                <ImageUpload
+                  v-model="form.home_hero_image"
+                  mode="image"
+                  :upload-label="t('admin.settings.site.uploadImage')"
+                  :remove-label="t('admin.settings.site.remove')"
+                  :hint="t('admin.settings.site.homeHeroImageHint')"
+                  :max-size="2 * 1024 * 1024"
+                />
+                <input
+                  id="home-hero-image-url"
+                  v-model="form.home_hero_image"
+                  type="text"
+                  class="input mt-3 font-mono text-sm"
+                  :aria-label="t('admin.settings.site.homeHeroImageUrl')"
+                  :placeholder="t('admin.settings.site.homeHeroImageUrl')"
+                />
+              </div>
+
               <!-- Home Content -->
               <div>
                 <label
@@ -9031,6 +9059,7 @@ import {
   stepUpBlockReason,
 } from "@/composables/useStepUp";
 import AdminAccessKeysSettings from "@/components/admin/settings/AdminAccessKeysSettings.vue";
+import BotLotterySettings from "@/components/admin/settings/BotLotterySettings.vue";
 import TotpStepUpDialog from "@/components/auth/TotpStepUpDialog.vue";
 import { affiliatesAPI, type AffiliateAdminEntry, type SimpleUser as AffiliateSimpleUser } from "@/api/admin/affiliates";
 import { extractApiErrorMessage, extractI18nErrorMessage } from "@/utils/apiError";
@@ -9701,6 +9730,7 @@ type SettingsForm = Omit<
   | "wechat_connect_mobile_enabled"
   | "openai_oauth_scheduling_rate_multiplier"
 > & {
+  home_hero_image: string;
   /** Form always binds a concrete boolean (SystemSettings marks this optional). */
   channel_monitor_hide_throughput: boolean;
   channel_monitor_show_quota: boolean;
@@ -9798,6 +9828,7 @@ const form = reactive<SettingsForm>({
   default_user_rpm_limit: 0,
   site_name: "Sub2API",
   site_logo: "",
+  home_hero_image: "",
   site_subtitle: "Subscription to API Conversion Platform",
   api_base_url: "",
   contact_info: "",
@@ -11511,6 +11542,7 @@ async function saveSettings() {
       default_user_rpm_limit: form.default_user_rpm_limit,
       site_name: form.site_name,
       site_logo: form.site_logo,
+      home_hero_image: form.home_hero_image,
       site_subtitle: form.site_subtitle,
       api_base_url: form.api_base_url,
       contact_info: form.contact_info,

@@ -235,6 +235,7 @@ export interface PublicSettings {
   aliyun_captcha_region?: string
   site_name: string
   site_logo: string
+  home_hero_image?: string
   site_subtitle: string
   api_base_url: string
   contact_info: string

@@ -489,6 +489,7 @@ export interface SystemSettings {
   // OEM settings
   site_name: string;
   site_logo: string;
+  home_hero_image?: string;
   site_subtitle: string;
   api_base_url: string;
   contact_info: string;
@@ -847,6 +848,7 @@ export interface UpdateSettingsRequest {
   auth_source_default_dingtalk_platform_quotas?: DefaultPlatformQuotasMap;
   site_name?: string;
   site_logo?: string;
+  home_hero_image?: string;
   site_subtitle?: string;
   api_base_url?: string;
   contact_info?: string;

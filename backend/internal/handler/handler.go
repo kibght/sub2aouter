@@ -70,6 +70,8 @@ type Handlers struct {
 	AsyncImage       *AsyncImageHandler
 	BatchImage       *BatchImageHandler
 	Bot              *BotHandler
+	BotLottery       *BotLotteryHandler
+	BotRecharge      *BotRechargeHandler
 }
 
 // BuildInfo contains build-time information

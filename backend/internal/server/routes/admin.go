@@ -41,6 +41,7 @@ func RegisterAdminRoutes(
 
 		// 用户管理
 		registerUserManagementRoutes(admin, h)
+		registerAdminBotLotteryRoutes(admin, h.BotLottery)
 
 		// 分组管理
 		registerGroupRoutes(admin, h)

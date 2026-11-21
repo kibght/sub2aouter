@@ -868,6 +868,8 @@ var ProviderSet = wire.NewSet(
 	ProvideUserService,
 	NewBotBindingService,
 	NewBotCheckInService,
+	ProvideBotLotteryService,
+	NewBotRechargeService,
 	NewMCPOAuthService,
 	ProvideAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,

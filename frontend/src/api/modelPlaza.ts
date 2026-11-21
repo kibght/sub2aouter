@@ -89,9 +89,10 @@ export interface ModelPlazaResponse {
 }
 
 /** 获取模型广场数据。开关未启用时后端返回 404。 */
-export async function getModelPlaza(options?: { signal?: AbortSignal }): Promise<ModelPlazaResponse> {
+export async function getModelPlaza(options?: { signal?: AbortSignal; skipAuthRedirect?: boolean }): Promise<ModelPlazaResponse> {
   const { data } = await apiClient.get<ModelPlazaResponse>('/model-plaza', {
-    signal: options?.signal
+    signal: options?.signal,
+    skipAuthRedirect: options?.skipAuthRedirect
   })
   return data
 }

@@ -38,6 +38,10 @@ frontend/dist/
 *.local
 *.tsbuildinfo
 vite.config.d.ts
+frontend/vite.home-preview.config.js
+frontend/vite.home-preview.config.d.ts
+frontend/dev/home-preview.js
+frontend/dev/home-preview.d.ts
 vite.config.js.timestamp-*
 
 # 日志

@@ -85,6 +85,11 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if err := s.validateSelectedCreateOrderInstance(ctx, req, sel); err != nil {
 		return nil, err
 	}
+	if req.BotPaymentRequired {
+		if err := validateBotRechargeSelection(sel); err != nil {
+			return nil, err
+		}
+	}
 	selectedCurrency := payment.DefaultPaymentCurrency
 	if sel != nil {
 		selectedCurrency = paymentProviderConfigCurrency(sel.ProviderKey, sel.Config)
@@ -111,9 +116,14 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	}
 	resp, err := s.invokeProvider(ctx, order, req, cfg, limitAmount, payAmountStr, payAmount, plan, sel)
 	if err != nil {
-		_, _ = s.entClient.PaymentOrder.UpdateOneID(order.ID).
-			SetStatus(OrderStatusFailed).
-			Save(ctx)
+		// A bot checkout may lose the gateway response after the upstream
+		// accepted this order. Retain the same pending order/request key so
+		// retries query it and callbacks can still complete it safely.
+		if !req.BotPaymentRequired {
+			_, _ = s.entClient.PaymentOrder.UpdateOneID(order.ID).
+				SetStatus(OrderStatusFailed).
+				Save(ctx)
+		}
 		return nil, err
 	}
 	return resp, nil
@@ -181,6 +191,12 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		return nil, err
 	}
 	providerSnapshot := buildPaymentOrderProviderSnapshot(sel, req)
+	if req.BotPaymentRequired && sel != nil {
+		if providerSnapshot == nil {
+			providerSnapshot = make(map[string]any)
+		}
+		providerSnapshot["currency"] = paymentProviderConfigCurrency(sel.ProviderKey, sel.Config)
+	}
 	selectedInstanceID := ""
 	selectedProviderKey := ""
 	if sel != nil {
@@ -223,6 +239,21 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 	order, err := b.Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create order: %w", err)
+	}
+	if strings.TrimSpace(req.BotRequestID) != "" {
+		if req.BotBindingID <= 0 || strings.TrimSpace(req.BotPlatform) == "" || strings.TrimSpace(req.BotExternalID) == "" {
+			return nil, infraerrors.BadRequest("BOT_RECHARGE_CONTEXT_INVALID", "bot recharge binding context is invalid")
+		}
+		_, err = tx.Client().ExecContext(ctx, `
+			INSERT INTO bot_recharge_requests
+				(user_id, request_id, binding_id, platform, external_id, payment_order_id, payment_type, requested_amount)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`, req.UserID, strings.TrimSpace(req.BotRequestID), req.BotBindingID,
+			strings.TrimSpace(req.BotPlatform), strings.TrimSpace(req.BotExternalID), order.ID,
+			req.PaymentType, req.Amount)
+		if err != nil {
+			return nil, fmt.Errorf("record bot recharge idempotency key: %w", err)
+		}
 	}
 	code := fmt.Sprintf("PAY-%d-%d", order.ID, time.Now().UnixNano()%100000)
 	order, err = tx.PaymentOrder.UpdateOneID(order.ID).SetRechargeCode(code).Save(ctx)
@@ -469,6 +500,14 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 		return nil, classifyCreatePaymentError(req, sel.ProviderKey, err)
 	}
 	sanitizeCreatePaymentResponseDetails(pr)
+	if req.BotPaymentRequired && pr.PayURL == "" && pr.QRCode == "" {
+		_, _ = s.entClient.PaymentOrder.UpdateOneID(order.ID).
+			SetStatus(OrderStatusFailed).
+			SetFailedReason("payment provider returned no payment URL or QR payload for bot checkout").
+			SetFailedAt(time.Now()).
+			Save(ctx)
+		return nil, infraerrors.ServiceUnavailable("BOT_RECHARGE_CHANNEL_UNAVAILABLE", "payment channel cannot provide a payment link or QR payload for bot checkout")
+	}
 	_, err = s.entClient.PaymentOrder.UpdateOneID(order.ID).
 		SetNillablePaymentTradeNo(psNilIfEmpty(pr.TradeNo)).
 		SetNillablePayURL(psNilIfEmpty(pr.PayURL)).

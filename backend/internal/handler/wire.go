@@ -221,6 +221,8 @@ func ProvideHandlers(
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
 	botHandler *BotHandler,
+	botLotteryHandler *BotLotteryHandler,
+	botRechargeHandler *BotRechargeHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 	_ *service.OpenAIQuotaAutoResetService,
@@ -249,6 +251,8 @@ func ProvideHandlers(
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
 		Bot:              botHandler,
+		BotLottery:       botLotteryHandler,
+		BotRecharge:      botRechargeHandler,
 	}
 }
 
@@ -277,6 +281,8 @@ var ProviderSet = wire.NewSet(
 	NewAsyncImageHandler,
 	ProvideBatchImageHandler,
 	ProvideBotHandler,
+	NewBotLotteryHandler,
+	NewBotRechargeHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,

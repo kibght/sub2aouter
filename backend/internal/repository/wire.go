@@ -69,6 +69,8 @@ var ProviderSet = wire.NewSet(
 	NewBotBindingRepository,
 	NewBalanceNotifyQQRepository,
 	NewBotCheckInRepository,
+	NewBotLotteryRepository,
+	NewBotRechargeRepository,
 	NewMCPOAuthRepository,
 	NewAPIKeyRepository,
 	NewGroupRepository,

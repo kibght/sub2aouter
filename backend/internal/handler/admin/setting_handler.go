@@ -248,6 +248,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		GoogleOAuthFrontendRedirectURL:                         settings.GoogleOAuthFrontendRedirectURL,
 		SiteName:                                               settings.SiteName,
 		SiteLogo:                                               settings.SiteLogo,
+		HomeHeroImage:                                          settings.HomeHeroImage,
 		SiteSubtitle:                                           settings.SiteSubtitle,
 		APIBaseURL:                                             settings.APIBaseURL,
 		ContactInfo:                                            settings.ContactInfo,

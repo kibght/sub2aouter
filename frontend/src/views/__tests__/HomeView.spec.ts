@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
       api_base_url: 'https://api.kinght.top',
       contact_info: '售后客服群聊：702891993',
       home_content: '',
+      home_hero_image: '',
       doc_url: '',
       custom_menu_items: [
         {
@@ -57,6 +58,8 @@ const mountHome = () => mount(HomeView, {
   global: {
     stubs: {
       LocaleSwitcher: { template: '<button data-test="locale-switcher">ZH</button>' },
+      HomeModelPricing: { template: '<section id="models" data-test="home-pricing" />' },
+      HomeHeroScene: { props: ['imageUrl'], template: '<div data-test="hero-scene" :data-image="imageUrl" />' },
       Icon: { template: '<span data-test="icon" />' },
       RouterLink: {
         props: ['to'],
@@ -66,64 +69,81 @@ const mountHome = () => mount(HomeView, {
   },
 })
 
-describe('HomeView apophis landing theme', () => {
+describe('HomeView configurable landing', () => {
   beforeEach(() => {
     document.documentElement.classList.remove('dark')
     localStorage.clear()
+    state.authStore.isAuthenticated = false
+    state.authStore.isAdmin = false
+    state.appStore.cachedPublicSettings.home_hero_image = ''
+    state.appStore.cachedPublicSettings.api_base_url = 'https://api.kinght.top'
     state.authStore.checkAuth.mockClear()
     state.appStore.fetchPublicSettings.mockClear()
-    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
-      matches: false,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    }))
-    Object.assign(navigator, {
-      clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
-    })
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: false }))
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } })
   })
 
-  it('renders the complete landing structure using the current site configuration', () => {
+  it('uses site branding throughout the complete landing and only shows the configured QQ group', () => {
     const wrapper = mountHome()
-
-    expect(wrapper.get('[data-test="home-nav"]').exists()).toBe(true)
-    expect(wrapper.get('h1').text()).toBe('一站接入全球 AI 能力，像调用 OpenAI 一样调用所有模型')
-    expect(wrapper.text()).toContain('AiGate to API Conversion Platform')
-    expect(wrapper.get('[data-test="hero-stats"]').text()).toContain('99.9%')
-    expect(wrapper.get('#models').text()).toContain('一个入口，覆盖主流大模型平台')
-    expect(wrapper.get('#features').text()).toContain('从接入、调度到运营的一体化网关')
-    expect(wrapper.get('#workflow').text()).toContain('三步完成从订阅到 API 服务化')
-    expect(wrapper.get('[data-test="privacy-card"]').text()).toContain('您的请求，只用于提供服务')
-    expect(wrapper.get('[data-test="home-cta"]').text()).toContain('准备把 AI 能力交付给团队了吗？')
-    expect(wrapper.get('[data-test="endpoint-url"]').text()).toBe('https://api.kinght.top/v1')
-  })
-
-  it('does not add the Canvas workbench entry to the Sub2 homepage', () => {
-    const wrapper = mountHome()
-
+    expect(wrapper.get('h1').text()).toBe('AiGate')
+    expect(wrapper.get('.hero-subtitle').text()).toBe('AiGate to API Conversion Platform')
+    expect(wrapper.get('.hero-content > p:not(.hero-subtitle)').text()).toContain('一个 API 入口，连接全球大模型。安全的连接，透明的用量。你的数据，始终属于你。')
+    for (const id of ['models', 'features', 'security', 'performance', 'developers', 'faq', 'contact']) {
+      expect(wrapper.find(`#${id}`).exists()).toBe(true)
+    }
+    expect(wrapper.findAll('details')).toHaveLength(4)
+    expect(wrapper.get('footer').text()).toContain('702891993')
+    expect(wrapper.get('footer').text()).toContain('AiGate')
+    expect(wrapper.get('footer').text()).not.toContain('Telegram')
+    expect(wrapper.get('[data-test="hero-stats"]').text()).toContain('—')
+    expect(wrapper.get('[data-test="hero-stats"]').text()).not.toContain('99.9%')
     expect(wrapper.find('[data-test="canvas-workbench-card"]').exists()).toBe(false)
   })
 
-  it('switches between OpenAI and Claude endpoint modes', async () => {
+  it('uses the original Responses integration and switches example languages', async () => {
     const wrapper = mountHome()
-
-    await wrapper.get('[data-test="endpoint-tab-claude"]').trigger('click')
     expect(wrapper.get('[data-test="endpoint-url"]').text()).toBe('https://api.kinght.top')
-    expect(wrapper.get('[data-test="endpoint-note"]').text()).toContain('无 /v1 后缀')
-    expect(wrapper.get('[data-test="endpoint-examples"]').text()).toContain('POST /v1/messages')
-
-    await wrapper.get('[data-test="endpoint-tab-openai"]').trigger('click')
-    expect(wrapper.get('[data-test="endpoint-url"]').text()).toBe('https://api.kinght.top/v1')
-    expect(wrapper.get('[data-test="endpoint-examples"]').text()).toContain('POST /chat/completions')
+    expect(wrapper.get('#home-code-example').text()).toContain('client.responses.create')
+    await wrapper.get('#code-tab-cURL').trigger('click')
+    expect(wrapper.get('#home-code-example').text()).toContain('https://api.kinght.top/responses')
+    await wrapper.get('[id="code-tab-Node.js"]').trigger('click')
+    expect(wrapper.get('#home-code-example').text()).toContain('await client.responses.create')
+    await wrapper.get('#code-tab-Python').trigger('click')
+    expect(wrapper.get('#home-code-example').text()).toContain('response.output_text')
   })
 
-  it('copies the active endpoint and persists theme changes', async () => {
+  it('normalizes a configured v1 suffix and copies exact endpoint and QQ values', async () => {
+    state.appStore.cachedPublicSettings.api_base_url = 'https://api.kinght.top/v1/'
     const wrapper = mountHome()
-
     await wrapper.get('[data-test="copy-endpoint"]').trigger('click')
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://api.kinght.top/v1')
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://api.kinght.top')
+    await wrapper.get('[data-test="copy-qq"]').trigger('click')
+    expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith('702891993')
+  })
 
-    await wrapper.get('[data-test="theme-toggle"]').trigger('click')
-    expect(document.documentElement.classList.contains('dark')).toBe(true)
-    expect(localStorage.getItem('theme')).toBe('dark')
+  it('passes only sanitized image URLs to the hero', () => {
+    state.appStore.cachedPublicSettings.home_hero_image = 'javascript:alert(1)'
+    expect(mountHome().get('[data-test="hero-scene"]').attributes('data-image')).toBe('')
+    state.appStore.cachedPublicSettings.home_hero_image = '/images/hero.webp'
+    expect(mountHome().get('[data-test="hero-scene"]').attributes('data-image')).toBe('/images/hero.webp')
+  })
+
+  it('keeps failed copy actions usable and reports the failure', async () => {
+    vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error('denied'))
+    const wrapper = mountHome()
+    await wrapper.get('[data-test="copy-qq"]').trigger('click')
+    expect(wrapper.get('.contact-copy-feedback').text()).not.toBe('')
+    expect(wrapper.get('[data-test="copy-qq"]').attributes('aria-label')).toBe('复制 QQ 群号')
+  })
+
+  it('routes an authenticated administrator to the correct console and opens the mobile menu', async () => {
+    state.authStore.isAuthenticated = true
+    state.authStore.isAdmin = true
+    const wrapper = mountHome()
+    expect(wrapper.get('.nav-actions .button-lime').attributes('href')).toBe('/admin/dashboard')
+    await wrapper.get('[aria-controls="home-mobile-menu"]').trigger('click')
+    expect(wrapper.get('#home-mobile-menu').classes()).toContain('is-open')
+    await wrapper.get('#home-mobile-menu a').trigger('click')
+    expect(wrapper.get('#home-mobile-menu').classes()).not.toContain('is-open')
   })
 })

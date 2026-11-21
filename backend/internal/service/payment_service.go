@@ -85,6 +85,14 @@ type CreateOrderRequest struct {
 	OrderType       string
 	PlanID          int64
 	Locale          string
+	// Bot recharge fields are populated only by the authenticated bot service.
+	// The request key and binding snapshot are persisted with the payment order
+	// transaction so a lost HTTP response cannot create a second payable order.
+	BotRequestID       string
+	BotBindingID       int64
+	BotPlatform        string
+	BotExternalID      string
+	BotPaymentRequired bool
 }
 
 type CreateOrderResponse struct {

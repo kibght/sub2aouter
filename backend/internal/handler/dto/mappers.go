@@ -667,7 +667,7 @@ func redeemCodeFromServiceBase(rc *service.RedeemCode) RedeemCode {
 	// Include notes for admin and bot reward types so users can see why
 	// their balance changed.
 	if (rc.Type == "admin_balance" || rc.Type == "admin_concurrency" ||
-		rc.Type == service.BotBindingBonusRedeemType || rc.Type == service.BotCheckInRedeemType) && rc.Notes != "" {
+		rc.Type == service.BotBindingBonusRedeemType || rc.Type == service.BotCheckInRedeemType || rc.Type == "bot_lottery") && rc.Notes != "" {
 		out.Notes = &rc.Notes
 	}
 

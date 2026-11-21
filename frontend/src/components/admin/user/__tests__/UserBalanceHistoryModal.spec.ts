@@ -29,6 +29,20 @@ async function openDialog() {
 }
 
 describe('UserBalanceHistoryModal request ordering', () => {
+  it('renders bot lottery history as a balance reward', async () => {
+    mocks.getUserBalanceHistory.mockResolvedValueOnce({
+      items: [{ id: 3, type: 'bot_lottery', value: 0.25, notes: 'Lottery reward', code: 'internal-lottery-reward-code' }],
+      total: 1,
+      total_recharged: 0,
+    })
+    const wrapper = await openDialog()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.botLottery.adminBalanceHistory')
+    expect(wrapper.text()).toContain('+$0.25')
+    expect(wrapper.text()).not.toContain('internal-lottery')
+  })
+
   it('keeps the new user history when an old response finishes later', async () => {
     const old = deferred()
     mocks.getUserBalanceHistory.mockReturnValueOnce(old.promise).mockResolvedValueOnce(result(20))

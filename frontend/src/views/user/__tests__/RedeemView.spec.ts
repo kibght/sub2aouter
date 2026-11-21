@@ -78,6 +78,27 @@ describe('RedeemView refresh after redemption', () => {
     wrapper.unmount()
   })
 
+  it('renders bot lottery rewards as balance and hides the internal reward code', async () => {
+    getHistory.mockResolvedValue({ items: [{
+      id: 2,
+      code: 'lottery-internal-history',
+      type: 'bot_lottery',
+      value: 0.25,
+      used_at: '2026-11-21T11:10:25Z',
+      notes: 'Lottery reward',
+    }], total: 1 })
+
+    const wrapper = mount(RedeemView, {
+      global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('redeem.balanceAddedBotLottery')
+    expect(wrapper.text()).toContain('+$0.25')
+    expect(wrapper.text()).not.toContain('lottery-internal-history')
+    wrapper.unmount()
+  })
+
   it.each(['balance', 'concurrency', 'subscription'])(
     'keeps a successful %s redemption when profile refresh fails', async (type) => {
       redeem.mockResolvedValue({ type, value: 20, message: 'Code applied' })
