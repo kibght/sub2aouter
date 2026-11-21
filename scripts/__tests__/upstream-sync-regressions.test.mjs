@@ -72,7 +72,7 @@ test('generated workflow snapshots use one shared helper before verification and
   const helper = 'scripts/ci/restore-workflow-snapshots.sh'
   const copyIndex = workflow.indexOf('name: Copy permanent theme source')
   const firstRestoreIndex = workflow.indexOf(helper, copyIndex)
-  const verifyIndex = workflow.indexOf('name: Verify theme overlay and UTF-8')
+  const verifyIndex = workflow.indexOf('name: Verify legacy overlays before QQ website integration')
   const releaseBranchIndex = workflow.indexOf('name: Update generated release branch')
   const secondRestoreIndex = workflow.indexOf(helper, releaseBranchIndex)
 

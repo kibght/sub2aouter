@@ -34,7 +34,7 @@ test('site branding remains driven by system settings across public and authenti
   assert.match(home, /cachedPublicSettings\?\.site_logo/)
   assert.match(home, /\{\{ siteName \}\}/)
   assert.match(home, /:src="siteLogo \|\| '\/logo\.svg'"/)
-  assert.match(home, /© \{\{ currentYear \}\} \{\{ siteName \}\}/)
+  assert.match(home, /(?:©|&copy;) \{\{ currentYear \}\} \{\{ siteName \}\}/)
   assert.match(auth, /\{\{ siteName \}\}/)
   assert.match(auth, /:src="siteLogo \|\| '\/logo\.svg'"/)
   assert.match(sidebar, /\{\{ siteName \}\}/)

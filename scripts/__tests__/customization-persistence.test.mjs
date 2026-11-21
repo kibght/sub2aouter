@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
@@ -34,9 +35,27 @@ const criticalCanvasTemplates = [
   'frontend/src/views/user/__tests__/InfiniteCanvasView.spec.ts',
 ]
 
-test('current frontend theme and Sub2 Canvas integration match their persistent sources', async () => {
+test('current frontend theme, reviewed QQ homepage and Sub2 Canvas integration match their persistent sources', async () => {
   const theme = await checkTheme({ root: '.', overlay: 'theme/apophis' })
-  assert.deepEqual(theme, { ok: true, drift: [] })
+  if (theme.drift.length > 0) {
+    const source = execFileSync('git', ['rev-parse', '--verify', 'origin/QQbot^{commit}'], { encoding: 'utf8', windowsHide: true }).trim()
+    const sourceFile = (target) => execFileSync('git', ['show', `${source}:${target}`], { windowsHide: true })
+    const manifestPath = '.qqbot-website-overlay.json'
+    const manifest = JSON.parse(sourceFile(manifestPath).toString('utf8'))
+    assert.deepEqual(JSON.parse(await readFile(manifestPath, 'utf8')), manifest)
+    const reviewedHomepageTargets = new Set([
+      'frontend/src/views/HomeView.vue',
+      'frontend/src/views/__tests__/HomeView.spec.ts',
+      'frontend/src/views/__tests__/HomeView.compact.spec.ts',
+    ])
+    for (const target of theme.drift) {
+      assert.ok(reviewedHomepageTargets.has(target), `unreviewed theme override: ${target}`)
+      assert.ok(manifest.paths.includes(target), `QQ homepage override must be reviewed: ${target}`)
+      assert.deepEqual(await readFile(target), sourceFile(target), `QQ homepage must match its persistent source: ${target}`)
+    }
+  } else {
+    assert.deepEqual(theme, { ok: true, drift: [] })
+  }
   await applySub2InfiniteCanvasIntegration({ root: '.', check: true })
 })
 
