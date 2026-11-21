@@ -29,7 +29,7 @@ func TestBotLotteryConcurrentLastAttemptCreditsExactlyOnePrize(t *testing.T) {
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
-			_, err := repo.Draw(ctx, user.ID, fmt.Sprintf("draw-%d-%d", user.ID, index), service.BotLotteryPrize{ID: "fixed", Name: "fixed", Amount: 0.29, Weight: 1}, "snapshot")
+			_, err := repo.Draw(ctx, user.ID, fmt.Sprintf("draw-%d-%d", user.ID, index), lotteryPrizeSelector(service.BotLotteryPrize{ID: "fixed", Name: "fixed", Amount: 0.29, Weight: 1}), "snapshot")
 			if err == nil {
 				succeeded.Add(1)
 			} else if err != service.ErrBotLotteryNoTickets {
@@ -54,6 +54,58 @@ func TestBotLotteryConcurrentLastAttemptCreditsExactlyOnePrize(t *testing.T) {
 	require.Equal(t, 1, draws)
 }
 
+func TestBotLotteryBalanceGatePreservesAttemptsAndRecords(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	actor := mustCreateBotBindingUser(t, client, &service.User{Email: fmt.Sprintf("lottery-balance-admin-%d@example.com", time.Now().UnixNano()), Role: service.RoleAdmin, Status: service.StatusActive})
+	repo := NewBotLotteryRepository(integrationDB)
+	for _, tc := range []struct {
+		name    string
+		balance float64
+		allowed bool
+	}{
+		{name: "zero", balance: 0},
+		{name: "negative", balance: -1},
+		{name: "small_positive", balance: 0.00000001, allowed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			user := mustCreateBotBindingUser(t, client, &service.User{Email: fmt.Sprintf("lottery-balance-%s-%d@example.com", tc.name, time.Now().UnixNano()), Balance: tc.balance, Status: service.StatusActive})
+			_, _, err := repo.Grant(ctx, user.ID, 1, "event", fmt.Sprintf("grant-%d", user.ID), actor.ID, fmt.Sprintf("user:%d", user.ID))
+			require.NoError(t, err)
+			selected := false
+			result, err := repo.Draw(ctx, user.ID, fmt.Sprintf("balance-draw-%d", user.ID), func() (service.BotLotteryPrize, error) {
+				selected = true
+				return service.BotLotteryPrize{ID: "fixed", Name: "fixed", Amount: 0.29, Weight: 1}, nil
+			}, "snapshot")
+			var expectedDraws int
+			expectedRemaining := int64(1)
+			expectedBalance := tc.balance
+			if tc.allowed {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				expectedDraws = 1
+				expectedRemaining = 0
+				expectedBalance += 0.29
+			} else {
+				require.ErrorIs(t, err, service.ErrBotLotteryInsufficientBalance)
+				require.Nil(t, result)
+			}
+			require.Equal(t, tc.allowed, selected)
+			remaining, err := repo.GetRemaining(ctx, user.ID)
+			require.NoError(t, err)
+			require.Equal(t, expectedRemaining, remaining)
+			var balance float64
+			require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance FROM users WHERE id = $1", user.ID).Scan(&balance))
+			require.InDelta(t, expectedBalance, balance, 1e-10)
+			var draws, rewards int
+			require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM bot_lottery_operations WHERE user_id = $1 AND action = 'draw'", user.ID).Scan(&draws))
+			require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM redeem_codes WHERE used_by = $1 AND type = 'bot_lottery'", user.ID).Scan(&rewards))
+			require.Equal(t, expectedDraws, draws)
+			require.Equal(t, expectedDraws, rewards)
+		})
+	}
+}
+
 func TestBotLotteryConcurrentSameMessageReplaysOriginalPrize(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)
@@ -69,7 +121,7 @@ func TestBotLotteryConcurrentSameMessageReplaysOriginalPrize(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			result, err := repo.Draw(ctx, user.ID, fmt.Sprintf("same-%d", user.ID), service.BotLotteryPrize{ID: "fixed", Name: "fixed", Amount: 0.29, Weight: 1}, "snapshot")
+			result, err := repo.Draw(ctx, user.ID, fmt.Sprintf("same-%d", user.ID), lotteryPrizeSelector(service.BotLotteryPrize{ID: "fixed", Name: "fixed", Amount: 0.29, Weight: 1}), "snapshot")
 			if err != nil {
 				errs <- err
 				return

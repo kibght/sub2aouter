@@ -17,6 +17,7 @@ type lotteryRepoStub struct {
 	prior      *BotLotteryDrawResult
 	priorGrant *BotLotteryGrantResult
 	drawn      int
+	drawErr    error
 	process    func(context.Context, int64) error
 	pending    func(context.Context, int) ([]int64, error)
 	create     func(context.Context, BotLotteryGrantBatchRequest) (int64, bool, error)
@@ -28,7 +29,14 @@ func (r *lotteryRepoStub) GetRemaining(context.Context, int64) (int64, error)   
 func (r *lotteryRepoStub) FindDraw(context.Context, int64, string) (*BotLotteryDrawResult, error) {
 	return r.prior, nil
 }
-func (r *lotteryRepoStub) Draw(_ context.Context, _ int64, _ string, p BotLotteryPrize, _ string) (*BotLotteryDrawResult, error) {
+func (r *lotteryRepoStub) Draw(_ context.Context, _ int64, _ string, selectPrize BotLotteryPrizeSelector, _ string) (*BotLotteryDrawResult, error) {
+	if r.drawErr != nil {
+		return nil, r.drawErr
+	}
+	p, err := selectPrize()
+	if err != nil {
+		return nil, err
+	}
 	r.drawn++
 	return &BotLotteryDrawResult{Status: "success", PrizeName: p.Name, Reward: p.Amount, Remaining: 0}, nil
 }
@@ -137,6 +145,20 @@ func TestBotLotteryDisabledAndRequestIDValidation(t *testing.T) {
 	first, _ := BotLotteryOperationID("draw:42", "one")
 	second, _ := BotLotteryOperationID("draw:43", "one")
 	require.NotEqual(t, first, second)
+}
+
+func TestBotLotteryInsufficientBalanceDoesNotInvalidateOrCompleteDraw(t *testing.T) {
+	repo := &lotteryRepoStub{
+		config:  &BotLotteryConfig{Enabled: true, Prizes: []BotLotteryPrize{{ID: "fixed", Name: "fixed", Amount: 0.29, Weight: 1}}},
+		drawErr: ErrBotLotteryInsufficientBalance,
+	}
+	cache := &lotteryCacheStub{}
+	svc := NewBotLotteryService(repo, cache, nil)
+	result, err := svc.Draw(context.Background(), 42, "new-message")
+	require.ErrorIs(t, err, ErrBotLotteryInsufficientBalance)
+	require.Nil(t, result)
+	require.Zero(t, repo.drawn)
+	require.Empty(t, cache.users)
 }
 
 func TestBotLotteryWorkerRecoversPersistedBatchesAndStops(t *testing.T) {

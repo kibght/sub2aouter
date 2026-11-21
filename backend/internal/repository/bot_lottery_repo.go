@@ -98,7 +98,7 @@ func (r *botLotteryRepository) FindDraw(ctx context.Context, userID int64, opera
 	return &service.BotLotteryDrawResult{Status: "success", PrizeName: prizeName, Reward: reward, Remaining: remaining, Replayed: true}, nil
 }
 
-func (r *botLotteryRepository) Draw(ctx context.Context, userID int64, operationID string, prize service.BotLotteryPrize, configSnapshot string) (*service.BotLotteryDrawResult, error) {
+func (r *botLotteryRepository) Draw(ctx context.Context, userID int64, operationID string, selectPrize service.BotLotteryPrizeSelector, configSnapshot string) (*service.BotLotteryDrawResult, error) {
 	if r == nil || r.db == nil {
 		return nil, service.ErrBotLotteryRepository
 	}
@@ -110,13 +110,17 @@ func (r *botLotteryRepository) Draw(ctx context.Context, userID int64, operation
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, operationID); err != nil {
 		return nil, err
 	}
-	if _, err = lockLotteryUser(ctx, tx, userID); err != nil {
+	balance, err := lockLotteryUser(ctx, tx, userID)
+	if err != nil {
 		return nil, err
 	}
 	if prior, found, err := loadLotteryOperation(ctx, tx, operationID, userID, service.BotLotteryActionDraw); err != nil {
 		return nil, err
 	} else if found {
 		return prior, nil
+	}
+	if balance <= 0 {
+		return nil, service.ErrBotLotteryInsufficientBalance
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO bot_lottery_accounts (user_id, remaining, updated_at) VALUES ($1, 0, NOW()) ON CONFLICT (user_id) DO NOTHING`, userID); err != nil {
 		return nil, fmt.Errorf("create bot lottery account: %w", err)
@@ -127,6 +131,13 @@ func (r *botLotteryRepository) Draw(ctx context.Context, userID int64, operation
 	}
 	if remaining <= 0 {
 		return nil, service.ErrBotLotteryNoTickets
+	}
+	if selectPrize == nil {
+		return nil, service.ErrBotLotteryBadConfig
+	}
+	prize, err := selectPrize()
+	if err != nil {
+		return nil, err
 	}
 	var nextRemaining int64
 	if err := tx.QueryRowContext(ctx, `UPDATE bot_lottery_accounts SET remaining = remaining - 1, updated_at = NOW() WHERE user_id = $1 RETURNING remaining`, userID).Scan(&nextRemaining); err != nil {
@@ -160,19 +171,20 @@ func (r *botLotteryRepository) Draw(ctx context.Context, userID int64, operation
 	return &service.BotLotteryDrawResult{Status: "success", PrizeName: prize.Name, Reward: prize.Amount, Remaining: nextRemaining}, nil
 }
 
-func lockLotteryUser(ctx context.Context, tx *sql.Tx, userID int64) (string, error) {
-	var status, role string
-	err := tx.QueryRowContext(ctx, `SELECT status, role FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, userID).Scan(&status, &role)
+func lockLotteryUser(ctx context.Context, tx *sql.Tx, userID int64) (float64, error) {
+	var status string
+	var balance float64
+	err := tx.QueryRowContext(ctx, `SELECT status, balance FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, userID).Scan(&status, &balance)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", service.ErrUserNotFound
+		return 0, service.ErrUserNotFound
 	}
 	if err != nil {
-		return "", fmt.Errorf("lock bot lottery user: %w", err)
+		return 0, fmt.Errorf("lock bot lottery user: %w", err)
 	}
 	if status != service.StatusActive {
-		return "", service.ErrBotBindingInactive
+		return 0, service.ErrBotBindingInactive
 	}
-	return role, nil
+	return balance, nil
 }
 
 func loadLotteryOperation(ctx context.Context, tx *sql.Tx, operationID string, userID int64, action string) (*service.BotLotteryDrawResult, bool, error) {

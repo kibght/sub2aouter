@@ -18,15 +18,16 @@ import (
 )
 
 var (
-	ErrBotLotteryDisabled          = infraerrors.Forbidden("BOT_LOTTERY_DISABLED", "Bot lottery is disabled")
-	ErrBotLotteryNoTickets         = infraerrors.Conflict("BOT_LOTTERY_NO_TICKETS", "No lottery attempts remain")
-	ErrBotLotteryBadConfig         = infraerrors.BadRequest("BOT_LOTTERY_CONFIG_INVALID", "Lottery configuration is invalid")
-	ErrBotLotteryAdminRequired     = infraerrors.Forbidden("BOT_LOTTERY_ADMIN_REQUIRED", "Bot lottery grants require an administrator account")
-	ErrBotLotteryRequestIDRequired = infraerrors.BadRequest("BOT_LOTTERY_REQUEST_ID_REQUIRED", "request_id is required")
-	ErrBotLotteryRepository        = infraerrors.ServiceUnavailable("BOT_LOTTERY_UNAVAILABLE", "Bot lottery service is unavailable")
-	ErrBotLotteryTargetAmbiguous   = infraerrors.Conflict("BOT_LOTTERY_TARGET_AMBIGUOUS", "This QQ account is bound to multiple website accounts")
-	ErrBotLotteryTargetNotFound    = infraerrors.NotFound("BOT_LOTTERY_TARGET_NOT_FOUND", "The target QQ account has no active website binding")
-	ErrBotLotteryBatchNotFound     = infraerrors.NotFound("BOT_LOTTERY_BATCH_NOT_FOUND", "The lottery grant batch was not found")
+	ErrBotLotteryDisabled            = infraerrors.Forbidden("BOT_LOTTERY_DISABLED", "Bot lottery is disabled")
+	ErrBotLotteryNoTickets           = infraerrors.Conflict("BOT_LOTTERY_NO_TICKETS", "No lottery attempts remain")
+	ErrBotLotteryInsufficientBalance = infraerrors.Conflict("BOT_LOTTERY_INSUFFICIENT_BALANCE", "A positive balance is required to draw")
+	ErrBotLotteryBadConfig           = infraerrors.BadRequest("BOT_LOTTERY_CONFIG_INVALID", "Lottery configuration is invalid")
+	ErrBotLotteryAdminRequired       = infraerrors.Forbidden("BOT_LOTTERY_ADMIN_REQUIRED", "Bot lottery grants require an administrator account")
+	ErrBotLotteryRequestIDRequired   = infraerrors.BadRequest("BOT_LOTTERY_REQUEST_ID_REQUIRED", "request_id is required")
+	ErrBotLotteryRepository          = infraerrors.ServiceUnavailable("BOT_LOTTERY_UNAVAILABLE", "Bot lottery service is unavailable")
+	ErrBotLotteryTargetAmbiguous     = infraerrors.Conflict("BOT_LOTTERY_TARGET_AMBIGUOUS", "This QQ account is bound to multiple website accounts")
+	ErrBotLotteryTargetNotFound      = infraerrors.NotFound("BOT_LOTTERY_TARGET_NOT_FOUND", "The target QQ account has no active website binding")
+	ErrBotLotteryBatchNotFound       = infraerrors.NotFound("BOT_LOTTERY_BATCH_NOT_FOUND", "The lottery grant batch was not found")
 )
 
 const (
@@ -99,12 +100,14 @@ type BotLotteryGrantBatchRequest struct {
 	OperationID string
 }
 
+type BotLotteryPrizeSelector func() (BotLotteryPrize, error)
+
 type BotLotteryRepository interface {
 	GetConfig(context.Context) (*BotLotteryConfig, error)
 	SaveConfig(context.Context, BotLotteryConfig) error
 	GetRemaining(context.Context, int64) (int64, error)
 	FindDraw(context.Context, int64, string) (*BotLotteryDrawResult, error)
-	Draw(context.Context, int64, string, BotLotteryPrize, string) (*BotLotteryDrawResult, error)
+	Draw(context.Context, int64, string, BotLotteryPrizeSelector, string) (*BotLotteryDrawResult, error)
 	ListRecords(context.Context, int64, int) ([]BotLotteryRecord, error)
 	FindGrant(context.Context, string, string, int64, string) (*BotLotteryGrantResult, error)
 	Grant(context.Context, int64, int64, string, string, int64, string) (int64, bool, error)
@@ -218,11 +221,9 @@ func (s *BotLotteryService) Draw(ctx context.Context, userID int64, requestID st
 	if err = ValidateBotLotteryConfig(*config); err != nil {
 		return nil, err
 	}
-	prize, err := chooseBotLotteryPrize(config.Prizes)
-	if err != nil {
-		return nil, err
-	}
-	result, err := s.repo.Draw(ctx, userID, operationID, prize, BotLotteryConfigSnapshot(*config))
+	result, err := s.repo.Draw(ctx, userID, operationID, func() (BotLotteryPrize, error) {
+		return chooseBotLotteryPrize(config.Prizes)
+	}, BotLotteryConfigSnapshot(*config))
 	if err != nil {
 		return nil, err
 	}
