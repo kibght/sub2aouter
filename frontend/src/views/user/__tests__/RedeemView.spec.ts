@@ -55,6 +55,29 @@ describe('RedeemView refresh after redemption', () => {
     vi.restoreAllMocks()
   })
 
+  it('renders bot check-in rewards as balance instead of requests or a redeem code', async () => {
+    getHistory.mockResolvedValue({ items: [{
+      id: 1,
+      code: '1b9a1bc5-internal-history',
+      type: 'bot_checkin',
+      value: 0.08935479,
+      used_at: '2026-11-04T11:10:25Z',
+      notes: '签到赠送金额：$0.08935479（连续签到第1天）',
+    }], total: 1 })
+
+    const wrapper = mount(RedeemView, {
+      global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('redeem.balanceAddedBotCheckin')
+    expect(wrapper.text()).toContain('+$0.09')
+    expect(wrapper.text()).toContain('签到赠送金额：$0.08935479')
+    expect(wrapper.text()).not.toContain('0.08935479 请求')
+    expect(wrapper.text()).not.toContain('1b9a1bc5-internal-history')
+    wrapper.unmount()
+  })
+
   it.each(['balance', 'concurrency', 'subscription'])(
     'keeps a successful %s redemption when profile refresh fails', async (type) => {
       redeem.mockResolvedValue({ type, value: 20, message: 'Code applied' })

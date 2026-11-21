@@ -18,10 +18,17 @@ export const RELEASE_PIPELINE_FILES = Object.freeze([
   'scripts/ci/release-identity.sh',
   'scripts/ci/preserve-upstream-metadata.sh',
   'scripts/sync-published-upstream.mjs',
+  'scripts/lib/upstream-wire-merge.mjs',
+  'scripts/ci/image-digest.sh',
+  'scripts/ci/align-release-image.sh',
+  'scripts/verify-release-assets.mjs',
   'scripts/write-release-notes.mjs',
   'scripts/lib/release-notes.mjs',
   'scripts/ci/restore-workflow-snapshots.sh',
   'scripts/apply-bot-binding.mjs',
+  'scripts/apply-qq-bot-binding.mjs',
+  'scripts/apply-bot-checkin-rewards.mjs',
+  'scripts/apply-bot-personal-info.mjs',
   'scripts/lib/github-release.mjs',
   'scripts/lib/sync-health.mjs',
   'backend/internal/service/update_service.go',
@@ -137,19 +144,40 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   check('sync.upstream_release_identity', syncPath, sync.includes('UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_ID') && sync.includes('PREVIOUS_UPSTREAM_RELEASE_TAG') && sync.includes('.apophis-upstream-release-id') && sync.includes('UPSTREAM_IDENTITY_AND_SHA_MATCH') && sync.includes('"$PREVIOUS_UPSTREAM_SHA" == "$UPSTREAM_SHA"'), 'Scheduled Sub2API syncs must deduplicate only when Release identity and source SHA match.')
   check('sync.skip_unchanged', syncPath, sync.includes('SCHEDULED_ROUND') && hasPattern(sync, /PREVIOUS_UPSTREAM_SHA[^\n]+UPSTREAM_SHA/), 'Upstream runs must skip unchanged source revisions once the latest binary Release includes them.')
   check('sync.theme_overlay', syncPath, sync.includes('node scripts/apply-theme.mjs --root .'), 'Sync must apply the Apophis overlay to fetched upstream source.')
-  const botBindingFetch = sync.indexOf('git fetch --depth=1 origin "refs/heads/feat/deepseek-bot-binding:refs/remotes/origin/feat/deepseek-bot-binding"')
-  const botBindingApply = sync.indexOf('node scripts/apply-bot-binding.mjs --root . --ref origin/feat/deepseek-bot-binding')
-  const botBindingCheck = sync.indexOf('node scripts/apply-bot-binding.mjs --root . --ref origin/feat/deepseek-bot-binding --check')
+  const botBindingFetch = sync.indexOf('git fetch --depth=2 origin "refs/heads/feat/qq-bot-binding:refs/remotes/origin/feat/qq-bot-binding"')
+  const botBindingApply = sync.indexOf('node scripts/apply-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding')
+  const botBindingCheck = sync.indexOf('node scripts/apply-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding --check')
   check('sync.bot_binding_overlay', syncPath,
     botBindingFetch >= 0 && botBindingFetch < botBindingApply && botBindingApply < botBindingCheck &&
-    (files.get('scripts/apply-bot-binding.mjs') || '').includes("origin/feat/deepseek-bot-binding"),
+    (files.get('scripts/apply-bot-binding.mjs') || '').includes("origin/feat/qq-bot-binding"),
     'Sync must fetch the bot binding branch, apply its overlay, and verify the generated integration.')
+  const qqBotApply = sync.indexOf('node scripts/apply-qq-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding')
+  const qqBotCheck = sync.indexOf('node scripts/apply-qq-bot-binding.mjs --root . --ref origin/feat/qq-bot-binding --check')
+  check('sync.qq_bot_binding_overlay', syncPath,
+    qqBotApply >= 0 && qqBotApply < qqBotCheck &&
+    (files.get('scripts/apply-qq-bot-binding.mjs') || '').includes("origin/feat/qq-bot-binding"),
+    'Sync must apply and verify the QQ balance-alert delta from the unified bot branch.')
+  const checkinFetch = sync.indexOf('git fetch origin "refs/heads/feat/bot-checkin-rewards:refs/remotes/origin/feat/bot-checkin-rewards"')
+  const checkinApply = sync.indexOf('node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards')
+  const checkinCheck = sync.indexOf('node scripts/apply-bot-checkin-rewards.mjs --root . --ref origin/feat/bot-checkin-rewards --check')
+  check('sync.bot_checkin_rewards_overlay', syncPath,
+    checkinFetch >= 0 && checkinFetch < checkinApply && checkinApply > qqBotApply && checkinApply < checkinCheck && checkinCheck > qqBotCheck &&
+    (files.get('scripts/apply-bot-checkin-rewards.mjs') || '').includes("origin/feat/bot-checkin-rewards"),
+    'Sync must fetch, apply, and verify the bot check-in rewards overlay after the other bot integrations.')
+  const personalInfoFetch = sync.indexOf('git fetch --depth=1 origin "refs/heads/QQbot:refs/remotes/origin/QQbot"')
+  const personalInfoApply = sync.indexOf('node scripts/apply-bot-personal-info.mjs --root . --ref origin/QQbot')
+  const personalInfoCheck = sync.indexOf('node scripts/apply-bot-personal-info.mjs --root . --ref origin/QQbot --check')
+  check('sync.bot_personal_info_overlay', syncPath,
+    personalInfoFetch >= 0 && personalInfoFetch < personalInfoApply && personalInfoApply > checkinApply &&
+    personalInfoApply < personalInfoCheck && personalInfoCheck > checkinCheck &&
+    (files.get('scripts/apply-bot-personal-info.mjs') || '').includes('origin/QQbot'),
+    'Sync must fetch, apply, and verify personal-info from QQbot after the other bot integrations.')
   check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-canvas-sha') && sync.includes('scripts/write-release-notes.mjs') && sync.includes('scripts/ci/preserve-upstream-metadata.sh'), 'Sync must persist upstream, repository, Canvas, and release notes metadata.')
   check('sync.repository_recovery', syncPath, sync.includes('repository_release:') && sync.includes('PREVIOUS_CANVAS_SHA') && sync.includes('Repository source drift is intentionally not published') && sync.includes('UPSTREAM_ALREADY_SYNCHRONIZED'), 'Scheduled syncs may publish Canvas drift, while repository-only changes require explicit repository_release=true.')
   check('sync.canvas_freshness', syncPath, sync.includes('name: Verify Infinite Canvas dependency is current') && sync.includes('LATEST_CANVAS_SHA') && sync.includes('node scripts/resolve-github-release.mjs') && sync.includes('--repository basketikun/infinite-canvas'), 'Theme publication must stop when main is behind the latest published Infinite Canvas release.')
   check('sync.release_notes_encoding', syncPath, sync.includes('node scripts/write-release-notes.mjs') && !/\?{4,}/.test(sync), 'Release notes must use the concrete notes composer without encoding placeholders.')
   check('sync.repository_source', syncPath,
-    sync.includes('git worktree add --detach "$GENERATED_DIR" "${{ github.sha }}"') &&
+    sync.includes('git worktree add --detach "$GENERATED_DIR" "$(git rev-parse HEAD)"') &&
     sync.includes('RELEASE_KIND="repository"') &&
     sync.includes('[[ "$REPOSITORY_RELEASE" == "true" ]]') &&
     sync.includes('Repository push: reusing themed-release without fetching upstream.'),
@@ -228,7 +256,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   'Sync must restore non-owned workflow snapshots through one shared helper before verification and final publication.')
   check('sync.binary_recovery', syncPath,
     sync.includes('NEEDS_BINARY_RELEASE') &&
-    sync.includes('gh release view "$LATEST_RELEASE_TAG"') &&
+    sync.includes('gh release view "$BINARY_RELEASE_TAG"') &&
     sync.includes('LATEST_RELEASE_VERSION') &&
     sync.includes('targetCommitish') &&
     sync.includes('run_binary=$RUN_BINARY') &&
@@ -238,6 +266,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     sync.includes('binary-release:') &&
     sync.includes('uses: ./.github/workflows/theme-binary-release.yml') &&
     sync.includes('release_ref: ${{ needs.sync-build-publish.outputs.release_ref }}') &&
+    sync.includes('force_republish: ${{ inputs.release_version != \'\' }}') &&
     !sync.includes('gh workflow run theme-binary-release.yml'),
   'Source publication must await the local reusable binary workflow at the generated immutable commit.')
   check('sync.latest_promotion', syncPath,
@@ -346,7 +375,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
   const binaryPath = '.github/workflows/theme-binary-release.yml'
   const binary = files.get(binaryPath) || ''
   check('security.generated_source', syncPath,
-    hasOrderedMarkers(sync, ['bash scripts/ci/check-security.sh frontend', 'bash scripts/ci/check-security.sh backend', 'name: Push immutable themed image']) &&
+    hasOrderedMarkers(sync, ['bash scripts/ci/check-security.sh frontend', 'name: Reconcile upstream backend security dependencies', 'go mod edit -require=github.com/andybalholm/brotli@v1.2.7', 'go mod edit -require=github.com/klauspost/compress@v1.20.2', 'go mod edit -require=golang.org/x/crypto@v0.58.1-0.20261009181718-2f1f834330b2', 'go mod edit -require=golang.org/x/image@v0.45.0', 'bash scripts/ci/check-security.sh backend', 'name: Push immutable themed image']) &&
     sync.includes('cp tools/check_pnpm_audit_exceptions.py') &&
     sync.includes('cp .github/audit-exceptions.yml') &&
     sync.includes('cmp "$GITHUB_WORKSPACE/.github/workflows/security-scan.yml"') &&
@@ -365,6 +394,7 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     'Tag releases must await security scans of the same selected source.')
   check('binary.reusable_entry', binaryPath,
     hasPattern(binary, /\n  workflow_call:\n[\s\S]*release_ref:/) &&
+    binary.includes('force_republish:') &&
     hasPattern(binary, /\n  workflow_dispatch:\n[\s\S]*release_ref:/) &&
     !binary.includes('workflow_run:'),
   'Binary release must expose reusable and manual inputs without recursive workflow_run triggers.')
@@ -393,6 +423,11 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     binary.includes('EXISTING_UPSTREAM_TAG') &&
     binary.includes('\"$EXISTING_RELEASE_SOURCE_MATCH\" == \"true\"'),
     'Binary publication must rebuild a complete existing tag when its upstream source metadata is stale.')
+  check('binary.force_republish', binaryPath,
+    binary.includes('FORCE_REPUBLISH') &&
+    binary.includes('inputs.force_republish || false') &&
+    binary.includes('"$FORCE_REPUBLISH" != "true"'),
+    'Binary publication must support explicit republishing of an existing release version.')
   check('binary.tag_alignment', binaryPath,
     binary.includes('git tag -f "$RELEASE_TAG"') &&
     binary.includes('git push --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"'),

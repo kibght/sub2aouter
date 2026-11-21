@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-// 把 feat/deepseek-bot-binding 分支上的机器人绑定功能叠加到上游生成树里。
+// 把 feat/qq-bot-binding 分支上的机器人绑定功能叠加到上游生成树里。
 // 与 theme overlay / Infinite Canvas integration 一样，作为自动同步流程的一步执行：
-//   node scripts/apply-bot-binding.mjs --root <generated-dir> --ref origin/feat/deepseek-bot-binding
+//   node scripts/apply-bot-binding.mjs --root <generated-dir> --ref origin/feat/qq-bot-binding
 // 新增文件直接从分支读取；共享文件按锚点插入；迁移按当前最大编号顺延；脚本幂等。
 
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { normalizeBotBindingIntegrationTest } from './lib/bot-binding-test-cleanup.mjs'
 
 const argv = process.argv.slice(2)
 const valueOf = (name, fallback) => {
@@ -14,7 +15,7 @@ const valueOf = (name, fallback) => {
   return index >= 0 && argv[index + 1] ? argv[index + 1] : fallback
 }
 const root = path.resolve(valueOf('--root', '.'))
-const ref = valueOf('--ref', 'origin/feat/deepseek-bot-binding')
+const ref = valueOf('--ref', 'origin/feat/qq-bot-binding')
 const checkOnly = argv.includes('--check')
 
 const CHANGED = []
@@ -22,6 +23,7 @@ const problems = []
 
 const sh = (args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
 const fromRef = (p) => sh(['show', ref + ':' + p])
+const botBindingIntegrationTest = 'backend/internal/repository/bot_binding_repo_integration_test.go'
 const read = (p) => readFileSync(path.join(root, p), 'utf8')
 const writeFile = (p, text) => {
   const abs = path.join(root, p)
@@ -121,10 +123,20 @@ const NEW_FILES = [
 for (const p of NEW_FILES) {
   if (checkOnly) {
     ensureFile(p)
+    if (p === botBindingIntegrationTest && existsSync(path.join(root, p))) {
+      try {
+        if (normalizeBotBindingIntegrationTest(read(p)) !== read(p).replace(/\r\n/g, '\n')) {
+          fail('bot binding integration test must clean up its own fixture users and rewards: ' + p)
+        }
+      } catch (error) {
+        fail(error.message + ': ' + p)
+      }
+    }
     continue
   }
   try {
-    writeFile(p, fromRef(p))
+    const source = fromRef(p)
+    writeFile(p, p === botBindingIntegrationTest ? normalizeBotBindingIntegrationTest(source) : source)
   } catch (error) {
     fail('cannot read ' + p + ' from ' + ref + ': ' + error.message)
   }

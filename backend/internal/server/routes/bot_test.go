@@ -43,6 +43,7 @@ func TestRegisterBotRoutesPublishesPluginContract(t *testing.T) {
 		http.MethodPost + " /api/v1/bot/unbind",
 		http.MethodGet + " /api/v1/bot/balance-alerts",
 		http.MethodPost + " /api/v1/bot/balance-alerts/:id/ack",
+		http.MethodPost + " /api/v1/bot/check-in",
 		http.MethodGet + " /api/v1/bot/api-keys",
 		http.MethodGet + " /api/v1/bot/usage/stats",
 		http.MethodGet + " /api/v1/bot/usage/dashboard/stats",
@@ -89,6 +90,7 @@ func TestRegisterBotRoutesRequireAdminAndBotAuthentication(t *testing.T) {
 		{method: http.MethodGet, path: "/api/v1/bot/profile"},
 		{method: http.MethodGet, path: "/api/v1/bot/personal-info"},
 		{method: http.MethodPost, path: "/api/v1/bot/unbind"},
+		{method: http.MethodPost, path: "/api/v1/bot/check-in"},
 		{method: http.MethodGet, path: "/api/v1/bot/balance-alerts"},
 		{method: http.MethodPost, path: "/api/v1/bot/balance-alerts/1/ack"},
 		{method: http.MethodGet, path: "/api/v1/bot/api-keys"},
@@ -131,6 +133,26 @@ func TestRegisterBotRoutesRequireAdminAndBotAuthentication(t *testing.T) {
 		engine.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusInternalServerError, rec.Code, "request with both credentials should reach the handler")
 	}
+	t.Run("check-in requires both admin and bot authentication", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/bot/check-in", nil)
+		req.Header.Set("Authorization", "Bot test-token")
+		rec := httptest.NewRecorder()
+		engine.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusUnauthorized, rec.Code, "bot token alone must not bypass admin authentication")
+
+		req = httptest.NewRequest(http.MethodPost, "/api/v1/bot/check-in", nil)
+		req.Header.Set("X-Test-Admin", "authorized")
+		rec = httptest.NewRecorder()
+		engine.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusUnauthorized, rec.Code, "admin authentication alone must not bypass bot authentication")
+
+		req = httptest.NewRequest(http.MethodPost, "/api/v1/bot/check-in", nil)
+		req.Header.Set("X-Test-Admin", "authorized")
+		req.Header.Set("Authorization", "Bot test-token")
+		rec = httptest.NewRecorder()
+		engine.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusInternalServerError, rec.Code, "request with both credentials should reach the handler")
+	})
 }
 
 type botPersonalInfoRateLimitSettings struct {

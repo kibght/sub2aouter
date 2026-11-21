@@ -182,6 +182,7 @@ func ProvideAdminSettingHandler(settingService *service.SettingService, emailSer
 // ProvideBotHandler 创建机器人接口处理器。
 func ProvideBotHandler(
 	bindings *service.BotBindingService,
+	checkIn *service.BotCheckInService,
 	usage *service.UsageService,
 	apiKeys *service.APIKeyService,
 	users *service.UserService,
@@ -191,6 +192,7 @@ func ProvideBotHandler(
 	h := NewBotHandler(bindings, usage, apiKeys, users)
 	h.SetBalanceNotifyQQRepository(qqBalanceNotifyRepo)
 	h.SetConcurrencyReader(concurrencyCache)
+	h.SetCheckInService(checkIn)
 	return h
 }
 
@@ -198,6 +200,7 @@ func ProvideBotHandler(
 func ProvideHandlers(
 	authHandler *AuthHandler,
 	userHandler *UserHandler,
+	mcpOAuthHandler *MCPOAuthHandler,
 	apiKeyHandler *APIKeyHandler,
 	usageHandler *UsageHandler,
 	redeemHandler *RedeemHandler,
@@ -225,6 +228,7 @@ func ProvideHandlers(
 	return &Handlers{
 		Auth:             authHandler,
 		User:             userHandler,
+		MCPOAuth:         mcpOAuthHandler,
 		APIKey:           apiKeyHandler,
 		Usage:            usageHandler,
 		Redeem:           redeemHandler,
@@ -253,6 +257,7 @@ var ProviderSet = wire.NewSet(
 	// Top-level handlers
 	NewAuthHandler,
 	NewUserHandler,
+	NewMCPOAuthHandler,
 	NewAPIKeyHandler,
 	NewUsageHandler,
 	NewRedeemHandler,

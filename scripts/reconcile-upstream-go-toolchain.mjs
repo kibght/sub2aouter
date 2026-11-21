@@ -5,15 +5,33 @@ import { fileURLToPath } from 'node:url'
 const dockerfiles = ['Dockerfile', 'backend/Dockerfile', 'deploy/Dockerfile']
 const goVersionPattern = /^go (\d+\.\d+\.\d+)$/m
 const golangImagePattern = /golang:[0-9]+\.[0-9]+\.[0-9]+-alpine/g
+// GO-2026-6859 affects the HTTP server in earlier Go standard libraries.
+const minimumGoVersion = '1.27.4'
+
+function compareVersions(left, right) {
+  const leftParts = left.split('.').map(Number)
+  const rightParts = right.split('.').map(Number)
+  for (let index = 0; index < leftParts.length; index += 1) {
+    if (leftParts[index] !== rightParts[index]) return leftParts[index] - rightParts[index]
+  }
+  return 0
+}
 
 export async function reconcileUpstreamGoToolchain({ root }) {
   const goMod = await readFile(path.join(root, 'backend/go.mod'), 'utf8')
-  const version = goMod.match(goVersionPattern)?.[1]
-  if (!version) {
+  const upstreamVersion = goMod.match(goVersionPattern)?.[1]
+  if (!upstreamVersion) {
     throw new Error('backend/go.mod must declare a full Go version')
   }
 
+  const version = compareVersions(upstreamVersion, minimumGoVersion) < 0
+    ? minimumGoVersion
+    : upstreamVersion
   const changedFiles = []
+  if (version !== upstreamVersion) {
+    await writeFile(path.join(root, 'backend/go.mod'), goMod.replace(goVersionPattern, `go ${version}`), 'utf8')
+    changedFiles.push('backend/go.mod')
+  }
   for (const file of dockerfiles) {
     const filePath = path.join(root, file)
     const source = await readFile(filePath, 'utf8')

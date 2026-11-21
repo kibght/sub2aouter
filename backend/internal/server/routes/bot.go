@@ -35,6 +35,7 @@ func RegisterBotRoutes(
 		bot.POST("/unbind", h.Bot.Unbind)
 		bot.GET("/balance-alerts", h.Bot.BalanceLowAlerts)
 		bot.POST("/balance-alerts/:id/ack", h.Bot.AckBalanceLowAlert)
+		bot.POST("/check-in", h.Bot.CheckIn)
 		bot.GET("/api-keys", h.Bot.APIKeys)
 		// 聚合查询与用户端一致，叠加更严格的 Heavy 档限流。
 		bot.GET("/usage/stats", panelRateLimiter.Heavy(), h.Bot.UsageStats)

@@ -104,7 +104,7 @@ test('theme sync awaits one reusable binary publication before promoting latest'
   assert.match(binaryWorkflow, /workflow_dispatch:[\s\S]*release_ref:/)
   assert.doesNotMatch(binaryWorkflow, /workflow_run:/)
   assert.match(binaryWorkflow, /ref: \$\{\{ inputs\.release_ref \|\| 'themed-release' \}\}/)
-  assert.match(binaryWorkflow, /group: themed-binary-release-\$\{\{ inputs\.release_ref \|\| github\.run_id \}\}/)
+  assert.match(binaryWorkflow, /group: themed-binary-release\n/)
 })
 
 
@@ -112,10 +112,10 @@ test('hourly sync checks the latest binary release and repairs it without mintin
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
 
   assert.match(workflow, /NEEDS_BINARY_RELEASE/)
-  assert.match(workflow, /gh release view "\$LATEST_RELEASE_TAG"/)
+  assert.match(workflow, /gh release view "\$BINARY_RELEASE_TAG"/)
   assert.match(workflow, /targetCommitish/)
   assert.match(workflow, /\.assets\[\]\.name/)
-  assert.match(workflow, /sub2api_\$\{LATEST_RELEASE_VERSION\}_linux_amd64\.tar\.gz/)
+  assert.match(workflow, /sub2api_\$\{BINARY_RELEASE_VERSION\}_linux_amd64\.tar\.gz/)
   assert.match(workflow, /run_binary=\$RUN_BINARY/)
   assert.match(workflow, /effective_version=\$EFFECTIVE_VERSION/)
 })

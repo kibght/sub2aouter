@@ -13,7 +13,7 @@ test('upstream Dockerfiles use the Go version declared by backend/go.mod', async
     await writeFile(path.join(root, 'backend/go.mod'), [
       'module example.test/app',
       '',
-      'go 1.27.3',
+      'go 1.27.4',
       '',
     ].join('\n'))
     await writeFile(path.join(root, 'Dockerfile'), [
@@ -32,12 +32,42 @@ test('upstream Dockerfiles use the Go version declared by backend/go.mod', async
 
     const result = await reconcileUpstreamGoToolchain({ root })
 
-    assert.equal(result.version, '1.27.3')
+    assert.equal(result.version, '1.27.4')
     assert.deepEqual(result.changedFiles, ['Dockerfile', 'backend/Dockerfile', 'deploy/Dockerfile'])
     for (const file of ['Dockerfile', 'backend/Dockerfile', 'deploy/Dockerfile']) {
-      assert.match(await readFile(path.join(root, file), 'utf8'), /golang:1\.27\.3-alpine/)
+      assert.match(await readFile(path.join(root, file), 'utf8'), /golang:1\.27\.4-alpine/)
     }
     assert.deepEqual((await reconcileUpstreamGoToolchain({ root })).changedFiles, [])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Go security floor upgrades vulnerable upstream releases and preserves newer toolchains', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'upstream-go-security-floor-'))
+  try {
+    await mkdir(path.join(root, 'backend'))
+    await mkdir(path.join(root, 'deploy'))
+    for (const [upstreamVersion, expectedVersion] of [
+      ['1.27.3', '1.27.4'],
+      ['1.27.4', '1.27.4'],
+      ['1.27.10', '1.27.10'],
+      ['1.28.0', '1.28.0'],
+    ]) {
+      const goMod = `module example.test/app\n\ngo ${upstreamVersion}\n`
+      await writeFile(path.join(root, 'backend/go.mod'), goMod)
+      for (const file of ['Dockerfile', 'backend/Dockerfile', 'deploy/Dockerfile']) {
+        await writeFile(path.join(root, file), `FROM golang:${upstreamVersion}-alpine\n`)
+      }
+      const result = await reconcileUpstreamGoToolchain({ root })
+      assert.equal(result.version, expectedVersion)
+      assert.equal(await readFile(path.join(root, 'backend/go.mod'), 'utf8'),
+        `module example.test/app\n\ngo ${expectedVersion}\n`)
+      for (const file of ['Dockerfile', 'backend/Dockerfile', 'deploy/Dockerfile']) {
+        assert.equal(await readFile(path.join(root, file), 'utf8'), `FROM golang:${expectedVersion}-alpine\n`)
+      }
+      assert.deepEqual((await reconcileUpstreamGoToolchain({ root })).changedFiles, [])
+    }
   } finally {
     await rm(root, { recursive: true, force: true })
   }

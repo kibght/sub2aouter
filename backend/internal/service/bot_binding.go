@@ -14,6 +14,8 @@ import (
 )
 
 const (
+	BotBindingBonusAmount = 0.5
+
 	// BotBindingCodeLength 机器人绑定码长度。字母表已剔除 0/O/1/I 等易混淆字符。
 	// 12 位（32^12 ≈ 1.15e18）≈ 60 bit 熵，配合 10 分钟 TTL 即可让数据库转储后的
 	// 离线暴力破解在有效期内不可行，无需依赖额外的服务端密钥。
@@ -59,6 +61,8 @@ type BotBinding struct {
 	BoundAt          time.Time
 	LastUsedAt       *time.Time
 	CreatedAt        time.Time
+	BindBonusGranted bool
+	BindBonusAmount  float64
 }
 
 // BotBindingCode 是一次性绑定码明文及其过期时间（仅返回给生成它的登录用户）。
@@ -104,12 +108,20 @@ type BotBindingRepository interface {
 
 // BotBindingService 负责绑定码签发、兑换、令牌校验与解绑。
 type BotBindingService struct {
-	repo BotBindingRepository
+	repo         BotBindingRepository
+	billingCache balanceCacheInvalidator
 }
 
 // NewBotBindingService 创建机器人绑定服务。
 func NewBotBindingService(repo BotBindingRepository) *BotBindingService {
 	return &BotBindingService{repo: repo}
+}
+
+// SetBillingCache 设置余额缓存，用于首次绑定奖励到账后的缓存失效。
+func (s *BotBindingService) SetBillingCache(cache balanceCacheInvalidator) {
+	if s != nil {
+		s.billingCache = cache
+	}
 }
 
 // CreateCode 为当前登录用户生成一次性绑定码。
@@ -171,6 +183,11 @@ func (s *BotBindingService) Redeem(ctx context.Context, code, platform, external
 	})
 	if err != nil {
 		return nil, err
+	}
+	if binding.BindBonusGranted && s.billingCache != nil {
+		cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.billingCache.InvalidateUserBalance(cacheCtx, binding.UserID)
 	}
 	return &BotBindingClaim{BotBinding: *binding, Token: token}, nil
 }

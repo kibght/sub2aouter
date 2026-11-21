@@ -177,6 +177,12 @@ type UpdateSettingsRequest struct {
 	AffiliateRebateDurationDays               *int                              `json:"affiliate_rebate_duration_days"`
 	AffiliateRebatePerInviteeCap              *float64                          `json:"affiliate_rebate_per_invitee_cap"`
 	AdminRechargeRebateEnabled                *bool                             `json:"affiliate_admin_recharge_enabled"`
+	BotCheckInEnabled                         *bool                             `json:"bot_checkin_enabled"`
+	BotCheckInFirstRewardMin                  *float64                          `json:"bot_checkin_first_reward_min"`
+	BotCheckInFirstRewardMax                  *float64                          `json:"bot_checkin_first_reward_max"`
+	BotCheckInIncrementMin                    *float64                          `json:"bot_checkin_increment_min"`
+	BotCheckInIncrementMax                    *float64                          `json:"bot_checkin_increment_max"`
+	BotCheckInDailyCap                        *float64                          `json:"bot_checkin_daily_cap"`
 	DefaultUserRPMLimit                       int                               `json:"default_user_rpm_limit"`
 	DefaultSubscriptions                      []dto.DefaultSubscriptionSetting  `json:"default_subscriptions"`
 	AuthSourceDefaultEmailBalance             *float64                          `json:"auth_source_default_email_balance"`
@@ -396,13 +402,13 @@ type UpdateSettingsRequest struct {
 // UpdateSettings 更新系统设置
 // PUT /api/v1/admin/settings
 // ensureActorTotpForStepUp 校验当前操作者具备开启 step-up 门控的条件：
-// 必须是真人管理员会话（admin API key 无法完成 TOTP step-up，拒绝）且本人已启用 TOTP。
+// 必须是真人管理员会话（admin API key、MCP OAuth 等机器凭证无法完成 TOTP step-up，拒绝）且本人已启用 TOTP。
 // 校验失败时写入错误响应并返回 false。
 func (h *SettingHandler) ensureActorTotpForStepUp(c *gin.Context) bool {
-	if c.GetString("auth_method") == service.AuditAuthMethodAdminAPIKey {
+	if reason, machine := middleware.MachineCredentialReason(c); machine {
 		response.ErrorWithDetails(c, http.StatusForbidden,
-			"Admin API key cannot enable step-up verification; use an admin session with TOTP enabled",
-			"STEP_UP_ADMIN_API_KEY_FORBIDDEN", nil)
+			"Machine credentials cannot enable step-up verification; use an admin session with TOTP enabled",
+			reason, nil)
 		return false
 	}
 	subject, ok := middleware.GetAuthSubjectFromContext(c)
@@ -609,6 +615,29 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	adminRechargeRebateEnabled := previousSettings.AdminRechargeRebateEnabled
 	if req.AdminRechargeRebateEnabled != nil {
 		adminRechargeRebateEnabled = *req.AdminRechargeRebateEnabled
+	}
+	botCheckIn := previousSettings.BotCheckInSettings
+	if req.BotCheckInEnabled != nil {
+		botCheckIn.Enabled = *req.BotCheckInEnabled
+	}
+	if req.BotCheckInFirstRewardMin != nil {
+		botCheckIn.FirstRewardMin = *req.BotCheckInFirstRewardMin
+	}
+	if req.BotCheckInFirstRewardMax != nil {
+		botCheckIn.FirstRewardMax = *req.BotCheckInFirstRewardMax
+	}
+	if req.BotCheckInIncrementMin != nil {
+		botCheckIn.IncrementMin = *req.BotCheckInIncrementMin
+	}
+	if req.BotCheckInIncrementMax != nil {
+		botCheckIn.IncrementMax = *req.BotCheckInIncrementMax
+	}
+	if req.BotCheckInDailyCap != nil {
+		botCheckIn.DailyCap = *req.BotCheckInDailyCap
+	}
+	if err := service.ValidateBotCheckInSettingsForHandler(botCheckIn); err != nil {
+		response.BadRequest(c, err.Error())
+		return
 	}
 	// 通用表格配置：兼容旧客户端未传字段时保留当前值。
 	if req.TableDefaultPageSize <= 0 {
@@ -1662,6 +1691,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateDurationDays:            affiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:           affiliateRebatePerInviteeCap,
 		AdminRechargeRebateEnabled:             adminRechargeRebateEnabled,
+		BotCheckInSettings:                     botCheckIn,
 		DefaultUserRPMLimit:                    req.DefaultUserRPMLimit,
 		DefaultSubscriptions:                   defaultSubscriptions,
 		EnableModelFallback:                    req.EnableModelFallback,
@@ -2326,6 +2356,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateDurationDays:                            updatedSettings.AffiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:                           updatedSettings.AffiliateRebatePerInviteeCap,
 		AdminRechargeRebateEnabled:                             updatedSettings.AdminRechargeRebateEnabled,
+		BotCheckInEnabled:                                      updatedSettings.Enabled,
+		BotCheckInFirstRewardMin:                               updatedSettings.FirstRewardMin,
+		BotCheckInFirstRewardMax:                               updatedSettings.FirstRewardMax,
+		BotCheckInIncrementMin:                                 updatedSettings.IncrementMin,
+		BotCheckInIncrementMax:                                 updatedSettings.IncrementMax,
+		BotCheckInDailyCap:                                     updatedSettings.DailyCap,
 		DefaultUserRPMLimit:                                    updatedSettings.DefaultUserRPMLimit,
 		DefaultSubscriptions:                                   updatedDefaultSubscriptions,
 		EnableModelFallback:                                    updatedSettings.EnableModelFallback,

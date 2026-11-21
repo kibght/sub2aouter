@@ -177,8 +177,9 @@ type SystemSettings struct {
 	AffiliateRebateDurationDays  int
 	AffiliateRebatePerInviteeCap float64
 	AdminRechargeRebateEnabled   bool
-	DefaultUserRPMLimit          int
-	DefaultSubscriptions         []DefaultSubscriptionSetting
+	BotCheckInSettings
+	DefaultUserRPMLimit  int
+	DefaultSubscriptions []DefaultSubscriptionSetting
 
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
@@ -321,6 +322,15 @@ type SystemSettings struct {
 	AllowUserViewErrorRequests bool
 }
 
+type BotCheckInSettings struct {
+	Enabled        bool
+	FirstRewardMin float64
+	FirstRewardMax float64
+	IncrementMin   float64
+	IncrementMax   float64
+	DailyCap       float64
+}
+
 type DefaultSubscriptionSetting struct {
 	GroupID      int64 `json:"group_id"`
 	ValidityDays int   `json:"validity_days"`
@@ -375,6 +385,7 @@ type PublicSettings struct {
 	WeChatOAuthMPEnabled     bool
 	WeChatOAuthMobileEnabled bool
 	BackendModeEnabled       bool
+	MCPEnabled               bool // 由部署配置 MCP_PUBLIC_URL 决定，不可在后台修改
 	PaymentEnabled           bool
 	PaymentBalanceDisabled   bool
 	OIDCOAuthEnabled         bool

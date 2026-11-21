@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: ''
+      force_republish:
+        description: Rebuild and replace an existing release even when its source identity matches
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       release_ref:
@@ -26,7 +31,7 @@ on:
         type: string
 
 concurrency:
-  group: themed-binary-release-${{ inputs.release_ref || github.run_id }}
+  group: themed-binary-release
   cancel-in-progress: false
 
 permissions:
@@ -121,6 +126,7 @@ jobs:
       - name: Read release version and skip duplicates
         env:
           GH_TOKEN: ${{ github.token }}
+          FORCE_REPUBLISH: ${{ inputs.force_republish || false }}
         shell: bash
         run: |
           set -euo pipefail
@@ -174,6 +180,10 @@ jobs:
                   EXISTING_RELEASE_SOURCE_MATCH=true
                 fi
               fi
+              if [[ "$EXISTING_RELEASE_SOURCE_MATCH" == "true" ]] &&
+                 [[ "$(git rev-parse 'refs/apophis/existing-release^{tree}')" != "$(git rev-parse 'HEAD^{tree}')" ]]; then
+                EXISTING_RELEASE_SOURCE_MATCH=false
+              fi
             fi
             MISSING_ASSETS=()
             for asset in "${REQUIRED_ASSETS[@]}"; do
@@ -181,13 +191,13 @@ jobs:
                 MISSING_ASSETS+=("$asset")
               fi
             done
-            if [[ "$RELEASE_DRAFT" == "false" && "$RELEASE_PRERELEASE" == "false" && "$RELEASE_TARGET" == "themed-release" && "$EXISTING_RELEASE_SOURCE_MATCH" == "true" && "${#MISSING_ASSETS[@]}" -eq 0 ]]; then
+            if [[ "$FORCE_REPUBLISH" != "true" && "$RELEASE_DRAFT" == "false" && "$RELEASE_PRERELEASE" == "false" && "$RELEASE_TARGET" == "themed-release" && "$EXISTING_RELEASE_SOURCE_MATCH" == "true" && "${#MISSING_ASSETS[@]}" -eq 0 ]]; then
               echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
               echo "RELEASE_EXISTS=true" >> "$GITHUB_ENV"
               echo "Release $RELEASE_TAG already exists with all required assets; nothing to publish."
               exit 0
             fi
-            echo "Existing release ${RELEASE_TAG} needs repair (draft=${RELEASE_DRAFT}, prerelease=${RELEASE_PRERELEASE}, target=${RELEASE_TARGET}, source_match=${EXISTING_RELEASE_SOURCE_MATCH}, missing=${MISSING_ASSETS[*]:-none})."
+            echo "Existing release ${RELEASE_TAG} needs repair or explicit republish (force=${FORCE_REPUBLISH}, draft=${RELEASE_DRAFT}, prerelease=${RELEASE_PRERELEASE}, target=${RELEASE_TARGET}, source_match=${EXISTING_RELEASE_SOURCE_MATCH}, missing=${MISSING_ASSETS[*]:-none})."
           elif grep -Eiq '404|not found' "$RELEASE_ERROR_FILE"; then
             echo "Release $RELEASE_TAG does not exist; creating it."
           else
@@ -255,9 +265,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          source scripts/ci/retry.sh
           git tag -f "$RELEASE_TAG"
-          retry_with_backoff 4 10 git push --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
 
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         if: env.SHOULD_PUBLISH == 'true'
@@ -279,6 +287,7 @@ jobs:
             test -s "$artifact" || { echo "Missing release artifact: $artifact" >&2; exit 1; }
           done
           test -s dist/checksums.txt
+          node scripts/verify-release-assets.mjs --version "$RELEASE_VERSION" --dist dist
 
       - name: Publish GitHub binary release
         if: env.SHOULD_PUBLISH == 'true'
@@ -295,27 +304,44 @@ jobs:
           fi
 
           if [[ "$RELEASE_EXISTS" == "true" ]]; then
-            retry_with_backoff 4 10 gh release upload "$RELEASE_TAG" \
-              dist/*.tar.gz dist/*.zip dist/checksums.txt \
-              --repo "$GITHUB_REPOSITORY" \
-              --clobber
             retry_with_backoff 4 10 gh release edit "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
-              --target themed-release \
-              --title "$RELEASE_TITLE" \
-              --notes-file .apophis-release-notes.md \
-              --latest \
-              --draft=false \
-              --prerelease=false
+              --draft=true
           else
             retry_with_backoff 4 10 gh release create "$RELEASE_TAG" \
-              dist/*.tar.gz dist/*.zip dist/checksums.txt \
               --repo "$GITHUB_REPOSITORY" \
               --target themed-release \
               --title "$RELEASE_TITLE" \
               --notes-file .apophis-release-notes.md \
-              --latest
+              --draft
           fi
+
+          retry_with_backoff 4 10 gh release upload "$RELEASE_TAG" \
+            "dist/sub2api_${RELEASE_VERSION}_linux_amd64.tar.gz" \
+            "dist/sub2api_${RELEASE_VERSION}_linux_arm64.tar.gz" \
+            "dist/sub2api_${RELEASE_VERSION}_windows_amd64.zip" \
+            "dist/sub2api_${RELEASE_VERSION}_darwin_amd64.tar.gz" \
+            "dist/sub2api_${RELEASE_VERSION}_darwin_arm64.tar.gz" \
+            dist/checksums.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+          RELEASE_API_URL="$(retry_with_backoff 5 3 gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json apiUrl --jq '.apiUrl')"
+          STAGED_RELEASE_JSON="${RUNNER_TEMP}/apophis-staged-release.json"
+          retry_with_backoff 5 3 gh api "$RELEASE_API_URL" > "$STAGED_RELEASE_JSON"
+          node scripts/verify-release-assets.mjs \
+            --version "$RELEASE_VERSION" \
+            --release-json "$STAGED_RELEASE_JSON" \
+            --dist dist
+
+          retry_with_backoff 4 10 git push --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          retry_with_backoff 4 10 gh release edit "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target themed-release \
+            --title "$RELEASE_TITLE" \
+            --notes-file .apophis-release-notes.md \
+            --latest \
+            --draft=false \
+            --prerelease=false
 
       - name: Verify published GitHub release
         if: env.SHOULD_PUBLISH == 'true'
