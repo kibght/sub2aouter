@@ -1,9 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createI18n } from 'vue-i18n'
 import BotLotteryGrantModal from '../BotLotteryGrantModal.vue'
-import zhBotLottery from '@/i18n/locales/zh/admin/botLottery'
-import zhCommon from '@/i18n/locales/zh/common'
 import type { AdminUser } from '@/types'
 
 const mocks = vi.hoisted(() => ({
@@ -17,12 +14,14 @@ vi.mock('@/api/admin', () => ({
   adminAPI: { botLottery: mocks }
 }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showSuccess: mocks.showSuccess }) }))
+vi.mock('vue-i18n', () => ({
+  useI18n: () => ({ t: (key: string) => key })
+}))
 
 const user = { id: 17, email: 'user@example.test', balance: 0 } as AdminUser
-const translations = createI18n({ legacy: false, locale: 'zh', messages: { zh: { admin: { botLottery: zhBotLottery.botLottery }, common: zhCommon.common } } })
 const mountModal = (target: AdminUser | null) => mount(BotLotteryGrantModal, {
   props: { show: true, user: target },
-  global: { plugins: [translations], stubs: { teleport: true, transition: false } }
+  global: { stubs: { teleport: true, transition: false } }
 })
 
 describe('机器人抽奖次数发放', () => {
