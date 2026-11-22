@@ -1,0 +1,22 @@
+{
+  "base_sha": "7723a8f3ca145dcbc409a624d85ad553bcfa87e3",
+  "paths": [
+    "backend/cmd/server/wire_gen.go",
+    "backend/cmd/server/wire_gen_test.go",
+    "backend/internal/repository/balance_notification_repo.go",
+    "backend/internal/repository/balance_notification_repo_test.go",
+    "backend/internal/repository/balance_notification_repo_integration_test.go",
+    "backend/internal/repository/balance_notify_qq_repo.go",
+    "backend/internal/repository/balance_notify_qq_repo_test.go",
+    "backend/internal/repository/wire.go",
+    "backend/internal/service/balance_notification_reliability.go",
+    "backend/internal/service/balance_notification_reliability_test.go",
+    "backend/internal/service/balance_notify_service.go",
+    "backend/internal/service/billing_notification_worker.go",
+    "backend/internal/service/notification_email_service.go",
+    "backend/internal/service/user_notify_cache_test.go",
+    "backend/internal/service/user_service.go",
+    "backend/internal/service/wire.go",
+    "backend/migrations/255_balance_notification_reliability.sql"
+  ]
+}

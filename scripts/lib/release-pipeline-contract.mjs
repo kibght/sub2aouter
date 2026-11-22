@@ -29,6 +29,8 @@ export const RELEASE_PIPELINE_FILES = Object.freeze([
   'scripts/apply-qq-bot-binding.mjs',
   'scripts/apply-bot-checkin-rewards.mjs',
   'scripts/apply-bot-personal-info.mjs',
+  'scripts/apply-balance-notification-reliability.mjs',
+  'scripts/balance-notification-overlay.json',
   'scripts/lib/github-release.mjs',
   'scripts/lib/sync-health.mjs',
   'backend/internal/service/update_service.go',
@@ -172,6 +174,26 @@ export async function verifyReleasePipelineContract(root = '.', options = {}) {
     personalInfoApply < personalInfoCheck && personalInfoCheck > checkinCheck &&
     (files.get('scripts/apply-bot-personal-info.mjs') || '').includes('origin/QQbot'),
     'Sync must fetch, apply, and verify personal-info from QQbot after the other bot integrations.')
+  const notificationOverlayPath = 'scripts/apply-balance-notification-reliability.mjs'
+  const notificationOverlay = files.get(notificationOverlayPath) || ''
+  const notificationFetch = sync.indexOf('+refs/heads/fix/balance-notification-reliability:refs/remotes/origin/fix/balance-notification-reliability')
+  const releaseDecision = sync.indexOf('name: Decide whether a release is needed')
+  const qqWebsiteApply = sync.indexOf('name: Apply QQ website integration')
+  const qqWebsiteCheck = sync.indexOf('--root "$GENERATED_DIR" --ref origin/QQbot --check')
+  const notificationApply = sync.indexOf('node scripts/apply-balance-notification-reliability.mjs --root "$GENERATED_DIR" --ref origin/fix/balance-notification-reliability\n')
+  const notificationCheck = sync.indexOf('node scripts/apply-balance-notification-reliability.mjs --root . --ref origin/fix/balance-notification-reliability --check')
+  check('sync.balance_notification_overlay', syncPath,
+    notificationFetch >= 0 && notificationFetch < releaseDecision &&
+    qqWebsiteApply > personalInfoApply && qqWebsiteCheck > qqWebsiteApply && notificationApply > qqWebsiteCheck && notificationCheck > notificationApply &&
+    sync.includes('cp -a scripts/. "$GENERATED_DIR/scripts/"') &&
+    notificationOverlay.includes('origin/fix/balance-notification-reliability') &&
+    notificationOverlay.includes("['merge-file', '-p', '--diff3'") && notificationOverlay.includes('verifyRequiredAnchors'),
+    'Sync must pin notification fixes, compose their reviewed delta after QQ, and verify both capabilities without replaying an older shared file.')
+  const unchangedGuards = sync.split('\n').filter((line) => line.includes('if [[') && line.includes('UPSTREAM_ALREADY_SYNCHRONIZED') && line.includes('-z "$RELEASE_VERSION_OVERRIDE"'))
+  check('sync.feature_source_identity', syncPath,
+    sync.includes('.apophis-qqbot-source-sha') && sync.includes('.apophis-balance-notification-source-sha') &&
+    sync.includes('FEATURE_SOURCE_CHANGED=true') && unchangedGuards.length >= 3 && unchangedGuards.every((line) => line.includes('"$FEATURE_SOURCE_CHANGED" != "true"')),
+    'A changed QQ or notification source must rebuild even when the upstream Release is unchanged, and both source SHAs must be recorded.')
   check('sync.metadata', syncPath, sync.includes('.apophis-upstream-sha') && sync.includes('.apophis-repository-sha') && sync.includes('.apophis-canvas-sha') && sync.includes('scripts/write-release-notes.mjs') && sync.includes('scripts/ci/preserve-upstream-metadata.sh'), 'Sync must persist upstream, repository, Canvas, and release notes metadata.')
   check('sync.repository_recovery', syncPath, sync.includes('repository_release:') && sync.includes('PREVIOUS_CANVAS_SHA') && sync.includes('Repository source drift is intentionally not published') && sync.includes('UPSTREAM_ALREADY_SYNCHRONIZED'), 'Scheduled syncs may publish Canvas drift, while repository-only changes require explicit repository_release=true.')
   check('sync.canvas_freshness', syncPath, sync.includes('name: Verify Infinite Canvas dependency is current') && sync.includes('LATEST_CANVAS_SHA') && sync.includes('node scripts/resolve-github-release.mjs') && sync.includes('--repository basketikun/infinite-canvas'), 'Theme publication must stop when main is behind the latest published Infinite Canvas release.')

@@ -215,6 +215,7 @@ async function decide(t, {
   candidateTreeChanged = false, newUpstream = false,
   latestStatus = 200, expectedExitCode = 0,
   releaseVersionOverride = '',
+  qqSourceChanged = false, notificationSourceChanged = false,
 } = {}) {
   const root = await temporaryRoot(t)
   const git = (args, input) => execFileSync('git', args, {
@@ -251,6 +252,8 @@ async function decide(t, {
     '.apophis-repository-upstream-sha': upstreamSha,
     '.apophis-repository-upstream-tag': upstreamTag,
     '.apophis-repository-sha': staleRepository ? oldMain : main,
+    '.apophis-qqbot-source-sha': 'a'.repeat(40),
+    '.apophis-balance-notification-source-sha': 'b'.repeat(40),
     'fixture-content': content,
   })
   const candidateFiles = metadata(generatedVersion, candidateKind, upstream20, 'v0.2.20', 'release-20', 'candidate')
@@ -322,6 +325,8 @@ jq() { node mock-jq.mjs "$@"; }
       RELEASE_VERSION_OVERRIDE: releaseVersionOverride, UPSTREAM_SHA: newUpstream ? upstream21 : upstream20,
       UPSTREAM_RELEASE_TAG: newUpstream ? 'v0.2.21' : 'v0.2.20',
       UPSTREAM_RELEASE_ID: newUpstream ? 'release-21' : 'release-20',
+      QQBOT_SOURCE_SHA: (qqSourceChanged ? 'c' : 'a').repeat(40),
+      BALANCE_NOTIFICATION_SOURCE_SHA: (notificationSourceChanged ? 'd' : 'b').repeat(40),
     },
   })
   assert.equal(result.status, expectedExitCode, result.stderr)
@@ -387,6 +392,16 @@ test('a new upstream release preserves the normal next-version publication path'
   assert.equal(data.env.RELEASE_VERSION, '0.2.11')
   assert.match(data.commands, /node scripts\/next-release-version\.mjs 0\.2\.10/)
 })
+
+for (const feature of ['qqSourceChanged', 'notificationSourceChanged']) {
+  test('changed ' + feature + ' rebuilds an otherwise unchanged upstream release', async (t) => {
+    const data = await decide(t, { publicVersion: '0.2.10', draft: false, [feature]: true })
+    assert.equal(data.env.FEATURE_SOURCE_CHANGED, 'true')
+    assert.equal(data.env.SHOULD_PUBLISH, 'true')
+    assert.equal(data.env.RELEASE_VERSION, '0.2.11')
+    assert.match(data.commands, /node scripts\/next-release-version\.mjs 0\.2\.10/)
+  })
+}
 
 test('the only release can recover from draft even when latest returns 404 and its tag is absent', async (t) => {
   const data = await decide(t, { latestStatus: 404 })

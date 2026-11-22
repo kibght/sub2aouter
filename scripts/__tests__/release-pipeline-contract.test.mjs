@@ -28,6 +28,20 @@ test('current repository satisfies the automatic release and frontend update con
   assert.deepEqual(violations, [])
 })
 
+test('contract requires the permanent notification overlay and feature revision release gates', async () => {
+  const workflowPath = '.github/workflows/upstream-theme-sync.yml'
+  for (const [marker, replacement, code] of [
+    ['+refs/heads/fix/balance-notification-reliability:refs/remotes/origin/fix/balance-notification-reliability', 'missing', 'sync.balance_notification_overlay'],
+    ['node scripts/apply-balance-notification-reliability.mjs --root . --ref origin/fix/balance-notification-reliability --check', 'true', 'sync.balance_notification_overlay'],
+    ['FEATURE_SOURCE_CHANGED=true', 'FEATURE_SOURCE_CHANGED=false', 'sync.feature_source_identity'],
+  ]) {
+    const files = await loadContractFiles()
+    files.set(workflowPath, files.get(workflowPath).replace(marker, replacement))
+    const violations = await verifyReleasePipelineContract('.', { readText: readerFor(files) })
+    assert.ok(violations.some((entry) => entry.code === code), code)
+  }
+})
+
 test('publication gates reject missing scans and tags advanced before scanning', async () => {
   for (const [path, marker, replacement, code] of [
     ['.github/workflows/upstream-theme-sync.yml', 'bash scripts/ci/check-security.sh backend', 'true', 'security.generated_source'],

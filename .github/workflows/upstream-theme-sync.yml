@@ -203,6 +203,17 @@ jobs:
           echo "RELEASE_KIND=$RELEASE_KIND" >> "$GITHUB_ENV"
           echo "RELEASE_IMAGE_TAG=$RELEASE_IMAGE_TAG" >> "$GITHUB_ENV"
 
+      - name: Pin permanent feature source revisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          retry_with_backoff 5 5 git fetch origin \
+            +refs/heads/QQbot:refs/remotes/origin/QQbot \
+            +refs/heads/fix/balance-notification-reliability:refs/remotes/origin/fix/balance-notification-reliability
+          echo "QQBOT_SOURCE_SHA=$(git rev-parse origin/QQbot)" >> "$GITHUB_ENV"
+          echo "BALANCE_NOTIFICATION_SOURCE_SHA=$(git rev-parse origin/fix/balance-notification-reliability)" >> "$GITHUB_ENV"
+
       - name: Decide whether a release is needed
         env:
           GH_TOKEN: ${{ github.token }}
@@ -351,6 +362,15 @@ jobs:
           echo "CURRENT_CANVAS_SHA=$CURRENT_CANVAS_SHA" >> "$GITHUB_ENV"
           echo "PREVIOUS_CANVAS_SHA=$PREVIOUS_CANVAS_SHA" >> "$GITHUB_ENV"
 
+          PREVIOUS_QQBOT_SOURCE_SHA="$(git show origin/themed-release:.apophis-qqbot-source-sha 2>/dev/null | tr -d '[:space:]' || true)"
+          PREVIOUS_BALANCE_NOTIFICATION_SOURCE_SHA="$(git show origin/themed-release:.apophis-balance-notification-source-sha 2>/dev/null | tr -d '[:space:]' || true)"
+          FEATURE_SOURCE_CHANGED=false
+          if [[ "$PREVIOUS_QQBOT_SOURCE_SHA" != "$QQBOT_SOURCE_SHA" || "$PREVIOUS_BALANCE_NOTIFICATION_SOURCE_SHA" != "$BALANCE_NOTIFICATION_SOURCE_SHA" ]]; then
+            FEATURE_SOURCE_CHANGED=true
+            echo "Permanent feature sources changed; rebuilding the latest published upstream release."
+          fi
+          echo "FEATURE_SOURCE_CHANGED=$FEATURE_SOURCE_CHANGED" >> "$GITHUB_ENV"
+
           UPSTREAM_RECOVERY_FROM_UNRELEASED=false
           if [[ "$RELEASE_KIND" == "upstream" && -n "$PREVIOUS_UPSTREAM_SHA" && "$PREVIOUS_UPSTREAM_SHA" != "$UPSTREAM_SHA" ]]; then
             retry_with_backoff 5 5 git -C "$GENERATED_DIR" fetch --depth=1000 upstream "refs/tags/${UPSTREAM_RELEASE_TAG}"
@@ -392,7 +412,7 @@ jobs:
           echo "UPSTREAM_PUBLICATION_PENDING=$UPSTREAM_PUBLICATION_PENDING" >> "$GITHUB_ENV"
 
           REBUILD_BINARY_RELEASE=false
-          if [[ "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$NEEDS_BINARY_RELEASE" == "true" && "$BINARY_RELEASE_TAG" == "v${GENERATED_RELEASE_VERSION}" && "$PREVIOUS_CANVAS_SHA" == "$CURRENT_CANVAS_SHA" && -z "$RELEASE_VERSION_OVERRIDE" ]]; then
+          if [[ "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$NEEDS_BINARY_RELEASE" == "true" && "$BINARY_RELEASE_TAG" == "v${GENERATED_RELEASE_VERSION}" && "$PREVIOUS_CANVAS_SHA" == "$CURRENT_CANVAS_SHA" && "$FEATURE_SOURCE_CHANGED" != "true" && -z "$RELEASE_VERSION_OVERRIDE" ]]; then
             if [[ "$PREVIOUS_REPOSITORY_SHA" == "$CURRENT_REPOSITORY_SHA" ]]; then
               echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
               echo "Repairing staged binary release $BINARY_RELEASE_TAG at $BINARY_RELEASE_REF."
@@ -422,14 +442,14 @@ jobs:
             echo "Repository source drift is intentionally not published without repository_release=true or an explicit release_version."
           fi
 
-          if [[ "$REBUILD_BINARY_RELEASE" != "true" && "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$UPSTREAM_PUBLICATION_PENDING" != "true" && "$NEEDS_BINARY_RELEASE" == "true" && -z "$RELEASE_VERSION_OVERRIDE" ]]; then
+          if [[ "$REBUILD_BINARY_RELEASE" != "true" && "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$UPSTREAM_PUBLICATION_PENDING" != "true" && "$NEEDS_BINARY_RELEASE" == "true" && "$FEATURE_SOURCE_CHANGED" != "true" && -z "$RELEASE_VERSION_OVERRIDE" ]]; then
             echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
             echo "NEEDS_BINARY_RELEASE=true" >> "$GITHUB_ENV"
             echo "Upstream source is synchronized, but its binary release needs repair."
             exit 0
           fi
 
-          if [[ "$REBUILD_BINARY_RELEASE" != "true" && "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$UPSTREAM_PUBLICATION_PENDING" != "true" && -z "$RELEASE_VERSION_OVERRIDE" ]]; then
+          if [[ "$REBUILD_BINARY_RELEASE" != "true" && "$RELEASE_KIND" == "upstream" && "$UPSTREAM_ALREADY_SYNCHRONIZED" == "true" && "$UPSTREAM_PUBLICATION_PENDING" != "true" && "$FEATURE_SOURCE_CHANGED" != "true" && -z "$RELEASE_VERSION_OVERRIDE" ]]; then
             echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
             echo "Upstream release identity and source SHA are already synchronized; skipping duplicate publication."
             exit 0
@@ -437,7 +457,7 @@ jobs:
 
           # An explicit version is an intentional republish request, even when
           # the repository and Canvas source SHAs already match the last release.
-          if [[ "$RELEASE_KIND" == "repository" && "$PREVIOUS_REPOSITORY_SHA" == "$RELEASE_SOURCE_SHA" && "$PREVIOUS_CANVAS_SHA" == "$CURRENT_CANVAS_SHA" && -z "$RELEASE_VERSION_OVERRIDE" ]]; then
+          if [[ "$RELEASE_KIND" == "repository" && "$PREVIOUS_REPOSITORY_SHA" == "$RELEASE_SOURCE_SHA" && "$PREVIOUS_CANVAS_SHA" == "$CURRENT_CANVAS_SHA" && "$FEATURE_SOURCE_CHANGED" != "true" && -z "$RELEASE_VERSION_OVERRIDE" ]]; then
             if [[ "$NEEDS_BINARY_RELEASE" == "true" ]]; then
               echo "SHOULD_PUBLISH=false" >> "$GITHUB_ENV"
               echo "NEEDS_BINARY_RELEASE=true" >> "$GITHUB_ENV"
@@ -590,8 +610,19 @@ jobs:
           else
             git fetch origin "refs/heads/QQbot:refs/remotes/origin/QQbot"
           fi
+          test "$(git rev-parse origin/QQbot)" = "$QQBOT_SOURCE_SHA"
           git show origin/QQbot:scripts/apply-qqbot-website.mjs > "$RUNNER_TEMP/apply-qqbot-website.mjs"
           node "$RUNNER_TEMP/apply-qqbot-website.mjs" --root "$GENERATED_DIR" --ref origin/QQbot
+          node "$RUNNER_TEMP/apply-qqbot-website.mjs" --root "$GENERATED_DIR" --ref origin/QQbot --check
+
+      - name: Apply balance notification reliability integration
+        if: env.SHOULD_PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse origin/fix/balance-notification-reliability)" = "$BALANCE_NOTIFICATION_SOURCE_SHA"
+          node scripts/apply-balance-notification-reliability.mjs --root "$GENERATED_DIR" --ref origin/fix/balance-notification-reliability
+          node scripts/apply-balance-notification-reliability.mjs --root "$GENERATED_DIR" --ref origin/fix/balance-notification-reliability --check
 
       - name: Write unified release metadata
         if: env.SHOULD_PUBLISH == 'true'
@@ -613,6 +644,8 @@ jobs:
           fi
           printf '%s\n' "$CURRENT_REPOSITORY_SHA" > .apophis-repository-sha
           printf '%s\n' "$CURRENT_CANVAS_SHA" > .apophis-canvas-sha
+          printf '%s\n' "$QQBOT_SOURCE_SHA" > .apophis-qqbot-source-sha
+          printf '%s\n' "$BALANCE_NOTIFICATION_SOURCE_SHA" > .apophis-balance-notification-source-sha
 
       - name: Capture upstream release notes
         if: env.SHOULD_PUBLISH == 'true' && env.RELEASE_KIND == 'upstream'
@@ -664,8 +697,7 @@ jobs:
         working-directory: ${{ env.GENERATED_DIR }}
         run: |
           set -euo pipefail
-          git show origin/QQbot:scripts/apply-qqbot-website.mjs > "$RUNNER_TEMP/apply-qqbot-website.mjs"
-          node "$RUNNER_TEMP/apply-qqbot-website.mjs" --root . --ref origin/QQbot --check
+          node scripts/apply-balance-notification-reliability.mjs --root . --ref origin/fix/balance-notification-reliability --check
           node scripts/check-encoding.mjs .
           node --test scripts/__tests__/*.test.mjs
 
