@@ -1027,10 +1027,12 @@ func ProvideUserService(userRepo UserRepository, settingRepo SettingRepository, 
 	return svc
 }
 
-func ProvideBalanceNotifyService(emailService *EmailService, settingRepo SettingRepository, accountRepo AccountRepository, notificationEmailService *NotificationEmailService, qqRepo BalanceNotifyQQRepository) *BalanceNotifyService {
+func ProvideBalanceNotifyService(emailService *EmailService, settingRepo SettingRepository, accountRepo AccountRepository, notificationEmailService *NotificationEmailService, qqRepo BalanceNotifyQQRepository, reliabilityRepo BalanceNotificationRepository) *BalanceNotifyService {
 	svc := NewBalanceNotifyService(emailService, settingRepo, accountRepo)
 	svc.SetNotificationEmailService(notificationEmailService)
 	svc.SetBalanceNotifyQQRepository(qqRepo)
+	svc.SetBalanceNotificationRepository(reliabilityRepo)
+	svc.StartReliability()
 	return svc
 }
 

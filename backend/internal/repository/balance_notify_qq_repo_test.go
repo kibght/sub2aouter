@@ -96,7 +96,7 @@ func TestBalanceNotifyQQRepositoryDisablingClearsPendingDeliveries(t *testing.T)
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO user_balance_notify_qq")).
 		WithArgs(int64(7), false).
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec(regexp.QuoteMeta("DELETE FROM balance_low_qq_deliveries WHERE user_id = $1")).
+	mock.ExpectExec(`(?s)UPDATE balance_low_qq_deliveries SET cancelled_at=NOW\(\),claimed_until=NULL.*WHERE user_id = \$1 AND acked_at IS NULL AND cancelled_at IS NULL`).
 		WithArgs(int64(7)).
 		WillReturnResult(sqlmock.NewResult(0, 2))
 	mock.ExpectCommit()
@@ -142,7 +142,7 @@ func TestBalanceNotifyQQRepositoryClaimClampsLimitAndSkipsInvalidLease(t *testin
 
 func TestBalanceNotifyQQRepositoryAckScopesToAlertUserAndBinding(t *testing.T) {
 	repo, mock := newBalanceNotifyQQRepositoryForTest(t)
-	mock.ExpectExec(regexp.QuoteMeta("DELETE FROM balance_low_qq_deliveries")).
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE balance_low_qq_deliveries SET acked_at=COALESCE(acked_at,NOW()),claimed_until=NULL")).
 		WithArgs(int64(99), int64(7), int64(11)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 

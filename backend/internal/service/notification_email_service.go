@@ -372,7 +372,26 @@ func (s *NotificationEmailService) PreviewTemplate(ctx context.Context, input No
 	return renderNotificationEmail(normalizedEvent, subject, htmlBody, variables, nil)
 }
 
+type NotificationEmailSendOutcome string
+
+const (
+	NotificationEmailSent        NotificationEmailSendOutcome = "sent"
+	NotificationEmailAlreadySent NotificationEmailSendOutcome = "already_sent"
+	NotificationEmailSuppressed  NotificationEmailSendOutcome = "suppressed"
+)
+
 func (s *NotificationEmailService) Send(ctx context.Context, input NotificationEmailSendInput) error {
+	return s.sendWithOutcome(ctx, input, nil)
+}
+
+// SendWithOutcome distinguishes intentional suppression from SMTP acceptance.
+func (s *NotificationEmailService) SendWithOutcome(ctx context.Context, input NotificationEmailSendInput) (NotificationEmailSendOutcome, error) {
+	var outcome NotificationEmailSendOutcome
+	err := s.sendWithOutcome(ctx, input, &outcome)
+	return outcome, err
+}
+
+func (s *NotificationEmailService) sendWithOutcome(ctx context.Context, input NotificationEmailSendInput, outcome *NotificationEmailSendOutcome) error {
 	info, normalizedEvent, err := s.eventInfo(input.Event)
 	if err != nil {
 		return notificationEmailTemplateErr(err)
@@ -387,6 +406,9 @@ func (s *NotificationEmailService) Send(ctx context.Context, input NotificationE
 			return err
 		}
 		if unsubscribed {
+			if outcome != nil {
+				*outcome = NotificationEmailSuppressed
+			}
 			slog.Info("notification email suppressed by unsubscribe preference", "event", normalizedEvent, "recipient_hash", notificationEmailHash(recipient))
 			return nil
 		}
@@ -413,6 +435,9 @@ func (s *NotificationEmailService) Send(ctx context.Context, input NotificationE
 			return err
 		}
 		if sent {
+			if outcome != nil {
+				*outcome = NotificationEmailAlreadySent
+			}
 			return nil
 		}
 	}
@@ -422,6 +447,9 @@ func (s *NotificationEmailService) Send(ctx context.Context, input NotificationE
 	}
 	if err := s.emailService.SendEmail(ctx, recipient, rendered.Subject, rendered.HTML); err != nil {
 		return notificationEmailDeliveryErr(err)
+	}
+	if outcome != nil {
+		*outcome = NotificationEmailSent
 	}
 	if deliveryKey != "" {
 		if err := s.settingRepo.Set(ctx, deliveryKey, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {

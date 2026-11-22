@@ -81,7 +81,7 @@ func (s *BalanceNotifyService) submitUsageNotifications(p *postUsageBillingParam
 	if s == nil || s.usageNotifications == nil || p == nil || p.Cost == nil {
 		return
 	}
-	balanceEnabled := !p.IsSubscriptionBill && p.Cost.ActualCost > 0 && s.canNotifyBalance(p.User)
+	balanceEnabled := s.reliabilityRepo == nil && !p.IsSubscriptionBill && p.Cost.ActualCost > 0 && s.canNotifyBalance(p.User)
 	quotaEnabled := p.Cost.TotalCost > 0 && p.Account != nil && p.Account.SupportsAccountQuota() && p.Account.HasAnyQuotaLimit()
 	if !balanceEnabled && !quotaEnabled {
 		return
@@ -98,6 +98,7 @@ func (s *BalanceNotifyService) submitUsageNotifications(p *postUsageBillingParam
 // Billing persistence belongs to usage tasks and is never dropped here.
 func (s *BalanceNotifyService) Stop() {
 	if s != nil {
+		s.reliability.stop()
 		s.usageNotifications.stop()
 	}
 }

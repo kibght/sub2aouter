@@ -45,6 +45,8 @@ type BalanceNotifyService struct {
 	notificationEmailService *NotificationEmailService
 	qqNotificationRepo       BalanceNotifyQQRepository
 	usageNotifications       *usageNotificationWorker
+	reliabilityRepo          BalanceNotificationRepository
+	reliability              *balanceNotificationWorker
 }
 
 // NewBalanceNotifyService creates a new BalanceNotifyService.
@@ -77,6 +79,11 @@ func resolveBalanceThreshold(threshold float64, thresholdType string, totalRecha
 // CheckBalanceAfterDeduction checks if balance crossed below threshold after deduction.
 // Notification is sent only on first crossing: oldBalance >= threshold && newBalance < threshold.
 func (s *BalanceNotifyService) CheckBalanceAfterDeduction(ctx context.Context, user *User, oldBalance, cost float64) {
+	// Production registers durable events in the balance transaction's trigger.
+	// Keep the legacy path for integrations that do not attach durable storage.
+	if s.reliabilityRepo != nil {
+		return
+	}
 	if !s.canNotifyBalance(user) {
 		return
 	}

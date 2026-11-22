@@ -499,7 +499,7 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID int64, req Updat
 		}); err != nil {
 			return nil, err
 		}
-		if s.authCacheInvalidator != nil && updated != nil && updated.Concurrency != oldConcurrency {
+		if s.authCacheInvalidator != nil && updated != nil && (updated.Concurrency != oldConcurrency || profileChangesBalanceNotifications(req)) {
 			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
 		}
 		return updated, nil
@@ -509,7 +509,7 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID int64, req Updat
 	if err != nil {
 		return nil, err
 	}
-	if s.authCacheInvalidator != nil && updated.Concurrency != oldConcurrency {
+	if s.authCacheInvalidator != nil && (updated.Concurrency != oldConcurrency || profileChangesBalanceNotifications(req)) {
 		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
 	}
 	return updated, nil
@@ -593,6 +593,20 @@ func (s *UserService) updateProfile(ctx context.Context, userID int64, req Updat
 	}
 
 	return user, oldConcurrency, nil
+}
+
+func profileChangesBalanceNotifications(req UpdateProfileRequest) bool {
+	return req.BalanceNotifyEnabled != nil || req.BalanceNotifyThreshold != nil || req.BalanceNotifyQQEnabled != nil
+}
+
+func (s *UserService) saveNotificationEmails(ctx context.Context, user *User) error {
+	if err := s.userRepo.Update(ctx, user, UserUpdateFields{BalanceNotifyExtraEmails: true}); err != nil {
+		return err
+	}
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, user.ID)
+	}
+	return nil
 }
 
 func (s *UserService) SetAvatar(ctx context.Context, userID int64, raw string) (*UserAvatar, error) {
@@ -1371,7 +1385,7 @@ func (s *UserService) addOrVerifyNotifyEmail(ctx context.Context, userID int64, 
 		if strings.EqualFold(e.Email, email) {
 			if !e.Verified {
 				user.BalanceNotifyExtraEmails[i].Verified = true
-				return s.userRepo.Update(ctx, user, UserUpdateFields{BalanceNotifyExtraEmails: true})
+				return s.saveNotificationEmails(ctx, user)
 			}
 			return nil // Already verified
 		}
@@ -1384,7 +1398,7 @@ func (s *UserService) addOrVerifyNotifyEmail(ctx context.Context, userID int64, 
 		Disabled: false,
 		Verified: true,
 	})
-	return s.userRepo.Update(ctx, user, UserUpdateFields{BalanceNotifyExtraEmails: true})
+	return s.saveNotificationEmails(ctx, user)
 }
 
 // RemoveNotifyEmail removes an email from user's extra notification emails.
@@ -1407,7 +1421,7 @@ func (s *UserService) RemoveNotifyEmail(ctx context.Context, userID int64, email
 		return infraerrors.BadRequest("EMAIL_NOT_FOUND", "notification email not found")
 	}
 	user.BalanceNotifyExtraEmails = filtered
-	return s.userRepo.Update(ctx, user, UserUpdateFields{BalanceNotifyExtraEmails: true})
+	return s.saveNotificationEmails(ctx, user)
 }
 
 // ToggleNotifyEmail toggles the disabled state of a notification email entry.
@@ -1429,7 +1443,7 @@ func (s *UserService) ToggleNotifyEmail(ctx context.Context, userID int64, email
 		return infraerrors.BadRequest("EMAIL_NOT_FOUND", "notification email not found")
 	}
 
-	return s.userRepo.Update(ctx, user, UserUpdateFields{BalanceNotifyExtraEmails: true})
+	return s.saveNotificationEmails(ctx, user)
 }
 
 // notifyVerifyEmailTemplate is the HTML template for notify email verification.

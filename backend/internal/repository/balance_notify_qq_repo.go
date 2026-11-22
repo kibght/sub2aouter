@@ -134,7 +134,8 @@ func (r *balanceNotifyQQRepository) SetQQBalanceNotifyEnabled(ctx context.Contex
 	}
 	if !enabled {
 		if _, err := tx.ExecContext(ctx, `
-			DELETE FROM balance_low_qq_deliveries WHERE user_id = $1
+			UPDATE balance_low_qq_deliveries SET cancelled_at=NOW(),claimed_until=NULL
+			WHERE user_id = $1 AND acked_at IS NULL AND cancelled_at IS NULL
 		`, userID); err != nil {
 			return fmt.Errorf("clear pending QQ balance alerts: %w", err)
 		}
@@ -178,6 +179,10 @@ func (r *balanceNotifyQQRepository) ClaimBalanceLow(
 			  AND b.revoked_at IS NULL
 			  AND u.balance_notify_enabled = TRUE
 			  AND p.enabled = TRUE
+			  AND d.acked_at IS NULL AND d.cancelled_at IS NULL
+			  AND u.deleted_at IS NULL AND u.status = 'active'
+			  AND balance_notification_threshold(u)>0 AND u.balance<balance_notification_threshold(u)
+			  AND EXISTS (SELECT 1 FROM balance_notification_events e WHERE e.id=d.event_id AND e.closed_at IS NULL)
 			  AND (d.claimed_until IS NULL OR d.claimed_until <= $3)
 			ORDER BY d.created_at, d.id
 			LIMIT $5
@@ -222,8 +227,9 @@ func (r *balanceNotifyQQRepository) AckBalanceLow(ctx context.Context, userID, b
 		return fmt.Errorf("user ID, binding ID, and alert ID must be positive")
 	}
 	_, err := r.db.ExecContext(ctx, `
-		DELETE FROM balance_low_qq_deliveries
+		UPDATE balance_low_qq_deliveries SET acked_at=COALESCE(acked_at,NOW()),claimed_until=NULL
 		WHERE id = $1 AND user_id = $2 AND binding_id = $3
+		  AND cancelled_at IS NULL
 	`, alertID, userID, bindingID)
 	if err != nil {
 		return fmt.Errorf("acknowledge QQ balance alert: %w", err)
