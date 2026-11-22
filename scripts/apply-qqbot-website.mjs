@@ -211,6 +211,31 @@ function composeProperties(block) {
   return output
 }
 
+function deduplicateBotIgnoreRule(value) {
+  const rule = '!docs/bot-personal-info.md'
+  const lines = value.split('\n'), last = lines.lastIndexOf(rule)
+  return lines.filter((line, index) => line !== rule || index === last).join('\n')
+}
+
+function composeIgnoreAdditions(block) {
+  const nonempty = (lines) => lines.filter((line) => line.trim())
+  const expected = [
+    '.worktrees/',
+    '# Reviewed standalone QQ bot plugin regression tests',
+    '!integrations/qqbot/tests/',
+    '!integrations/qqbot/tests/**',
+    '/integrations/qqbot/**/__pycache__/',
+    '/integrations/qqbot/**/*.py[cod]',
+    '/integrations/qqbot/**/.pytest_cache/',
+  ]
+  if (JSON.stringify(nonempty(block.base)) !== JSON.stringify(['.worktrees/'])
+    || JSON.stringify(nonempty(block.ours)) !== JSON.stringify(['!docs/bot-personal-info.md'])
+    || JSON.stringify(nonempty(block.theirs)) !== JSON.stringify(expected)) {
+    fail('Unsupported .gitignore conflict: only reviewed bot additions may be composed')
+  }
+  return [...block.ours, ...block.theirs]
+}
+
 export function composeSharedConflicts(file, merged, context) {
   const lines = merged.split('\n'), output = []
   let index = 0, needsRouter = false
@@ -223,7 +248,8 @@ export function composeSharedConflicts(file, merged, context) {
       index++
     }
     let resolved
-    if (file === 'backend/cmd/server/wire_gen.go') resolved = composeGeneratedWire(block, context)
+    if (file === '.gitignore') resolved = composeIgnoreAdditions(block)
+    else if (file === 'backend/cmd/server/wire_gen.go') resolved = composeGeneratedWire(block, context)
     else if (file === 'backend/internal/handler/bot_handler.go') resolved = composeBotFields(block, context)
     else if (file === 'backend/internal/repository/wire.go') {
       if (block.base.some((line) => line.trim())) fail('Only additive repository providers can be composed')
@@ -239,6 +265,7 @@ export function composeSharedConflicts(file, merged, context) {
     output.push(...resolved)
   }
   let result = output.join('\n')
+  if (file === '.gitignore') result = deduplicateBotIgnoreRule(result)
   if (file === 'backend/internal/handler/bot_handler.go') {
     const setter = context.ours.match(/func \(h \*BotHandler\) SetBalanceNotifyQQRepository\(repo service\.BalanceNotifyQQRepository\) \{\s*h\.balanceNotifyQQRepo = repo\s*}/)?.[0]
     if (setter && !result.includes('func (h *BotHandler) SetBalanceNotifyQQRepository(')) result = result.replace(/(type BotHandler struct \{[\s\S]*?\n})/, '$1\n\n' + setter)
@@ -259,6 +286,7 @@ export function composeSharedConflicts(file, merged, context) {
 
 function composeMaintainedFields(file, data) {
   if (data === null) return data
+  if (file === '.gitignore') return Buffer.from(deduplicateBotIgnoreRule(text(data, file)), 'utf8')
   if (file === 'backend/internal/server/routes/bot.go') {
     const registrations = new Map()
     const result = text(data, file).split('\n').filter((line) => {
@@ -392,13 +420,23 @@ export function applyQQbotWebsite({ root, ref = 'origin/QQbot', check = false })
     if (!paths.has(file)) fail('Reviewed manifest omits a changed website file: ' + file)
   }
 
+  const carriedBase = manifest.carried_base_sha
+  if (carriedBase !== undefined) {
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(carriedBase) || carriedBase === manifest.base_sha || carriedBase === source
+      || git(root, ['merge-base', '--is-ancestor', manifest.base_sha, carriedBase], { accept: [0, 1] }).status !== 0
+      || git(root, ['merge-base', '--is-ancestor', carriedBase, source], { accept: [0, 1] }).status !== 0) fail('Reviewed carried_base_sha must be a source ancestor after the fixed manifest base')
+  }
+
   const planned = new Map()
   for (const file of paths) {
     const base = blob(root, manifest.base_sha, file)
     const theirs = blob(root, source, file)
     const ours = readTarget(root, file)
     if (theirs) assertNoEmbeddedSecret(theirs.data, file)
-    const inputs = [ours, base?.data ?? null, theirs?.data ?? null].map((value) => migrateBotRoutePaths(file, value))
+    // Only files absent from the fixed base may use a reviewed earlier QQbot
+    // snapshot. Fresh upstream files still install from the full feature delta.
+    const carried = base === null && ours !== null && theirs !== null && carriedBase ? blob(root, carriedBase, file) : null
+    const inputs = [ours, base?.data ?? carried?.data ?? null, theirs?.data ?? null].map((value) => migrateBotRoutePaths(file, value))
     const merged = composeMaintainedFields(file, mergedFile(root, file, ...inputs))
     planned.set(file, { data: merged, mode: theirs?.mode ?? base?.mode ?? 0o644, original: ours })
   }

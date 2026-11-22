@@ -62,15 +62,22 @@ var ProviderSet = wire.NewSet(NewBotLotteryHandler, NewBotRechargeHandler)
 }
 
 async function fixture(t, options = {}) {
+  const baseline = { ...baseFiles, ...options.baseFiles }
   const root = await mkdtemp(path.join(os.tmpdir(), 'qqbot-website-test-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: 'pipe' })
   git('init', '-q'); git('config', 'user.name', 'QQ Overlay Test'); git('config', 'user.email', 'qq-overlay@example.invalid'); git('config', 'core.autocrlf', 'false')
   const put = async (file, content) => { await mkdir(path.dirname(path.join(root, file)), { recursive: true }); await writeFile(path.join(root, file), content) }
-  for (const [file, content] of Object.entries(baseFiles)) await put(file, content)
+  for (const [file, content] of Object.entries(baseline)) await put(file, content)
   git('add', '.'); git('commit', '-qm', 'website baseline')
   const base = git('rev-parse', 'HEAD').trim()
-  const source = new Map(Object.entries(baseFiles))
+  let carriedBase
+  if (options.carriedFiles) {
+    for (const [file, content] of Object.entries(options.carriedFiles)) await put(file, content)
+    git('add', '.'); git('commit', '-qm', 'reviewed prior QQbot source')
+    carriedBase = git('rev-parse', 'HEAD').trim()
+  }
+  const source = new Map([...Object.entries(baseline), ...Object.entries(options.carriedFiles || {})])
   source.set('frontend/src/views/HomeView.vue', source.get('frontend/src/views/HomeView.vue').replace('Base home', 'QQ website home'))
   source.set('backend/internal/service/payment_order.go', source.get('backend/internal/service/payment_order.go').replace('transportGuard = false', 'transportGuard = true'))
   source.set('frontend/src/api/admin/botLottery.ts', 'export const lotteryEnabled = true\n')
@@ -78,20 +85,20 @@ async function fixture(t, options = {}) {
   if (options.alterSource) options.alterSource(source)
   const paths = []
   for (const [file, content] of source) {
-    if (content !== baseFiles[file]) { await put(file, content); paths.push(file) }
+    if (content !== baseline[file]) { await put(file, content); paths.push(file) }
   }
   for (const [file, content] of [
     [HELPER_FILES[0], await readFile(scriptPath)],
     [HELPER_FILES[1], await readFile(testPath)],
-    [MANIFEST_PATH, JSON.stringify({ base_sha: base, paths: options.manifestPaths ? options.manifestPaths(paths) : paths }, null, 2) + '\n'],
+    [MANIFEST_PATH, JSON.stringify({ base_sha: base, ...(carriedBase ? { carried_base_sha: options.carriedBaseOverride || carriedBase } : {}), paths: options.manifestPaths ? options.manifestPaths(paths) : paths }, null, 2) + '\n'],
   ]) await put(file, content)
   git('add', '.'); git('commit', '-qm', 'QQ website features'); git('branch', 'QQbot')
   git('checkout', '--detach', '-q', base)
-  let home = baseFiles['frontend/src/views/HomeView.vue'].replace('Base footer', 'Current upstream footer')
+  let home = baseline['frontend/src/views/HomeView.vue'].replace('Base footer', 'Current upstream footer')
   if (options.crlf) home = home.replaceAll('\n', '\r\n')
   await put('frontend/src/views/HomeView.vue', home)
-  await put('backend/internal/service/payment_order.go', baseFiles['backend/internal/service/payment_order.go'].replace('paymentGuard = true', 'paymentGuard = secureUpstreamDefault'))
-  const allPaths = [...new Set([...Object.keys(baseFiles), ...source.keys(), ...HELPER_FILES])]
+  await put('backend/internal/service/payment_order.go', baseline['backend/internal/service/payment_order.go'].replace('paymentGuard = true', 'paymentGuard = secureUpstreamDefault'))
+  const allPaths = [...new Set([...Object.keys(baseline), ...source.keys(), ...HELPER_FILES])]
   const snapshot = async () => new Map(await Promise.all(allPaths.map(async (file) => {
     try { return [file, (await readFile(path.join(root, file))).toString('hex')] } catch (error) { if (error.code !== 'ENOENT') throw error; return [file, null] }
   })))
@@ -285,4 +292,78 @@ test('migrates only bot transport routes and leaves user binding management unto
   assert.match(actual, /POST\("\/admin\/bot-bindings\/redeem"/)
   assert.equal(migrateBotRoutePaths('backend/internal/server/routes/user.go', 'user.POST("/bot-bindings/code", handler)'), 'user.POST("/bot-bindings/code", handler)')
   assert.equal(migrateBotRoutePaths('backend/internal/server/routes/bot.go', actual), actual)
+})
+
+
+const observedIgnoreMerge = {
+  "base": "# 本地杂项文档、测试数据和外部项目副本\n/docs-local/\n.codex\n\n# ===================\n# Go 后端\n# ===================\n# 二进制文件\n*.exe\n*.exe~\n*.dll\n*.so\n*.dylib\nbackend/bin/\nbackend/server\nbackend/sub2api\nbackend/main\n\n# Go 测试二进制\n*.test\n\n# 测试覆盖率\n*.out\ncoverage.html\n\n# 依赖（使用 go mod）\nvendor/\n\n# Go 编译缓存\nbackend/.gocache/\n\n# ===================\n# Node.js / Vue 前端\n# ===================\nnode_modules/\nfrontend/node_modules/\nfrontend/dist/\n*.local\n*.tsbuildinfo\nvite.config.d.ts\nvite.config.js.timestamp-*\n\n# 日志\nnpm-debug.log*\nyarn-debug.log*\nyarn-error.log*\npnpm-debug.log*\n\n# ===================\n# 环境配置\n# ===================\n.env\n.env.local\n.env.*.local\n*.env\n!.env.example\ndocker-compose.override.yml\n\n# ===================\n# IDE / 编辑器\n# ===================\n.idea/\n.vscode/\n*.swp\n*.swo\n*~\n.project\n.settings/\n.classpath\n\n# ===================\n# 操作系统\n# ===================\n.DS_Store\nThumbs.db\nDesktop.ini\n\n# ===================\n# 临时文件\n# ===================\ntmp/\ntemp/\n*.tmp\n*.temp\n*.log\n*.bak\n.cache/\n.dev/\n.serena/\n\n# ===================\n# 构建产物\n# ===================\ndist/\nbuild/\nrelease/\n\n# 后端嵌入的前端构建产物\n# Keep a placeholder file so `//go:embed all:dist` always has a match in CI/lint,\n# while still ignoring generated frontend build outputs.\nbackend/internal/web/dist/\n!backend/internal/web/dist/\nbackend/internal/web/dist/*\n!backend/internal/web/dist/.keep\n\n# 后端运行时缓存数据\nbackend/data/\n\n# ===================\n# 本地配置文件（包含敏感信息）\n# ===================\nbackend/config.yaml\ndeploy/config.yaml\nbackend/.installed\n\n# ===================\n# 其他\n# ===================\ntests\n!deploy/tests/\n!deploy/tests/**\nCLAUDE.md\n.claude\nscripts\n!scripts/\n!scripts/**\n!backend/scripts/\n!backend/scripts/resolve-version.sh\n.code-review-state\n#openspec/\ncode-reviews/\nAGENTS.md\nbackend/cmd/server/server\ndeploy/docker-compose.override.yml\n.gocache/\nvite.config.js\ndocs/*\n!docs/agent-resource-safety.md\n!docs/moego-json-batching.md\n!docs/mcp.md\n!docs/images/\n!docs/images/theme-overview.png\n!docs/admin-api-keys.md\n!docs/PAYMENT.md\n!docs/PAYMENT_CN.md\n!docs/ADMIN_PAYMENT_INTEGRATION_API.md\n!docs/ASYNC_IMAGE_TASKS.md\n!docs/BATCH_IMAGE_MVP.md\n!docs/COMPOSITE_GROUPS.md\n!docs/PLUGIN_DEVELOPMENT.md\n!docs/channel-monitor-v2-safe-defaults.md\n!docs/codex-credits.md\n!docs/legal/\n!docs/legal/*.md\n!docs/infinite-canvas.md\n!docs/screenshots/\ndocs/screenshots/*\n!docs/screenshots/mobile-account-actions-menu.png\n!docs/screenshots/codex-referral-dialog.png\n!docs/screenshots/codex-referral-success.png\n.serena/\n.codex/\nfrontend/coverage/\naicodex\noutput/\ntools/windows-local/.env\n.codegraph/\nissues/\n\n# Vitest / Vite cache at repo root\n.vite/\n# 本地闭源插件开发目录及构建产物不进入 Sub2API 仓库\n/plugins/\n.worktrees/\n",
+  "generated": "# 本地杂项文档、测试数据和外部项目副本\n/docs-local/\n.codex\n\n# ===================\n# Go 后端\n# ===================\n# 二进制文件\n*.exe\n*.exe~\n*.dll\n*.so\n*.dylib\nbackend/bin/\nbackend/server\nbackend/sub2api\nbackend/main\n\n# Go 测试二进制\n*.test\n\n# 测试覆盖率\n*.out\ncoverage.html\n\n# 依赖（使用 go mod）\nvendor/\n\n# Go 编译缓存\nbackend/.gocache/\n\n# ===================\n# Node.js / Vue 前端\n# ===================\nnode_modules/\nfrontend/node_modules/\nfrontend/dist/\n*.local\n*.tsbuildinfo\nvite.config.d.ts\nfrontend/vite.home-preview.config.js\nfrontend/vite.home-preview.config.d.ts\nfrontend/dev/home-preview.js\nfrontend/dev/home-preview.d.ts\nvite.config.js.timestamp-*\n\n# 日志\nnpm-debug.log*\nyarn-debug.log*\nyarn-error.log*\npnpm-debug.log*\n\n# ===================\n# 环境配置\n# ===================\n.env\n.env.local\n.env.*.local\n*.env\n!.env.example\ndocker-compose.override.yml\n\n# ===================\n# IDE / 编辑器\n# ===================\n.idea/\n.vscode/\n*.swp\n*.swo\n*~\n.project\n.settings/\n.classpath\n\n# ===================\n# 操作系统\n# ===================\n.DS_Store\nThumbs.db\nDesktop.ini\n\n# ===================\n# 临时文件\n# ===================\ntmp/\ntemp/\n*.tmp\n*.temp\n*.log\n*.bak\n.cache/\n.dev/\n.serena/\n\n# ===================\n# 构建产物\n# ===================\ndist/\nbuild/\nrelease/\n\n# 后端嵌入的前端构建产物\n# Keep a placeholder file so `//go:embed all:dist` always has a match in CI/lint,\n# while still ignoring generated frontend build outputs.\nbackend/internal/web/dist/\n!backend/internal/web/dist/\nbackend/internal/web/dist/*\n!backend/internal/web/dist/.keep\n\n# 后端运行时缓存数据\nbackend/data/\n\n# ===================\n# 本地配置文件（包含敏感信息）\n# ===================\nbackend/config.yaml\ndeploy/config.yaml\nbackend/.installed\n\n# ===================\n# 其他\n# ===================\ntests\n!deploy/tests/\n!deploy/tests/**\nCLAUDE.md\n.claude\nscripts\n!scripts/\n!scripts/**\n!backend/scripts/\n!backend/scripts/resolve-version.sh\n.code-review-state\n#openspec/\ncode-reviews/\nAGENTS.md\nbackend/cmd/server/server\ndeploy/docker-compose.override.yml\n.gocache/\nvite.config.js\ndocs/*\n!docs/images/\n!docs/images/theme-overview.png\n!docs/agent-resource-safety.md\n!docs/moego-json-batching.md\n!docs/admin-api-keys.md\n!docs/mcp.md\n!docs/PAYMENT.md\n!docs/PAYMENT_CN.md\n!docs/ADMIN_PAYMENT_INTEGRATION_API.md\n!docs/ASYNC_IMAGE_TASKS.md\n!docs/OPENAI_IMAGES_CODEX.md\n!docs/BATCH_IMAGE_MVP.md\n!docs/COMPOSITE_GROUPS.md\n!docs/PLUGIN_DEVELOPMENT.md\n!docs/channel-monitor-v2-safe-defaults.md\n!docs/codex-credits.md\n!docs/bot-personal-info.md\n!docs/legal/\n!docs/legal/*.md\n!docs/infinite-canvas.md\n!docs/screenshots/\ndocs/screenshots/*\n!docs/screenshots/mobile-account-actions-menu.png\n!docs/screenshots/codex-referral-dialog.png\n!docs/screenshots/codex-referral-success.png\n.serena/\n.codex/\nfrontend/coverage/\naicodex\noutput/\ntools/windows-local/.env\n.codegraph/\nissues/\n\n# Vitest / Vite cache at repo root\n.vite/\n# 本地闭源插件开发目录及构建产物不进入 Sub2API 仓库\n/plugins/\n!docs/bot-personal-info.md\n",
+  "source": "# 本地杂项文档、测试数据和外部项目副本\n/docs-local/\n.codex\n\n# ===================\n# Go 后端\n# ===================\n# 二进制文件\n*.exe\n*.exe~\n*.dll\n*.so\n*.dylib\nbackend/bin/\nbackend/server\nbackend/sub2api\nbackend/main\n\n# Go 测试二进制\n*.test\n\n# 测试覆盖率\n*.out\ncoverage.html\n\n# 依赖（使用 go mod）\nvendor/\n\n# Go 编译缓存\nbackend/.gocache/\n\n# ===================\n# Node.js / Vue 前端\n# ===================\nnode_modules/\nfrontend/node_modules/\nfrontend/dist/\n*.local\n*.tsbuildinfo\nvite.config.d.ts\nfrontend/vite.home-preview.config.js\nfrontend/vite.home-preview.config.d.ts\nfrontend/dev/home-preview.js\nfrontend/dev/home-preview.d.ts\nvite.config.js.timestamp-*\n\n# 日志\nnpm-debug.log*\nyarn-debug.log*\nyarn-error.log*\npnpm-debug.log*\n\n# ===================\n# 环境配置\n# ===================\n.env\n.env.local\n.env.*.local\n*.env\n!.env.example\ndocker-compose.override.yml\n\n# ===================\n# IDE / 编辑器\n# ===================\n.idea/\n.vscode/\n*.swp\n*.swo\n*~\n.project\n.settings/\n.classpath\n\n# ===================\n# 操作系统\n# ===================\n.DS_Store\nThumbs.db\nDesktop.ini\n\n# ===================\n# 临时文件\n# ===================\ntmp/\ntemp/\n*.tmp\n*.temp\n*.log\n*.bak\n.cache/\n.dev/\n.serena/\n\n# ===================\n# 构建产物\n# ===================\ndist/\nbuild/\nrelease/\n\n# 后端嵌入的前端构建产物\n# Keep a placeholder file so `//go:embed all:dist` always has a match in CI/lint,\n# while still ignoring generated frontend build outputs.\nbackend/internal/web/dist/\n!backend/internal/web/dist/\nbackend/internal/web/dist/*\n!backend/internal/web/dist/.keep\n\n# 后端运行时缓存数据\nbackend/data/\n\n# ===================\n# 本地配置文件（包含敏感信息）\n# ===================\nbackend/config.yaml\ndeploy/config.yaml\nbackend/.installed\n\n# ===================\n# 其他\n# ===================\ntests\n!deploy/tests/\n!deploy/tests/**\nCLAUDE.md\n.claude\nscripts\n!scripts/\n!scripts/**\n!backend/scripts/\n!backend/scripts/resolve-version.sh\n.code-review-state\n#openspec/\ncode-reviews/\nAGENTS.md\nbackend/cmd/server/server\ndeploy/docker-compose.override.yml\n.gocache/\nvite.config.js\ndocs/*\n!docs/agent-resource-safety.md\n!docs/moego-json-batching.md\n!docs/mcp.md\n!docs/images/\n!docs/images/theme-overview.png\n!docs/admin-api-keys.md\n!docs/PAYMENT.md\n!docs/PAYMENT_CN.md\n!docs/ADMIN_PAYMENT_INTEGRATION_API.md\n!docs/ASYNC_IMAGE_TASKS.md\n!docs/BATCH_IMAGE_MVP.md\n!docs/COMPOSITE_GROUPS.md\n!docs/PLUGIN_DEVELOPMENT.md\n!docs/channel-monitor-v2-safe-defaults.md\n!docs/codex-credits.md\n!docs/bot-personal-info.md\n!docs/legal/\n!docs/legal/*.md\n!docs/infinite-canvas.md\n!docs/screenshots/\ndocs/screenshots/*\n!docs/screenshots/mobile-account-actions-menu.png\n!docs/screenshots/codex-referral-dialog.png\n!docs/screenshots/codex-referral-success.png\n.serena/\n.codex/\nfrontend/coverage/\naicodex\noutput/\ntools/windows-local/.env\n.codegraph/\nissues/\n\n# Vitest / Vite cache at repo root\n.vite/\n# 本地闭源插件开发目录及构建产物不进入 Sub2API 仓库\n/plugins/\n.worktrees/\n\n# Reviewed standalone QQ bot plugin regression tests\n!integrations/qqbot/tests/\n!integrations/qqbot/tests/**\n/integrations/qqbot/**/__pycache__/\n/integrations/qqbot/**/*.py[cod]\n/integrations/qqbot/**/.pytest_cache/\n"
+}
+
+
+test('composes the observed generated, base, and QQbot ignore files without changing upstream rules', async (t) => {
+  const f = await fixture(t, { baseFiles: { '.gitignore': observedIgnoreMerge.base }, alterSource: (source) => source.set('.gitignore', observedIgnoreMerge.source) })
+  await f.put('.gitignore', observedIgnoreMerge.generated)
+  f.run(); f.run('--check')
+  const result = await readFile(path.join(f.root, '.gitignore'), 'utf8')
+  const rules = (value) => value.split('\n').filter((line) => line && !line.startsWith('#'))
+  for (const rule of [...rules(observedIgnoreMerge.generated), ...rules(observedIgnoreMerge.source)]) assert.ok(result.split('\n').includes(rule), 'preserves reviewed rule: ' + rule)
+  assert.equal(result.split('!docs/bot-personal-info.md').length - 1, 1)
+  assert.ok(result.indexOf('!docs/images/') < result.indexOf('!docs/agent-resource-safety.md'), 'preserves generated documentation order')
+  assert.match(result, /!docs\/OPENAI_IMAGES_CODEX\.md/)
+  const before = await f.snapshot(); f.run(); assert.deepEqual(await f.snapshot(), before, 'ignore composition must be idempotent')
+})
+
+test('rejects an unknown ignore conflict without writing any planned file', async (t) => {
+  const f = await fixture(t, { baseFiles: { '.gitignore': observedIgnoreMerge.base }, alterSource: (source) => source.set('.gitignore', observedIgnoreMerge.source + '!unreviewed-secret-file\n') })
+  await f.put('.gitignore', observedIgnoreMerge.generated)
+  const before = await f.snapshot(); assert.throws(() => f.run(), /Unsupported \.gitignore conflict/); assert.deepEqual(await f.snapshot(), before)
+})
+
+test('rejects removal or reordering inside the reviewed ignore additions', () => {
+  const original = observedIgnoreMerge.source.split('\n')
+  const start = original.indexOf('.worktrees/')
+  const source = original.slice(start)
+  for (const changed of [source.filter((line) => line !== '.worktrees/'), source.map((line) => line === '/integrations/qqbot/**/*.py[cod]' ? '!integrations/qqbot/**/*.py[cod]' : line), [...source].reverse()]) {
+    assert.throws(() => composeSharedConflicts('.gitignore', conflict(['!docs/bot-personal-info.md'], ['.worktrees/'], changed), {}), /Unsupported \.gitignore conflict/)
+  }
+})
+
+
+const carriedTestPath = 'backend/internal/server/routes/bot_lottery_test.go'
+const carriedTestBase = 'package routes\n// preserved test header\nfunc test() {\n' + ' checkExistingAssertion()\n'.repeat(12) + ' checkOldContract("/api/v1/bot/lottery")\n}\n'
+const carriedTestSource = carriedTestBase.replace('/api/v1/bot/', '/api/v1/admin/bot/').replace('}\n', ' checkNewContract()\n}\n')
+
+test('uses the reviewed prior source only for an already-carried new file and preserves extra upstream assertions', async (t) => {
+  const f = await fixture(t, { carriedFiles: { [carriedTestPath]: carriedTestBase }, alterSource: (source) => source.set(carriedTestPath, carriedTestSource) })
+  await f.put(carriedTestPath, carriedTestBase.replace('// preserved test header', '// preserved test header\nfunc upstreamOnlyAssertion() {}'))
+  f.run(); f.run('--check')
+  const result = await readFile(path.join(f.root, carriedTestPath), 'utf8')
+  assert.match(result, /upstreamOnlyAssertion/); assert.match(result, /checkNewContract/)
+  assert.match(result, /\/api\/v1\/admin\/bot\/lottery/)
+  const before = await f.snapshot(); f.run(); assert.deepEqual(await f.snapshot(), before)
+})
+
+test('installs the full new feature on a fresh tree even when a reviewed carried base exists', async (t) => {
+  const f = await fixture(t, { carriedFiles: { [carriedTestPath]: carriedTestBase }, alterSource: (source) => source.set(carriedTestPath, carriedTestSource) })
+  f.run(); f.run('--check')
+  assert.equal(await readFile(path.join(f.root, carriedTestPath), 'utf8'), carriedTestSource)
+})
+
+test('rejects conflicting unknown assertions against the reviewed carried base without partial writes', async (t) => {
+  const f = await fixture(t, { carriedFiles: { [carriedTestPath]: carriedTestBase }, alterSource: (source) => source.set(carriedTestPath, carriedTestBase.replace('checkOldContract(', 'sourceChangedContract(')) })
+  await f.put(carriedTestPath, carriedTestBase.replace('checkOldContract(', 'upstreamChangedContract('))
+  const before = await f.snapshot(); assert.throws(() => f.run(), /Three-way merge conflict/); assert.deepEqual(await f.snapshot(), before)
+})
+
+test('rejects an unreviewed collision when the carried snapshot did not contain that file', async (t) => {
+  const f = await fixture(t, { carriedFiles: { 'frontend/src/reviewedPrior.ts': 'reviewed\n' }, alterSource: (source) => source.set(carriedTestPath, carriedTestSource) })
+  await f.put(carriedTestPath, carriedTestBase)
+  const before = await f.snapshot(); assert.throws(() => f.run(), /New source file collides/); assert.deepEqual(await f.snapshot(), before)
+})
+
+test('rejects a carried base outside the reviewed source ancestry', async (t) => {
+  const f = await fixture(t, { carriedFiles: { [carriedTestPath]: carriedTestBase }, carriedBaseOverride: 'f'.repeat(40), alterSource: (source) => source.set(carriedTestPath, carriedTestSource) })
+  const before = await f.snapshot(); assert.throws(() => f.run(), /Git operation failed|Reviewed carried_base_sha/); assert.deepEqual(await f.snapshot(), before)
 })
