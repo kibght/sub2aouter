@@ -62,7 +62,7 @@ func (r *balanceNotificationRepository) ClaimEmails(ctx context.Context, now, le
 	if err != nil {
 		return nil, fmt.Errorf("claim balance notification emails: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var deliveries []service.BalanceEmailDelivery
 	for rows.Next() {
 		var d service.BalanceEmailDelivery
