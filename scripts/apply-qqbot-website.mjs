@@ -211,12 +211,6 @@ function composeProperties(block) {
   return output
 }
 
-function deduplicateBotIgnoreRule(value) {
-  const rule = '!docs/bot-personal-info.md'
-  const lines = value.split('\n'), last = lines.lastIndexOf(rule)
-  return lines.filter((line, index) => line !== rule || index === last).join('\n')
-}
-
 function composeIgnoreAdditions(block) {
   const nonempty = (lines) => lines.filter((line) => line.trim())
   const expected = [
@@ -265,7 +259,6 @@ export function composeSharedConflicts(file, merged, context) {
     output.push(...resolved)
   }
   let result = output.join('\n')
-  if (file === '.gitignore') result = deduplicateBotIgnoreRule(result)
   if (file === 'backend/internal/handler/bot_handler.go') {
     const setter = context.ours.match(/func \(h \*BotHandler\) SetBalanceNotifyQQRepository\(repo service\.BalanceNotifyQQRepository\) \{\s*h\.balanceNotifyQQRepo = repo\s*}/)?.[0]
     if (setter && !result.includes('func (h *BotHandler) SetBalanceNotifyQQRepository(')) result = result.replace(/(type BotHandler struct \{[\s\S]*?\n})/, '$1\n\n' + setter)
@@ -286,7 +279,6 @@ export function composeSharedConflicts(file, merged, context) {
 
 function composeMaintainedFields(file, data) {
   if (data === null) return data
-  if (file === '.gitignore') return Buffer.from(deduplicateBotIgnoreRule(text(data, file)), 'utf8')
   if (file === 'backend/internal/server/routes/bot.go') {
     const registrations = new Map()
     const result = text(data, file).split('\n').filter((line) => {

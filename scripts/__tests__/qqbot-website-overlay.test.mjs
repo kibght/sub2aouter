@@ -302,18 +302,23 @@ const observedIgnoreMerge = {
 }
 
 
-test('composes the observed generated, base, and QQbot ignore files without changing upstream rules', async (t) => {
-  const f = await fixture(t, { baseFiles: { '.gitignore': observedIgnoreMerge.base }, alterSource: (source) => source.set('.gitignore', observedIgnoreMerge.source) })
-  await f.put('.gitignore', observedIgnoreMerge.generated)
-  f.run(); f.run('--check')
-  const result = await readFile(path.join(f.root, '.gitignore'), 'utf8')
-  const rules = (value) => value.split('\n').filter((line) => line && !line.startsWith('#'))
-  for (const rule of [...rules(observedIgnoreMerge.generated), ...rules(observedIgnoreMerge.source)]) assert.ok(result.split('\n').includes(rule), 'preserves reviewed rule: ' + rule)
-  assert.equal(result.split('!docs/bot-personal-info.md').length - 1, 1)
-  assert.ok(result.indexOf('!docs/images/') < result.indexOf('!docs/agent-resource-safety.md'), 'preserves generated documentation order')
-  assert.match(result, /!docs\/OPENAI_IMAGES_CODEX\.md/)
-  const before = await f.snapshot(); f.run(); assert.deepEqual(await f.snapshot(), before, 'ignore composition must be idempotent')
-})
+for (const crlf of [false, true]) {
+  test('composes the observed generated, base, and QQbot ignore files without changing upstream rules' + (crlf ? ' with CRLF' : ''), async (t) => {
+    const f = await fixture(t, { baseFiles: { '.gitignore': observedIgnoreMerge.base }, alterSource: (source) => source.set('.gitignore', observedIgnoreMerge.source) })
+    await f.put('.gitignore', crlf ? observedIgnoreMerge.generated.replaceAll('\n', '\r\n') : observedIgnoreMerge.generated)
+    f.run(); f.run('--check')
+    const raw = await readFile(path.join(f.root, '.gitignore'), 'utf8')
+    const result = raw.replaceAll('\r\n', '\n')
+    const rules = (value) => value.split('\n').filter((line) => line && !line.startsWith('#'))
+    for (const rule of [...rules(observedIgnoreMerge.generated), ...rules(observedIgnoreMerge.source)]) assert.ok(result.split('\n').includes(rule), 'preserves reviewed rule: ' + rule)
+    assert.equal(result.split('!docs/bot-personal-info.md').length, observedIgnoreMerge.generated.split('!docs/bot-personal-info.md').length, 'preserves generated duplicate rules')
+    assert.ok(result.indexOf('!docs/images/') < result.indexOf('!docs/agent-resource-safety.md'), 'preserves generated documentation order')
+    assert.match(result, /!docs\/OPENAI_IMAGES_CODEX\.md/)
+    if (crlf) assert.equal(raw.replaceAll('\r\n', '').includes('\n'), false)
+    const before = await f.snapshot(); f.run(); assert.deepEqual(await f.snapshot(), before, 'ignore composition must be idempotent')
+  })
+}
+
 
 test('rejects an unknown ignore conflict without writing any planned file', async (t) => {
   const f = await fixture(t, { baseFiles: { '.gitignore': observedIgnoreMerge.base }, alterSource: (source) => source.set('.gitignore', observedIgnoreMerge.source + '!unreviewed-secret-file\n') })
