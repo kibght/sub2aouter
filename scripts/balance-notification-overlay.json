@@ -4,7 +4,6 @@
     "backend/cmd/server/wire_gen.go",
     "backend/cmd/server/wire_gen_test.go",
     "backend/internal/repository/balance_notification_repo.go",
-    "backend/internal/repository/balance_notification_repo_test.go",
     "backend/internal/repository/balance_notification_repo_integration_test.go",
     "backend/internal/repository/balance_notify_qq_repo.go",
     "backend/internal/repository/balance_notify_qq_repo_test.go",
