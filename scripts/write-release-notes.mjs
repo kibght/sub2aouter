@@ -2,7 +2,7 @@
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import { changelogChanges, concreteSubjects, composeReleaseNotes, previousReleaseTag } from "./lib/release-notes.mjs"
+import { changelogChanges, concreteSubjects, composeReleaseNotes, featureIntegrationNotes, previousReleaseTag } from "./lib/release-notes.mjs"
 
 const env = process.env
 const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()
@@ -58,23 +58,17 @@ if (env.RELEASE_KIND === "repository" || previousUpstream === env.UPSTREAM_SHA) 
 }
 const upstream = env.RELEASE_KIND === "upstream" && previousUpstream !== env.UPSTREAM_SHA
   ? readFileSync(path.join(generated, ".apophis-upstream-release-notes.md"), "utf8") : ""
-const integrations = []
-if (existsSync(path.join(generated, "backend/internal/repository/balance_notify_qq_repo.go"))) {
-  integrations.push(`### QQ Bot Integration
-
-- Website users can create, list, and revoke QQ bot bindings from their profile.
-- When a user's balance first falls below the configured threshold, the existing email alert can be accompanied by a QQ private-message alert.
-- QQ alerts are persisted until the bot claims and acknowledges them; unacknowledged alerts can be retried after the claim timeout.
-- Alert payloads include the alert ID, current balance, threshold, site name, and recharge link, with binding ownership enforced by the server.
-- Bot endpoints require administrator authentication in addition to the binding token, and the QQ alert switch is accepted only for users with a valid binding.`)
+const featureMetadata = (file) => existsSync(path.join(generated, file)) ? readFileSync(path.join(generated, file), 'utf8').trim() : ''
+const previousFeatureMetadata = (file) => {
+  try { return git('.', 'show', baseRef + ':' + file) } catch { return '' }
 }
-if (existsSync(path.join(generated, "backend/internal/handler/bot_personal_info.go"))) {
-  integrations.push(`### Bot Personal Information
-
-- Added GET /api/v1/bot/personal-info for the bound user's nickname, balance, concurrency quota, active concurrency, and request count over the last 60 seconds.
-- The endpoint requires both administrator authentication and the user's Bot binding token, and applies the existing aggregate-query rate limit.
-- Failed activity metrics return null independently; valid zero counts remain visible. Existing profile and check-in commands retain their contracts.`)
-}
+const integrations = featureIntegrationNotes({
+  qqbotSource: featureMetadata('.apophis-qqbot-source-sha'),
+  previousQQbotSource: previousFeatureMetadata('.apophis-qqbot-source-sha'),
+  notificationSource: featureMetadata('.apophis-balance-notification-source-sha'),
+  previousNotificationSource: previousFeatureMetadata('.apophis-balance-notification-source-sha'),
+  repository: env.GITHUB_REPOSITORY,
+})
 const body = composeReleaseNotes({ upstream, canvas, repository, integrations, canvasTag: env.CANVAS_RELEASE_TAG || "" })
 writeFileSync(path.join(generated, ".apophis-release-title"), `Sub2Aouter ${env.RELEASE_VERSION}\n`, "utf8")
 writeFileSync(path.join(generated, ".apophis-release-notes.md"), body, "utf8")

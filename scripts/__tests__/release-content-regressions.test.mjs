@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'nod
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { changelogChanges, concreteSubjects, composeReleaseNotes, previousReleaseTag } from '../lib/release-notes.mjs'
+import { changelogChanges, concreteSubjects, composeReleaseNotes, featureIntegrationNotes, previousReleaseTag } from '../lib/release-notes.mjs'
 import { nextReleaseVersion } from '../lib/release-version.mjs'
 
 const bash = process.env.BASH_PATH || (process.platform === 'win32' ? 'D:/Program Files/Git/bin/bash.exe' : 'bash')
@@ -82,4 +82,18 @@ test('release notes include concrete integration details', () => {
   })
   assert.match(body, /QQ Bot Integration/)
   assert.match(body, /persisted until acknowledged/)
+})
+
+test('changed feature revisions describe bot migration, plugin compatibility and notification fixes once', () => {
+  const qqbotSource = 'a'.repeat(40), notificationSource = 'b'.repeat(40)
+  const body = composeReleaseNotes({ integrations: featureIntegrationNotes({ qqbotSource, notificationSource }) })
+  assert.match(body, /\/api\/v1\/admin\/bot\/\*/)
+  assert.match(body, /\/api\/v1\/admin\/bot-bindings\/redeem/)
+  assert.match(body, /plugin 1\.4\.12/)
+  assert.match(body, /retry pending emails after failures and restarts/)
+  assert.match(body, new RegExp('commit/' + qqbotSource))
+  assert.match(body, new RegExp('commit/' + notificationSource))
+  assert.deepEqual(featureIntegrationNotes({ qqbotSource, previousQQbotSource: qqbotSource, notificationSource, previousNotificationSource: notificationSource }), [])
+  assert.equal(featureIntegrationNotes({ qqbotSource, previousQQbotSource: qqbotSource, notificationSource }).length, 1)
+  assert.throws(() => featureIntegrationNotes({ qqbotSource: 'moving-branch-name' }), /immutable feature source/)
 })

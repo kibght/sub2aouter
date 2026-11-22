@@ -32,6 +32,30 @@ export function previousReleaseTag(releases, version) {
     .sort((a, b) => compare(parse(b.tag_name), parse(a.tag_name)))[0]?.tag_name || ''
 }
 
+export function featureIntegrationNotes({ qqbotSource = '', previousQQbotSource = '', notificationSource = '', previousNotificationSource = '', repository = 'kibght/sub2aouter' }) {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error('Invalid feature source repository.')
+  for (const sha of [qqbotSource, previousQQbotSource, notificationSource, previousNotificationSource]) {
+    if (sha && !/^[a-f0-9]{40}$/.test(sha)) throw new Error('Invalid immutable feature source revision.')
+  }
+  const sourceLink = (sha) => `- Source: [${sha.slice(0, 12)}](https://github.com/${repository}/commit/${sha}).`
+  const notes = []
+  if (qqbotSource && qqbotSource !== previousQQbotSource) {
+    notes.push(`### QQ Bot API Migration
+
+- Bot APIs now use /api/v1/admin/bot/*, and binding redemption uses /api/v1/admin/bot-bindings/redeem. This server release requires the matching QQ bot plugin 1.4.12.
+- Full-access scoped administrator keys can authorize these routes while each user's Bot token still enforces account ownership; existing bindings remain valid.
+${sourceLink(qqbotSource)}`)
+  }
+  if (notificationSource && notificationSource !== previousNotificationSource) {
+    notes.push(`### Balance Notification Reliability
+
+- Persist low-balance events and delivery results, retry pending emails after failures and restarts, and reconcile missed notifications.
+- Invalidate notification preference caches and keep email and QQ delivery states independent, including QQ claim and acknowledgement checks.
+${sourceLink(notificationSource)}`)
+  }
+  return notes
+}
+
 export function composeReleaseNotes({ upstream = "", canvas = "", repository = "", integrations = [], canvasTag = "" }) {
   const sections = []
   if (upstream.trim()) sections.push(upstreamChanges(upstream))
