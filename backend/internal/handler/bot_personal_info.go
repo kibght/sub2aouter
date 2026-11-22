@@ -35,7 +35,7 @@ type botPersonalInfoResponse struct {
 }
 
 // PersonalInfo returns the bound user's profile and recent activity.
-// GET /api/v1/bot/personal-info
+// GET /api/v1/admin/bot/personal-info
 func (h *BotHandler) PersonalInfo(c *gin.Context) {
 	if h == nil || h.users == nil {
 		response.InternalError(c, "User service is not available")

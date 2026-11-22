@@ -19,7 +19,7 @@ func RegisterBotRechargeRoutes(
 	if v1 == nil || h == nil {
 		return
 	}
-	bot := v1.Group("/bot")
+	bot := v1.Group("/admin/bot")
 	bot.Use(gin.HandlerFunc(adminAuth))
 	bot.Use(gin.HandlerFunc(botAuth))
 	bot.Use(middleware.BackendModeUserGuard(settingService))

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Kinght status">
+  <rect width="64" height="64" rx="14" fill="#0F766E"/>
+  <path d="M16 45V31m16 14V19m16 26V26" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <path d="M13 24l9-8 10 6 10-10 9 5" fill="none" stroke="#99F6E4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

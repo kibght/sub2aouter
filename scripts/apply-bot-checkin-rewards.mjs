@@ -389,7 +389,7 @@ function composeRoutes() {
     target = target.replace('panelRateLimiter.PublicIP(), h.Bot.Redeem)', 'gin.HandlerFunc(adminAuth), panelRateLimiter.PublicIP(), h.Bot.Redeem)')
   }
   if (!target.includes('bot.Use(gin.HandlerFunc(adminAuth))')) {
-    target = target.replace('\tbot := v1.Group("/bot")\n', '\tbot := v1.Group("/bot")\n\tbot.Use(gin.HandlerFunc(adminAuth))\n')
+    target = target.replace(/(\tbot := v1\.Group\("(?:\/admin)?\/bot"\)\n)/, '$1\tbot.Use(gin.HandlerFunc(adminAuth))\n')
   }
   if (!target.includes('balance-alerts')) {
     target = target.replace('\t\tbot.POST("/unbind", h.Bot.Unbind)\n', '\t\tbot.POST("/unbind", h.Bot.Unbind)\n\t\tbot.GET("/balance-alerts", h.Bot.BalanceLowAlerts)\n\t\tbot.POST("/balance-alerts/:id/ack", h.Bot.AckBalanceLowAlert)\n')

@@ -285,6 +285,18 @@ function composeMaintainedFields(file, data) {
   return Buffer.from(updated, 'utf8')
 }
 
+export function migrateBotRoutePaths(file, value) {
+  if (value === null) return value
+  if (!/^(?:backend\/internal\/(?:server\/(?:routes\/bot(?:_lottery|_recharge)?(?:_test)?|middleware\/bot_auth_test)|handler\/bot(?:_handler|_personal_info)(?:_test)?)\.go|docs\/bot-(?:balance-alerts|personal-info)\.md)$/.test(file)) return value
+  const source = Buffer.isBuffer(value) ? text(value, file) : value
+  const migrated = source.replaceAll('/api/v1/bot/', '/api/v1/admin/bot/')
+    .replaceAll('/api/v1/bot-bindings/redeem', '/api/v1/admin/bot-bindings/redeem')
+    .replaceAll('"/bot/', '"/admin/bot/')
+    .replaceAll('Group("/bot"', 'Group("/admin/bot"')
+    .replaceAll('"/bot-bindings/redeem"', '"/admin/bot-bindings/redeem"')
+  return Buffer.isBuffer(value) ? Buffer.from(migrated, 'utf8') : migrated
+}
+
 function mergeText(root, file, ours, base, theirs) {
   const temp = mkdtempSync(path.join(os.tmpdir(), 'qqbot-website-overlay-'))
   try {
@@ -335,6 +347,7 @@ function requireMarker(value, expression, label) {
 export function verifyRequiredAnchors(read) {
   for (const file of ['bot.go', 'bot_lottery.go', 'bot_recharge.go']) {
     const routes = stripComments(read('backend/internal/server/routes/' + file))
+    requireMarker(routes, /bot\s*:=\s*v1\.Group\(\s*"\/admin\/bot"\s*\)/, 'administrator bot namespace in ' + file)
     const admin = routes.search(/bot\.Use\(\s*gin\.HandlerFunc\(\s*adminAuth\s*\)/)
     const binding = routes.indexOf('gin.HandlerFunc(botAuth)')
     const limit = routes.indexOf('panelRateLimiter.Global()')
@@ -344,7 +357,7 @@ export function verifyRequiredAnchors(read) {
   const routes = read('backend/internal/server/routes/bot.go')
   for (const endpoint of ['check-in', 'balance-alerts', 'personal-info']) requireMarker(routes, new RegExp('bot\\.(?:GET|POST)\\(\\s*"/' + endpoint + '"'), 'existing bot ' + endpoint + ' endpoint')
   requireMarker(routes, /bot\.GET\(\s*"\/personal-info"\s*,\s*panelRateLimiter\.Heavy\(\)/, 'personal-info heavy rate limit')
-  requireMarker(routes, /v1\.POST\(\s*"\/bot-bindings\/redeem"\s*,\s*gin\.HandlerFunc\(\s*adminAuth\s*\)/, 'binding redemption administrator authentication')
+  requireMarker(routes, /v1\.POST\(\s*"\/admin\/bot-bindings\/redeem"\s*,\s*gin\.HandlerFunc\(\s*adminAuth\s*\)/, 'binding redemption administrator authentication')
   const provider = read('backend/internal/handler/wire.go')
   for (const setter of ['SetCheckInService', 'SetBalanceNotifyQQRepository', 'SetConcurrencyReader']) requireMarker(provider, new RegExp('h\\.' + setter + '\\('), 'existing ' + setter)
   for (const [file, markers] of [
@@ -385,7 +398,8 @@ export function applyQQbotWebsite({ root, ref = 'origin/QQbot', check = false })
     const theirs = blob(root, source, file)
     const ours = readTarget(root, file)
     if (theirs) assertNoEmbeddedSecret(theirs.data, file)
-    const merged = composeMaintainedFields(file, mergedFile(root, file, ours, base?.data ?? null, theirs?.data ?? null))
+    const inputs = [ours, base?.data ?? null, theirs?.data ?? null].map((value) => migrateBotRoutePaths(file, value))
+    const merged = composeMaintainedFields(file, mergedFile(root, file, ...inputs))
     planned.set(file, { data: merged, mode: theirs?.mode ?? base?.mode ?? 0o644, original: ours })
   }
   for (const file of HELPER_FILES) {

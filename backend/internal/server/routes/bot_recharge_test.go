@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -38,17 +39,18 @@ func TestRegisterBotRechargeRoutesContractAndAuthentication(t *testing.T) {
 		routes[route.Method+" "+route.Path] = true
 	}
 	for _, route := range []string{
-		"GET /api/v1/bot/recharge/options",
-		"POST /api/v1/bot/recharge/orders",
-		"GET /api/v1/bot/recharge/orders/latest",
-		"GET /api/v1/bot/recharge/orders/:id",
-		"GET /api/v1/bot/recharge/notifications",
-		"POST /api/v1/bot/recharge/notifications/:id/ack",
+		"GET /api/v1/admin/bot/recharge/options",
+		"POST /api/v1/admin/bot/recharge/orders",
+		"GET /api/v1/admin/bot/recharge/orders/latest",
+		"GET /api/v1/admin/bot/recharge/orders/:id",
+		"GET /api/v1/admin/bot/recharge/notifications",
+		"POST /api/v1/admin/bot/recharge/notifications/:id/ack",
 	} {
 		require.True(t, routes[route], route)
+		require.False(t, routes[strings.Replace(route, "/admin/", "/", 1)], "legacy recharge route must not remain registered")
 	}
 	for _, header := range []string{"admin", "bot"} {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/bot/recharge/options", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/bot/recharge/options", nil)
 		if header == "admin" {
 			req.Header.Set("x-api-key", "authorized")
 		} else {
@@ -102,7 +104,7 @@ func TestBotRechargeRoutesPreserveBackendModeUserGuard(t *testing.T) {
 		middleware.AdminAuthMiddleware(func(c *gin.Context) { c.Set("auth_method", service.AuditAuthMethodAdminAPIKey); c.Next() }),
 		middleware.BotAuthMiddleware(func(c *gin.Context) { c.Set(string(middleware.ContextKeyUserRole), "user"); c.Next() }),
 		settings, middleware.NewPanelRateLimiter(nil, nil))
-	for _, path := range []string{"/api/v1/bot/recharge/options", "/api/v1/bot/recharge/orders/latest", "/api/v1/bot/recharge/notifications"} {
+	for _, path := range []string{"/api/v1/admin/bot/recharge/options", "/api/v1/admin/bot/recharge/orders/latest", "/api/v1/admin/bot/recharge/notifications"} {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("x-api-key", "authorized")

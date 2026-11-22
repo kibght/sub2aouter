@@ -1,0 +1,53 @@
+{
+  "manifest_version": 2,
+  "version": "1.4.12",
+  "name": "Kinght 站点状态",
+  "description": "查询 api.kinght.top 的渠道状态、首 Token 指标、绑定账号用量、余额预警和签到，支持充值、抽奖及次数发放",
+  "author": {
+    "name": "Kinght",
+    "url": "https://api.kinght.top/"
+  },
+  "license": "MIT",
+  "urls": {
+    "repository": "https://github.com/kibght/sub2aouter",
+    "homepage": "https://api.kinght.top/",
+    "documentation": "https://github.com/kibght/sub2aouter",
+    "issues": "https://github.com/kibght/sub2aouter/issues"
+  },
+  "changelog": "CHANGELOG.md",
+  "host_application": {
+    "min_version": "1.3.0",
+    "max_version": "1.3.99"
+  },
+  "sdk": {
+    "min_version": "2.12.0",
+    "max_version": "2.99.99"
+  },
+  "dependencies": [],
+  "display": {
+    "icon": {
+      "type": "local",
+      "value": "assets/icon.svg",
+      "fallback": "puzzle",
+      "background": "#0F766E"
+    }
+  },
+  "i18n": {
+    "default_locale": "zh-CN",
+    "supported_locales": [
+      "zh-CN"
+    ]
+  },
+  "capabilities": [
+    "send.text",
+    "send.hybrid",
+    "chat.open_session",
+    "chat.get_stream_by_user_id",
+    "chat.get_private_streams",
+    "config.get",
+    "config.get_plugin",
+    "api.call",
+    "tool.invoke"
+  ],
+  "id": "kinght.status-plugin"
+}

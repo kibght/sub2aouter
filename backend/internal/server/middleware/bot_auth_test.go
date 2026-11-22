@@ -51,7 +51,7 @@ func newBotAuthTestRouter(authenticator botTokenAuthenticator, users jwtUserRead
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(botAuth(authenticator, users))
-	router.GET("/bot/profile", func(c *gin.Context) {
+	router.GET("/admin/bot/profile", func(c *gin.Context) {
 		subject, ok := GetAuthSubjectFromContext(c)
 		binding, hasBinding := GetBotBindingFromContext(c)
 		if !ok || !hasBinding {
@@ -68,7 +68,7 @@ func newBotAuthTestRouter(authenticator botTokenAuthenticator, users jwtUserRead
 }
 
 func performBotAuthRequest(router *gin.Engine, authorization string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodGet, "/bot/profile", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/bot/profile", nil)
 	if authorization != "" {
 		req.Header.Set("Authorization", authorization)
 	}

@@ -6,15 +6,15 @@ import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { composeSharedConflicts, HELPER_FILES, MANIFEST_PATH } from '../apply-qqbot-website.mjs'
+import { composeSharedConflicts, migrateBotRoutePaths, HELPER_FILES, MANIFEST_PATH } from '../apply-qqbot-website.mjs'
 
 const scriptPath = fileURLToPath(new URL('../apply-qqbot-website.mjs', import.meta.url))
 const testPath = fileURLToPath(import.meta.url)
 const baseFiles = {
   'backend/internal/server/routes/bot.go': `package routes
 func RegisterBotRoutes() {
- v1.POST("/bot-bindings/redeem", gin.HandlerFunc(adminAuth), panelRateLimiter.PublicIP(), h.Bot.Redeem)
- bot := v1.Group("/bot")
+ v1.POST("/admin/bot-bindings/redeem", gin.HandlerFunc(adminAuth), panelRateLimiter.PublicIP(), h.Bot.Redeem)
+ bot := v1.Group("/admin/bot")
  bot.Use(gin.HandlerFunc(adminAuth))
  bot.Use(gin.HandlerFunc(botAuth))
  bot.Use(panelRateLimiter.Global())
@@ -25,7 +25,7 @@ func RegisterBotRoutes() {
 `,
   'backend/internal/server/routes/bot_lottery.go': `package routes
 func RegisterBotLotteryRoutes() {
- bot := v1.Group("/bot")
+ bot := v1.Group("/admin/bot")
  bot.Use(gin.HandlerFunc(adminAuth))
  bot.Use(gin.HandlerFunc(botAuth), panelRateLimiter.Global())
  bot.GET("/lottery", h.BotConfig)
@@ -33,7 +33,7 @@ func RegisterBotLotteryRoutes() {
 `,
   'backend/internal/server/routes/bot_recharge.go': `package routes
 func RegisterBotRechargeRoutes() {
- bot := v1.Group("/bot")
+ bot := v1.Group("/admin/bot")
  bot.Use(gin.HandlerFunc(adminAuth))
  bot.Use(gin.HandlerFunc(botAuth))
  bot.Use(middleware.BackendModeUserGuard(settingService))
@@ -234,8 +234,8 @@ test('composes homepage and check-in form fields without changing either type', 
 })
 
 test('a bot route test conflict may only retain a superset of existing assertions and request cases', () => {
-  const ours = ['\trequests := []struct {', '\t\t{method: http.MethodGet, path: "/api/v1/bot/profile"},', '\t}', '\tfor _, test := range requests {', '\t\trequire.Equal(t, http.StatusUnauthorized, rec.Code)', '\t}']
-  const source = [...ours.slice(0, 2), '\t\t{method: http.MethodGet, path: "/api/v1/bot/personal-info"},', ...ours.slice(2)]
+  const ours = ['\trequests := []struct {', '\t\t{method: http.MethodGet, path: "/api/v1/admin/bot/profile"},', '\t}', '\tfor _, test := range requests {', '\t\trequire.Equal(t, http.StatusUnauthorized, rec.Code)', '\t}']
+  const source = [...ours.slice(0, 2), '\t\t{method: http.MethodGet, path: "/api/v1/admin/bot/personal-info"},', ...ours.slice(2)]
   assert.equal(composeSharedConflicts('backend/internal/server/routes/bot_test.go', conflict(ours, [], source), { ours: '' }), source.join('\n'))
   assert.throws(() => composeSharedConflicts('backend/internal/server/routes/bot_test.go', conflict(ours, [], source.filter((line) => !line.includes('require.Equal'))), { ours: '' }), /remove an existing assertion/)
 })
@@ -259,4 +259,30 @@ test('deduplicates identical maintained QQ fields and routes after clean merges'
   assert.equal((result.match(/qqNotificationRepo/g) || []).length, 1)
   assert.match(result, /usageNotifications \*usageNotificationWorker/)
   assert.equal((await readFile(path.join(f.root, routeFile), 'utf8')).split('bot.GET("/balance-alerts",').length - 1, 1)
+})
+
+
+test('migrates legacy bot paths before composing overlapping generated endpoints', async (t) => {
+  const routeFiles = ['bot.go', 'bot_lottery.go', 'bot_recharge.go'].map((name) => 'backend/internal/server/routes/' + name)
+  const f = await fixture(t, { alterSource: (source) => {
+    for (const file of routeFiles) source.set(file, baseFiles[file] + '// maintained bot namespace\n')
+  } })
+  for (const file of routeFiles) await f.put(file, baseFiles[file].replaceAll('/admin/bot', '/bot'))
+  f.run(); f.run('--check')
+  for (const file of routeFiles) {
+    const result = await readFile(path.join(f.root, file), 'utf8')
+    assert.match(result, /Group\("\/admin\/bot"\)/)
+    assert.doesNotMatch(result, /Group\("\/bot"\)/)
+    assert.equal((result.match(/gin\.HandlerFunc\(adminAuth\)/g) || []).length, file.endsWith('/bot.go') ? 2 : 1)
+  }
+  const before = await f.snapshot(); f.run(); assert.deepEqual(await f.snapshot(), before)
+})
+
+test('migrates only bot transport routes and leaves user binding management untouched', () => {
+  const original = 'bot := v1.Group("/bot")\nv1.POST("/bot-bindings/redeem", auth)\n'
+  const actual = migrateBotRoutePaths('backend/internal/server/routes/bot.go', original)
+  assert.match(actual, /Group\("\/admin\/bot"\)/)
+  assert.match(actual, /POST\("\/admin\/bot-bindings\/redeem"/)
+  assert.equal(migrateBotRoutePaths('backend/internal/server/routes/user.go', 'user.POST("/bot-bindings/code", handler)'), 'user.POST("/bot-bindings/code", handler)')
+  assert.equal(migrateBotRoutePaths('backend/internal/server/routes/bot.go', actual), actual)
 })

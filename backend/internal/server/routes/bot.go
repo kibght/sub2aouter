@@ -23,9 +23,9 @@ func RegisterBotRoutes(
 	}
 
 	// 绑定码兑换也属于机器人接口，要求管理员认证并按客户端 IP 限流。
-	v1.POST("/bot-bindings/redeem", gin.HandlerFunc(adminAuth), panelRateLimiter.PublicIP(), h.Bot.Redeem)
+	v1.POST("/admin/bot-bindings/redeem", gin.HandlerFunc(adminAuth), panelRateLimiter.PublicIP(), h.Bot.Redeem)
 
-	bot := v1.Group("/bot")
+	bot := v1.Group("/admin/bot")
 	bot.Use(gin.HandlerFunc(adminAuth))
 	bot.Use(gin.HandlerFunc(botAuth))
 	bot.Use(panelRateLimiter.Global())

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -37,21 +38,22 @@ func TestRegisterBotRoutesPublishesPluginContract(t *testing.T) {
 	}
 
 	expected := []string{
-		http.MethodPost + " /api/v1/bot-bindings/redeem",
-		http.MethodGet + " /api/v1/bot/profile",
-		http.MethodGet + " /api/v1/bot/personal-info",
-		http.MethodPost + " /api/v1/bot/unbind",
-		http.MethodGet + " /api/v1/bot/balance-alerts",
-		http.MethodPost + " /api/v1/bot/balance-alerts/:id/ack",
-		http.MethodPost + " /api/v1/bot/check-in",
-		http.MethodGet + " /api/v1/bot/api-keys",
-		http.MethodGet + " /api/v1/bot/usage/stats",
-		http.MethodGet + " /api/v1/bot/usage/dashboard/stats",
-		http.MethodPost + " /api/v1/bot/usage/dashboard/api-keys-usage",
-		http.MethodGet + " /api/v1/bot/user/api-keys/:id/usage/daily",
+		http.MethodPost + " /api/v1/admin/bot-bindings/redeem",
+		http.MethodGet + " /api/v1/admin/bot/profile",
+		http.MethodGet + " /api/v1/admin/bot/personal-info",
+		http.MethodPost + " /api/v1/admin/bot/unbind",
+		http.MethodGet + " /api/v1/admin/bot/balance-alerts",
+		http.MethodPost + " /api/v1/admin/bot/balance-alerts/:id/ack",
+		http.MethodPost + " /api/v1/admin/bot/check-in",
+		http.MethodGet + " /api/v1/admin/bot/api-keys",
+		http.MethodGet + " /api/v1/admin/bot/usage/stats",
+		http.MethodGet + " /api/v1/admin/bot/usage/dashboard/stats",
+		http.MethodPost + " /api/v1/admin/bot/usage/dashboard/api-keys-usage",
+		http.MethodGet + " /api/v1/admin/bot/user/api-keys/:id/usage/daily",
 	}
 	for _, route := range expected {
 		require.Contains(t, registered, route, "missing bot route: %s", route)
+		require.NotContains(t, registered, strings.Replace(route, "/admin/", "/", 1), "legacy bot route must not bypass administrator namespace")
 	}
 }
 
@@ -86,18 +88,18 @@ func TestRegisterBotRoutesRequireAdminAndBotAuthentication(t *testing.T) {
 		method string
 		path   string
 	}{
-		{method: http.MethodPost, path: "/api/v1/bot-bindings/redeem"},
-		{method: http.MethodGet, path: "/api/v1/bot/profile"},
-		{method: http.MethodGet, path: "/api/v1/bot/personal-info"},
-		{method: http.MethodPost, path: "/api/v1/bot/unbind"},
-		{method: http.MethodPost, path: "/api/v1/bot/check-in"},
-		{method: http.MethodGet, path: "/api/v1/bot/balance-alerts"},
-		{method: http.MethodPost, path: "/api/v1/bot/balance-alerts/1/ack"},
-		{method: http.MethodGet, path: "/api/v1/bot/api-keys"},
-		{method: http.MethodGet, path: "/api/v1/bot/usage/stats"},
-		{method: http.MethodGet, path: "/api/v1/bot/usage/dashboard/stats"},
-		{method: http.MethodPost, path: "/api/v1/bot/usage/dashboard/api-keys-usage"},
-		{method: http.MethodGet, path: "/api/v1/bot/user/api-keys/1/usage/daily"},
+		{method: http.MethodPost, path: "/api/v1/admin/bot-bindings/redeem"},
+		{method: http.MethodGet, path: "/api/v1/admin/bot/profile"},
+		{method: http.MethodGet, path: "/api/v1/admin/bot/personal-info"},
+		{method: http.MethodPost, path: "/api/v1/admin/bot/unbind"},
+		{method: http.MethodPost, path: "/api/v1/admin/bot/check-in"},
+		{method: http.MethodGet, path: "/api/v1/admin/bot/balance-alerts"},
+		{method: http.MethodPost, path: "/api/v1/admin/bot/balance-alerts/1/ack"},
+		{method: http.MethodGet, path: "/api/v1/admin/bot/api-keys"},
+		{method: http.MethodGet, path: "/api/v1/admin/bot/usage/stats"},
+		{method: http.MethodGet, path: "/api/v1/admin/bot/usage/dashboard/stats"},
+		{method: http.MethodPost, path: "/api/v1/admin/bot/usage/dashboard/api-keys-usage"},
+		{method: http.MethodGet, path: "/api/v1/admin/bot/user/api-keys/1/usage/daily"},
 	}
 
 	for _, test := range requests {
@@ -117,7 +119,7 @@ func TestRegisterBotRoutesRequireAdminAndBotAuthentication(t *testing.T) {
 			req.Header.Set("X-Test-Admin", "authorized")
 			rec = httptest.NewRecorder()
 			engine.ServeHTTP(rec, req)
-			if test.path == "/api/v1/bot-bindings/redeem" {
+			if test.path == "/api/v1/admin/bot-bindings/redeem" {
 				require.Equal(t, http.StatusInternalServerError, rec.Code, "redeem handler should receive authenticated request")
 			} else {
 				require.Equal(t, http.StatusUnauthorized, rec.Code, "bot binding authentication must remain required")
@@ -125,7 +127,7 @@ func TestRegisterBotRoutesRequireAdminAndBotAuthentication(t *testing.T) {
 		})
 	}
 
-	for _, path := range []string{"/api/v1/bot/profile", "/api/v1/bot/personal-info"} {
+	for _, path := range []string{"/api/v1/admin/bot/profile", "/api/v1/admin/bot/personal-info"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("X-Test-Admin", "authorized")
 		req.Header.Set("Authorization", "Bot test-token")
@@ -134,19 +136,19 @@ func TestRegisterBotRoutesRequireAdminAndBotAuthentication(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, rec.Code, "request with both credentials should reach the handler")
 	}
 	t.Run("check-in requires both admin and bot authentication", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/bot/check-in", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/bot/check-in", nil)
 		req.Header.Set("Authorization", "Bot test-token")
 		rec := httptest.NewRecorder()
 		engine.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusUnauthorized, rec.Code, "bot token alone must not bypass admin authentication")
 
-		req = httptest.NewRequest(http.MethodPost, "/api/v1/bot/check-in", nil)
+		req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/bot/check-in", nil)
 		req.Header.Set("X-Test-Admin", "authorized")
 		rec = httptest.NewRecorder()
 		engine.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusUnauthorized, rec.Code, "admin authentication alone must not bypass bot authentication")
 
-		req = httptest.NewRequest(http.MethodPost, "/api/v1/bot/check-in", nil)
+		req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/bot/check-in", nil)
 		req.Header.Set("X-Test-Admin", "authorized")
 		req.Header.Set("Authorization", "Bot test-token")
 		rec = httptest.NewRecorder()
@@ -190,16 +192,16 @@ func TestRegisterBotRoutesPersonalInfoUsesHeavyRateLimit(t *testing.T) {
 	)
 
 	first := httptest.NewRecorder()
-	engine.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/api/v1/bot/personal-info", nil))
+	engine.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/api/v1/admin/bot/personal-info", nil))
 	require.Equal(t, http.StatusInternalServerError, first.Code, "first request should reach the handler")
 
 	second := httptest.NewRecorder()
-	engine.ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/api/v1/bot/personal-info", nil))
+	engine.ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/api/v1/admin/bot/personal-info", nil))
 	require.Equal(t, http.StatusTooManyRequests, second.Code, second.Body.String())
 	require.NotEmpty(t, second.Header().Get("Retry-After"))
 
 	profile := httptest.NewRecorder()
-	engine.ServeHTTP(profile, httptest.NewRequest(http.MethodGet, "/api/v1/bot/profile", nil))
+	engine.ServeHTTP(profile, httptest.NewRequest(http.MethodGet, "/api/v1/admin/bot/profile", nil))
 	require.Equal(t, http.StatusInternalServerError, profile.Code, "global quota should still allow a lightweight route")
 	count, err := mr.Get("rate_limit:panel:heavy:user:7")
 	require.NoError(t, err)

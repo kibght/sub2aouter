@@ -37,7 +37,7 @@ func TestBotLotteryRoutesRequireBothCredentialsAndBoundAdminRoleForGrants(t *tes
 	h := handler.NewBotLotteryHandler(service.NewBotLotteryService(nil, nil, nil))
 	RegisterBotLotteryRoutes(engine.Group("/api/v1"), h, adminAuth, botAuth, middleware.NewPanelRateLimiter(nil, nil))
 	for _, headers := range []map[string]string{{"Authorization": "Bot token"}, {"x-api-key": "yes"}} {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/bot/lottery/grants", strings.NewReader(`{"target":"all","count":3,"request_id":"message"}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/bot/lottery/grants", strings.NewReader(`{"target":"all","count":3,"request_id":"message"}`))
 		req.Header.Set("Content-Type", "application/json")
 		for key, value := range headers {
 			req.Header.Set(key, value)
@@ -46,7 +46,7 @@ func TestBotLotteryRoutesRequireBothCredentialsAndBoundAdminRoleForGrants(t *tes
 		engine.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusUnauthorized, rec.Code)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/bot/lottery/grants", strings.NewReader(`{"target":"all","count":3,"request_id":"message"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/bot/lottery/grants", strings.NewReader(`{"target":"all","count":3,"request_id":"message"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bot token")
 	req.Header.Set("x-api-key", "yes")
@@ -66,7 +66,10 @@ func TestBotLotteryPublishesDocumentedRoutes(t *testing.T) {
 	for _, route := range engine.Routes() {
 		registered[route.Method+" "+route.Path] = true
 	}
-	for _, path := range []string{"GET /api/v1/bot/lottery", "POST /api/v1/bot/lottery/draw", "GET /api/v1/bot/lottery/records", "POST /api/v1/bot/lottery/grants", "GET /api/v1/bot/lottery/grant-batches/:id", "GET /api/v1/admin/bot-lottery/config", "PUT /api/v1/admin/bot-lottery/config", "GET /api/v1/admin/users/:id/lottery", "POST /api/v1/admin/bot-lottery/grants", "GET /api/v1/admin/bot-lottery/grant-batches/:id"} {
+	for _, path := range []string{"GET /api/v1/admin/bot/lottery", "POST /api/v1/admin/bot/lottery/draw", "GET /api/v1/admin/bot/lottery/records", "POST /api/v1/admin/bot/lottery/grants", "GET /api/v1/admin/bot/lottery/grant-batches/:id", "GET /api/v1/admin/bot-lottery/config", "PUT /api/v1/admin/bot-lottery/config", "GET /api/v1/admin/users/:id/lottery", "POST /api/v1/admin/bot-lottery/grants", "GET /api/v1/admin/bot-lottery/grant-batches/:id"} {
 		require.True(t, registered[path], path)
+		if strings.Contains(path, "/admin/bot/") {
+			require.False(t, registered[strings.Replace(path, "/admin/", "/", 1)], "legacy lottery route must not remain registered")
+		}
 	}
 }

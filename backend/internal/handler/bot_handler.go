@@ -246,7 +246,7 @@ func (h *BotHandler) RevokeBinding(c *gin.Context) {
 }
 
 // Redeem 用绑定码兑换机器人令牌（公开接口，由聊天插件调用）。
-// POST /api/v1/bot-bindings/redeem
+// POST /api/v1/admin/bot-bindings/redeem
 func (h *BotHandler) Redeem(c *gin.Context) {
 	if h == nil || h.bindings == nil {
 		response.InternalError(c, "Bot binding service is not available")
@@ -287,7 +287,7 @@ func (h *BotHandler) Redeem(c *gin.Context) {
 }
 
 // CheckIn 领取机器人每日签到余额。
-// POST /api/v1/bot/check-in
+// POST /api/v1/admin/bot/check-in
 func (h *BotHandler) CheckIn(c *gin.Context) {
 	if h == nil || h.checkIn == nil {
 		response.InternalError(c, "Bot check-in service is not available")
@@ -316,7 +316,7 @@ func (h *BotHandler) CheckIn(c *gin.Context) {
 }
 
 // Unbind 撤销当前令牌对应的绑定。
-// POST /api/v1/bot/unbind
+// POST /api/v1/admin/bot/unbind
 func (h *BotHandler) Unbind(c *gin.Context) {
 	if h == nil || h.bindings == nil {
 		response.InternalError(c, "Bot binding service is not available")
@@ -389,7 +389,7 @@ func (h *BotHandler) AckBalanceLowAlert(c *gin.Context) {
 }
 
 // Profile 返回绑定账号的基础资料（邮箱脱敏）。
-// GET /api/v1/bot/profile
+// GET /api/v1/admin/bot/profile
 func (h *BotHandler) Profile(c *gin.Context) {
 	if h == nil || h.users == nil {
 		response.InternalError(c, "User service is not available")
@@ -417,7 +417,7 @@ func (h *BotHandler) Profile(c *gin.Context) {
 }
 
 // APIKeys 返回绑定账号的 API Key 元数据（只返回脱敏后的前缀）。
-// GET /api/v1/bot/api-keys
+// GET /api/v1/admin/bot/api-keys
 func (h *BotHandler) APIKeys(c *gin.Context) {
 	if h == nil || h.apiKeys == nil {
 		response.InternalError(c, "API key service is not available")
@@ -477,7 +477,7 @@ func (h *BotHandler) APIKeys(c *gin.Context) {
 }
 
 // UsageStats 按周期返回绑定账号的用量统计。
-// GET /api/v1/bot/usage/stats?period=month&timezone=Asia/Shanghai
+// GET /api/v1/admin/bot/usage/stats?period=month&timezone=Asia/Shanghai
 func (h *BotHandler) UsageStats(c *gin.Context) {
 	if h == nil || h.usage == nil {
 		response.InternalError(c, "Usage service is not available")

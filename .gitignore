@@ -177,3 +177,10 @@ issues/
 # 本地闭源插件开发目录及构建产物不进入 Sub2API 仓库
 /plugins/
 .worktrees/
+
+# Reviewed standalone QQ bot plugin regression tests
+!integrations/qqbot/tests/
+!integrations/qqbot/tests/**
+/integrations/qqbot/**/__pycache__/
+/integrations/qqbot/**/*.py[cod]
+/integrations/qqbot/**/.pytest_cache/

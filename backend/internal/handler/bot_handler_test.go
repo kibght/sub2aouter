@@ -173,7 +173,7 @@ func newBotTestRouter(opts botTestRouterOptions) *gin.Engine {
 	user.GET("/bot-bindings", opts.handler.ListBindings)
 	user.DELETE("/bot-bindings/:id", opts.handler.RevokeBinding)
 
-	bot := router.Group("/bot", attachAuth)
+	bot := router.Group("/admin/bot", attachAuth)
 	bot.GET("/profile", opts.handler.Profile)
 	bot.POST("/unbind", opts.handler.Unbind)
 	bot.POST("/check-in", opts.handler.CheckIn)
@@ -182,7 +182,7 @@ func newBotTestRouter(opts botTestRouterOptions) *gin.Engine {
 	bot.GET("/balance-alerts", opts.handler.BalanceLowAlerts)
 	bot.POST("/balance-alerts/:id/ack", opts.handler.AckBalanceLowAlert)
 
-	router.POST("/bot-bindings/redeem", opts.handler.Redeem)
+	router.POST("/admin/bot-bindings/redeem", opts.handler.Redeem)
 	return router
 }
 
@@ -195,7 +195,7 @@ func TestBotHandlerClaimsQQBalanceAlertsForAuthenticatedBinding(t *testing.T) {
 	})
 
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/bot/balance-alerts", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/bot/balance-alerts", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Equal(t, int64(7), queue.claimUserID)
@@ -219,7 +219,7 @@ func TestBotHandlerAckScopesAlertToAuthenticatedQQBinding(t *testing.T) {
 	})
 
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/bot/balance-alerts/8/ack", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/admin/bot/balance-alerts/8/ack", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Equal(t, int64(7), queue.ackUserID)
@@ -236,7 +236,7 @@ func TestBotHandlerBalanceAlertsRejectsNonQQBinding(t *testing.T) {
 	})
 
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/bot/balance-alerts", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/bot/balance-alerts", nil))
 	require.Equal(t, http.StatusForbidden, rec.Code)
 	require.Zero(t, queue.claimBinding)
 }
@@ -334,7 +334,7 @@ func TestBotHandlerRedeemMasksUserEmail(t *testing.T) {
 	router := newBotTestRouter(botTestRouterOptions{handler: h})
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/bot-bindings/redeem", strings.NewReader(`{"code":"ABCD-EFGH","platform":"qq","external_id":"123456"}`))
+	req := httptest.NewRequest(http.MethodPost, "/admin/bot-bindings/redeem", strings.NewReader(`{"code":"ABCD-EFGH","platform":"qq","external_id":"123456"}`))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 
@@ -353,7 +353,7 @@ func TestBotHandlerRedeemRejectsInvalidPayload(t *testing.T) {
 	router := newBotTestRouter(botTestRouterOptions{handler: h})
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/bot-bindings/redeem", strings.NewReader(`{"code":""}`))
+	req := httptest.NewRequest(http.MethodPost, "/admin/bot-bindings/redeem", strings.NewReader(`{"code":""}`))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
@@ -365,14 +365,14 @@ func TestBotHandlerUnbindRequiresBoundToken(t *testing.T) {
 	router := newBotTestRouter(botTestRouterOptions{handler: h, userID: 7, withAuth: true})
 
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/bot/unbind", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/admin/bot/unbind", nil))
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
 	require.Nil(t, stub.current)
 
 	binding := &service.BotBinding{ID: 5, UserID: 7}
 	router = newBotTestRouter(botTestRouterOptions{handler: h, userID: 7, binding: binding, withAuth: true})
 	rec = httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/bot/unbind", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/admin/bot/unbind", nil))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Equal(t, binding, stub.current)
 }
@@ -390,7 +390,7 @@ func TestBotHandlerCheckInReturnsRewardAndDuplicateAmount(t *testing.T) {
 	router := newBotTestRouter(botTestRouterOptions{handler: h, userID: 7, withAuth: true})
 
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/bot/check-in", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/admin/bot/check-in", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	data := decodeBotData(t, rec)
@@ -408,7 +408,7 @@ func TestBotHandlerProfileMasksEmailAndHidesBalance(t *testing.T) {
 	router := newBotTestRouter(botTestRouterOptions{handler: h, userID: 7, withAuth: true})
 
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/bot/profile", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/bot/profile", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	data := decodeBotData(t, rec)
@@ -430,7 +430,7 @@ func TestBotHandlerAPIKeysNeverExposeFullKey(t *testing.T) {
 	router := newBotTestRouter(botTestRouterOptions{handler: h, userID: 7, withAuth: true})
 
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/bot/api-keys?page=1&page_size=100", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/bot/api-keys?page=1&page_size=100", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.NotContains(t, rec.Body.String(), fullKey)
@@ -476,11 +476,11 @@ func TestBotHandlerUsageStatsValidatesPeriod(t *testing.T) {
 	router := newBotTestRouter(botTestRouterOptions{handler: h, userID: 7, withAuth: true})
 
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/bot/usage/stats?period=century", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/bot/usage/stats?period=century", nil))
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 
 	rec = httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/bot/usage/stats?period=month&timezone=Asia/Shanghai", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/bot/usage/stats?period=month&timezone=Asia/Shanghai", nil))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Equal(t, int64(7), usage.filters.UserID)
 	require.NotNil(t, usage.filters.StartTime)

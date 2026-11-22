@@ -4,7 +4,9 @@
 
 ## 领取提醒
 
-`GET /api/v1/bot/balance-alerts`
+`GET /api/v1/admin/bot/balance-alerts`
+
+Both administrator `x-api-key` and the bound user's `Authorization: Bot <token>` are required. The administrator key does not change which user owns the alert.
 
 响应数据位于标准响应的 `data.items`：
 
@@ -33,7 +35,7 @@
 
 私聊发送成功后调用：
 
-`POST /api/v1/bot/balance-alerts/{id}/ack`
+`POST /api/v1/admin/bot/balance-alerts/{id}/ack`
 
 请求体为空。成功响应的 `data.acknowledged` 为 `true`。确认操作仅删除当前用户、当前绑定拥有的提醒。若 QQ 已接受消息但确认请求失败，租约到期后可能重复发送，因此投递语义为至少一次。
 

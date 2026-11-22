@@ -10,7 +10,7 @@ func RegisterBotLotteryRoutes(v1 *gin.RouterGroup, h *handler.BotLotteryHandler,
 	if h == nil {
 		return
 	}
-	bot := v1.Group("/bot")
+	bot := v1.Group("/admin/bot")
 	bot.Use(gin.HandlerFunc(adminAuth), gin.HandlerFunc(botAuth), panelRateLimiter.Global())
 	{
 		bot.GET("/lottery", h.BotConfig)

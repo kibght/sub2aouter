@@ -36,7 +36,7 @@ func (f personalInfoUsageReader) GetStatsWithFilters(ctx context.Context, filter
 func personalInfoRouter(h *BotHandler, userID *int64) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/bot/personal-info", func(c *gin.Context) {
+	router.GET("/admin/bot/personal-info", func(c *gin.Context) {
 		if userID != nil {
 			c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: *userID})
 		}
@@ -82,7 +82,7 @@ func TestBotHandlerPersonalInfoContractAndUserScope(t *testing.T) {
 	router := personalInfoRouter(h, &userID)
 	rec := httptest.NewRecorder()
 	before := time.Now().UTC()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/bot/personal-info?user_id=99&api_key_id=88&period=all&start_time=2000-01-01&end_time=2100-01-01", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/bot/personal-info?user_id=99&api_key_id=88&period=all&start_time=2000-01-01&end_time=2100-01-01", nil))
 	after := time.Now().UTC()
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -111,7 +111,7 @@ func TestBotHandlerPersonalInfoPreservesEmptyUsernameAndZeroBalance(t *testing.T
 		return 0, nil
 	}))
 	rec := httptest.NewRecorder()
-	personalInfoRouter(h, &userID).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/bot/personal-info", nil))
+	personalInfoRouter(h, &userID).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/bot/personal-info", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Equal(t, map[string]any{
@@ -178,7 +178,7 @@ func TestBotHandlerPersonalInfoMetricsDegradeIndependently(t *testing.T) {
 				}))
 			}
 			rec := httptest.NewRecorder()
-			personalInfoRouter(h, &userID).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/bot/personal-info", nil))
+			personalInfoRouter(h, &userID).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/bot/personal-info", nil))
 
 			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 			require.Equal(t, test.wantConcurrencyRead, concurrencyRead)
@@ -236,7 +236,7 @@ func TestBotHandlerPersonalInfoRejectsMissingIdentityAndUserFailures(t *testing.
 				subject = &test.userID
 			}
 			rec := httptest.NewRecorder()
-			personalInfoRouter(h, subject).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/bot/personal-info", nil))
+			personalInfoRouter(h, subject).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/bot/personal-info", nil))
 
 			require.Equal(t, test.status, rec.Code, rec.Body.String())
 			require.Equal(t, test.wantRead, userRead)

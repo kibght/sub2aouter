@@ -3,7 +3,7 @@
 ## 请求
 
 ```http
-GET /api/v1/bot/personal-info
+GET /api/v1/admin/bot/personal-info
 Authorization: Bot <当前发送者的绑定令牌>
 x-api-key: <插件配置的网站管理员 API Key>
 ```
@@ -67,5 +67,5 @@ RPM 的统计范围是当前绑定用户的 `[当前时间−60秒, 当前时间
 - Counts persisted usage records in the half-open 60-second window; requests that have not written a usage record are excluded.
 - Reads current concurrency from the user slot cache. For an unlimited concurrency quota (`concurrency <= 0`), the count is `null` because these requests bypass slot tracking.
 - Each dynamic metric has an independent two-second timeout. A failed or unavailable metric is returned as `null`; the other metric and basic profile remain available. Successful zero counts are returned as `0`.
-- The existing `/api/v1/bot/profile` contract is unchanged. No database migration is required.
+- The existing `/api/v1/admin/bot/profile` contract is unchanged. No database migration is required.
 - Deploy the backend before enabling the command in plugin 1.4.5.

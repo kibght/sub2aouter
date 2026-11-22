@@ -38,6 +38,8 @@
     "backend/internal/repository/user_repo.go",
     "backend/internal/repository/wire.go",
     "backend/internal/server/api_contract_test.go",
+    "backend/internal/server/middleware/bot_auth_test.go",
+    "backend/internal/server/middleware/custom_admin_bot_access_test.go",
     "backend/internal/server/router.go",
     "backend/internal/server/routes/admin.go",
     "backend/internal/server/routes/bot.go",

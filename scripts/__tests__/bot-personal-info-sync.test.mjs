@@ -43,7 +43,7 @@ func initialize() {
 `,
   'backend/internal/server/routes/bot.go': `package routes
 func RegisterBotRoutes() {
-\tbot := v1.Group("/bot")
+\tbot := v1.Group("/admin/bot")
 \tbot.Use(gin.HandlerFunc(adminAuth))
 \tbot.Use(gin.HandlerFunc(botAuth))
 \tbot.Use(panelRateLimiter.Global())
