@@ -78,6 +78,43 @@ for (const lineEnding of ['\n', '\r\n']) {
   })
 }
 
+for (const lineEnding of ['\n', '\r\n']) {
+  test(`account homepage alignment accepts the centered action row and preserves ${JSON.stringify(lineEnding)} source`, async (t) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'sub2api-account-layout-tests-'))
+    t.after(() => rm(root, { recursive: true, force: true }))
+    const target = path.join(root, 'frontend/src/views/admin/__tests__/AccountsView.sparkShadow.spec.ts')
+    await mkdir(path.dirname(target), { recursive: true })
+    const marker = "expect(tooltip.classes()).toEqual(expect.arrayContaining(['self-start']))"
+    const securityChecks = [
+      "expect(links).toHaveLength(1)",
+      "expect(link.attributes()).toMatchObject({ href: 'https://relay.example.com', target: '_blank', rel: 'noopener noreferrer' })",
+      "expect(wrapper.text()).toContain('invalid-url')",
+    ]
+    const original = [...securityChecks, marker, ''].join(lineEnding)
+    await writeFile(target, original)
+
+    assert.equal(await applyUpstreamTestCompatibility({ root }), true)
+    const patched = await readFile(target, 'utf8')
+    for (const check of securityChecks) assert.ok(patched.includes(check))
+    assert.equal(patched.split(lineEnding).length, original.split(lineEnding).length)
+    assert.equal(await applyUpstreamTestCompatibility({ root }), false)
+    assert.equal(await readFile(target, 'utf8'), patched)
+
+    const expression = patched.match(/expect\((tooltip\.classes\(\).*?)\)\.toBe\(true\)/)
+    assert.ok(expression)
+    const isAligned = new Function('tooltip', `return ${expression[1]}`)
+    const tooltip = (classes, parentClasses) => ({
+      classes: () => classes,
+      element: { parentElement: parentClasses && { matches: (selector) => selector.split('.').filter(Boolean).every((value) => parentClasses.includes(value)) } },
+    })
+    assert.equal(isAligned(tooltip(['self-start'], ['flex', 'flex-col'])), true)
+    assert.equal(isAligned(tooltip(['-ml-1'], ['flex', 'items-center', 'gap-1'])), true)
+    assert.equal(isAligned(tooltip(['-ml-1'], ['flex', 'flex-col'])), false)
+    assert.equal(isAligned(tooltip(['-ml-1'], ['items-center'])), false)
+    assert.ok(!isAligned(tooltip([], null)))
+  })
+}
+
 test('compatibility reconciliation runs before frontend regression tests', async () => {
   const workflow = await readFile('.github/workflows/upstream-theme-sync.yml', 'utf8')
   const compatibility = workflow.indexOf('node scripts/apply-upstream-test-compatibility.mjs --root .')

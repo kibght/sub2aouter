@@ -23,6 +23,12 @@ export async function applyUpstreamTestCompatibility({ root }) {
         'ultrafastHint: expect.stringMatching(/service_tier=ultrafast|Ultra Fast/)',
       ],
     ]],
+    ['frontend/src/views/admin/__tests__/AccountsView.sparkShadow.spec.ts', [
+      [
+        "expect(tooltip.classes()).toEqual(expect.arrayContaining(['self-start']))",
+        "expect(tooltip.classes().includes('self-start') || tooltip.element.parentElement?.matches('.flex.items-center')).toBe(true)",
+      ],
+    ]],
   ]
   let changed = false
   for (const [relativePath, fileReplacements] of files) {
